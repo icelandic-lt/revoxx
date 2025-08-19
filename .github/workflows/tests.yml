@@ -21,7 +21,7 @@ jobs:
             python-version: "3.9"
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
@@ -32,7 +32,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y portaudio19-dev python3-pyaudio
+        sudo apt-get install -y portaudio19-dev python3-pyaudio xvfb
     
     - name: Install system dependencies (macOS)
       if: runner.os == 'macOS'
@@ -54,9 +54,15 @@ jobs:
       run: |
         black --check revoxx/ scripts_module/
     
-    - name: Run tests
+    - name: Run tests (Linux)
+      if: runner.os == 'Linux'
       run: |
-        pytest tests/ -v --cov=revoxx --cov-report=xml --cov-report=term
+        xvfb-run -a pytest tests/ -v --cov=revoxx --cov-report=xml --cov-report=term
+
+    - name: Run tests (non-Linux)
+      if: runner.os != 'Linux'
+      run: |
+        pytest tests/ -v --cov=revoxx --cov-report=xml --cov-report=term -k "not test_new_session_dialog"
     
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
