@@ -1,0 +1,11 @@
+Each line in index.tsv contains 5 tab-separated columns:
+1. filename        : Audio file name (e.g., speaker_emotion_001.flac)
+2. speaker         : Speaker name/identifier
+3. emotion         : Emotion label (neutral, happy, sad, etc.)
+4. intensity       : Emotional intensity level (0-5)
+                    0 = no emotion/neutral
+                    1-5 = increasing intensity levels
+5. text           : Transcription of the utterance
+
+Example:
+speaker_happy_001.flac<TAB>speaker<TAB>happy<TAB>3<TAB>Hvað er klukkan?
