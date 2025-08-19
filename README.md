@@ -36,16 +36,16 @@ It has integrated support to easily transform raw recordings into datasets for t
 written from scratch.<br>
 
 We have condensed our experience from when we recorded [Talrómur 3](https://repository.clarin.is/repository/xmlui/handle/20.500.12537/344),
-the Icelandic emotional speech dataset, and created this tool to minimize hassle, valuable recording & post-processing time.  
+the Icelandic emotional speech dataset, and created this tool to minimize hassle, valuable recording & post-processing time.
 
 - **Revoxx** makes recording of speech fast, reliable and convenient for the recording engineer and the voice talent
-- Integrates all necessary tools to check if recordings & equipment meet your expected requirements 
+- Integrates all necessary tools to check if recordings & equipment meet your expected requirements
 - Realtime feedback for recording levels, mel spectrograms, max. recorded frequency, etc.
 - Probes audio equipment for supported settings (e.g. Sample Rate, Bit Depth, Input & Output channels)
 - Recordings are organized into sessions, with consistent audio settings & metadata for all recordings
 - Choose from different industry-standard presets for target Peak / RMS levels and use Monitoring mode to calibrate your inputs
 - All utterances can be re-recorded as many times as you want, all raw recordings are preserved, even when deleted
-- Most important functionality is available via easy to remember keyboard shortcuts 
+- Most important functionality is available via easy to remember keyboard shortcuts
 
 ## Installation
 
@@ -77,7 +77,7 @@ pip install -e .[dev]
 
 This installs additional tools for development:
 - **black**: Code formatter
-- **isort**: Import statement organizer  
+- **isort**: Import statement organizer
 - **flake8**: Code linter
 - **pytest**: Testing framework
 - **pytest-cov**: Code coverage reporting
