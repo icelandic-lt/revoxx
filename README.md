@@ -1,10 +1,12 @@
 # Revoxx - Record Voices
 
-This repository provides **Revoxx**, a graphical voice recording application for recording raw speech and generating datasets.
+This repository provides **Revoxx**, a graphical recording application for recording raw speech and generating datasets.
 
 ![Version](https://img.shields.io/badge/Version-main-darkgreen)
+![Python](https://img.shields.io/badge/python-3.9-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.10-blue?logo=python&logoColor=white)
-![CI Status](https://img.shields.io/badge/CI-[unavailable]-red)
+![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)
+[![CI Status](https://github.com/icelandic-lt/revoxx/actions/workflows/build.yml/badge.svg)](https://github.com/icelandic-lt/revoxx/actions/workflows/build.yml)
 ![Docker](https://img.shields.io/badge/Docker-[unavailable]-red)
 
 ## Overview
@@ -15,7 +17,7 @@ This repository provides **Revoxx**, a graphical voice recording application for
 - **Domain:** Laptop/Workstation
 - **Languages:** Python
 - **Language Version/Dialect:**
-  - Python: 3.10
+  - Python: 3.9, 3.10, 3.11
 - **Audience**: Developers, Researchers
 - **Origins:** [Icelandic EmoSpeech scripts](https://github.com/icelandic-lt/emospeech-scripts)
 
@@ -28,7 +30,7 @@ This repository provides **Revoxx**, a graphical voice recording application for
 
 ## Description
 
-**Revoxx** is a graphical voice recorder specialized in recording TTS datasets quickly and reliably.<br>
+**Revoxx** is a graphical speech recorder specialized in recording TTS datasets quickly and reliably.<br>
 You can use this project to create emotional / non-emotional voice recordings on a Workstation / Laptop with suitable audio equipment.
 It has integrated support to easily transform raw recordings into datasets for training TTS voice models.
 
@@ -40,11 +42,11 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 
 - **Revoxx** makes recording of speech fast, reliable and convenient for the recording engineer and the voice talent
 - Integrates all necessary tools to check if recordings & equipment meet your expected requirements
-- Realtime feedback for recording levels, mel spectrograms, max. recorded frequency, etc.
-- Probes audio equipment for supported settings (e.g. Sample Rate, Bit Depth, Input & Output channels)
+- **Realtime feedback** for recording levels, mel spectrograms, max. recorded frequency, etc.
+- **Probes audio equipment** for supported settings (e.g. Sample Rate, Bit Depth, Input & Output channels)
 - Recordings are organized into sessions, with consistent audio settings & metadata for all recordings
-- Choose from different industry-standard presets for target Peak / RMS levels and use Monitoring mode to calibrate your inputs
-- All utterances can be re-recorded as many times as you want, all raw recordings are preserved, even when deleted
+- Choose from different **industry-standard presets for target Peak / RMS levels** and use **Monitoring mode** to calibrate your inputs
+- All utterances can be re-recorded as many times as you want, all **raw recordings are preserved**, even when deleted
 - Most important functionality is available via easy to remember keyboard shortcuts
 
 ## Installation
