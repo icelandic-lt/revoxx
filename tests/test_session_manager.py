@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from revoxx.session.manager import SessionManager
 from revoxx.session.models import SessionConfig
+from .test_config import TestAudioConfig
 
 
 class TestSessionManager(unittest.TestCase):
@@ -22,10 +23,17 @@ class TestSessionManager(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.base_dir = Path(self.temp_dir)
         self.settings_file = self.base_dir / "settings.json"
+
+        # Mock find_compatible_device to always return a device for CI tests
+        patcher = patch("revoxx.session.models.SessionConfig.find_compatible_device")
+        self.mock_find_device = patcher.start()
+        self.mock_find_device.return_value = "Mock Audio Device"
+        self.addCleanup(patcher.stop)
+
         self.manager = SessionManager(self.settings_file)
 
         # Default audio config for tests
-        self.audio_config = SessionConfig(sample_rate=48000, bit_depth=24, format="wav")
+        self.audio_config = TestAudioConfig.get_default_config()
 
     def tearDown(self):
         """Clean up test environment."""
@@ -50,7 +58,7 @@ class TestSessionManager(unittest.TestCase):
         self.assertEqual(session.speaker.name, "Test")
         self.assertEqual(session.speaker.gender, "M")
         self.assertEqual(session.speaker.emotion, "happy")
-        self.assertEqual(session.audio_config.sample_rate, 48000)
+        self.assertEqual(session.audio_config.sample_rate, 44100)
 
         # Check directory structure
         session_dir = self.base_dir / "test_happy.revoxx"
@@ -179,7 +187,7 @@ class TestSessionManager(unittest.TestCase):
         # Verify loaded data
         self.assertEqual(loaded.speaker.name, "LoadTest")
         self.assertEqual(loaded.speaker.emotion, "sad")
-        self.assertEqual(loaded.audio_config.sample_rate, 48000)
+        self.assertEqual(loaded.audio_config.sample_rate, 44100)
 
     def test_load_nonexistent_session(self):
         """Test loading non-existent session raises error."""
@@ -359,18 +367,18 @@ class TestSessionManager(unittest.TestCase):
         """Test finding compatible audio devices."""
         # Mock device list
         mock_query.return_value = [
-            {"name": "Device1", "max_input_channels": 2, "default_samplerate": 48000},
+            {"name": "Device1", "max_input_channels": 2, "default_samplerate": 44100},
             {"name": "Device2", "max_input_channels": 2, "default_samplerate": 44100},
             {
                 "name": "Device3",
                 "max_input_channels": 0,
-                "default_samplerate": 48000,
+                "default_samplerate": 44100,
             },  # Output only
-            {"name": "Device4", "max_input_channels": 1, "default_samplerate": 48000},
+            {"name": "Device4", "max_input_channels": 1, "default_samplerate": 44100},
         ]
 
         config = SessionConfig(
-            sample_rate=48000, bit_depth=24, format="wav", channels=2
+            sample_rate=44100, bit_depth=16, format="wav", channels=2
         )
 
         # Mock the device manager compatibility check
