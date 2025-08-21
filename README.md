@@ -42,12 +42,18 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 
 - **Revoxx** makes recording of speech fast, reliable and convenient for the recording engineer and the voice talent
 - Integrates all necessary tools to check if recordings & equipment meet your expected requirements
-- **Realtime feedback** for recording levels, mel spectrograms, max. recorded frequency, etc.
-- **Probes audio equipment** for supported settings (e.g. Sample Rate, Bit Depth, Input & Output channels)
-- Recordings are organized into sessions, with consistent audio settings & metadata for all recordings
-- Choose from different **industry-standard presets for target Peak / RMS levels** and use **Monitoring mode** to calibrate your inputs
-- All utterances can be re-recorded as many times as you want, all **raw recordings are preserved**, even when deleted
-- Most important functionality is available via easy to remember keyboard shortcuts
+- **Real-time monitoring** including recording levels, mel spectrograms, maximum frequency detection, and more
+- Customizable **industry-standard presets for Peak/RMS levels** alongside a dedicated **Monitoring mode**
+  for precise input calibration
+- Automatically **analyzes and validates audio equipment** compatibility, including Sample Rate, Bit Depth, and I/O
+  channel configurations
+- Recordings are organized into **Recording Sessions**, with consistent audio settings & metadata for all recordings
+- Offers advanced search and navigation capabilities for utterances, with flexible sorting by label, emotion, text
+  content, and recorded takes
+- Enables seamless transitions between recording sessions with automatic progress tracking
+- Supports unlimited re-recording while maintaining a complete **archive of raw recordings**, even for deleted content
+- Facilitates **batch export of multiple sessions** into standardized T3 (Talrómur3) dataset format
+- **Intuitive keyboard shortcuts** for accessing core functionalities
 
 ## Installation
 

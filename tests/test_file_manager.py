@@ -49,19 +49,6 @@ class TestRecordingFileManager(unittest.TestCase):
         self.assertTrue(self.manager.recording_exists("utt_001", 1))
         self.assertFalse(self.manager.recording_exists("utt_001", 2))
 
-    def test_find_latest_take(self):
-        """Test finding latest consecutive take."""
-        # No recordings
-        self.assertEqual(self.manager.find_latest_take("utt_001"), 0)
-
-        # Create consecutive takes
-        utterance_dir = self.recording_dir / "utt_001"
-        utterance_dir.mkdir(parents=True)
-        for i in range(1, 4):
-            (utterance_dir / f"take_{i:03d}.flac").touch()
-
-        self.assertEqual(self.manager.find_latest_take("utt_001"), 3)
-
     def test_get_highest_take(self):
         """Test finding highest take with gaps."""
         # Create takes with gaps
@@ -73,20 +60,8 @@ class TestRecordingFileManager(unittest.TestCase):
 
         self.assertEqual(self.manager.get_highest_take("utt_001"), 7)
 
-    def test_get_existing_takes(self):
-        """Test getting all existing takes."""
-        # Create takes with gaps
-        utterance_dir = self.recording_dir / "utt_001"
-        utterance_dir.mkdir(parents=True)
-        (utterance_dir / "take_001.flac").touch()
-        (utterance_dir / "take_003.flac").touch()
-        (utterance_dir / "take_007.wav").touch()
-
-        existing = self.manager.get_existing_takes("utt_001")
-        self.assertEqual(existing, [1, 3, 7])
-
-    def test_scan_all_takes(self):
-        """Test scanning all takes for multiple labels."""
+    def test_scan_all_take_files(self):
+        """Test scanning all take files for multiple labels."""
         # Create recordings for different utterances
         for label in ["utt_001", "utt_002", "utt_003"]:
             utterance_dir = self.recording_dir / label
@@ -98,10 +73,15 @@ class TestRecordingFileManager(unittest.TestCase):
             elif label == "utt_002":
                 (utterance_dir / "take_001.wav").touch()
 
-        takes = self.manager.scan_all_takes(["utt_001", "utt_002", "utt_003"])
-        self.assertEqual(takes["utt_001"], 2)
-        self.assertEqual(takes["utt_002"], 1)
-        self.assertEqual(takes["utt_003"], 0)
+        take_files = self.manager.scan_all_take_files(["utt_001", "utt_002", "utt_003"])
+        self.assertEqual(len(take_files["utt_001"]), 2)
+        self.assertEqual(len(take_files["utt_002"]), 1)
+        self.assertEqual(len(take_files["utt_003"]), 0)
+
+        # Check that actual filenames are returned
+        self.assertIn("take_001.flac", take_files["utt_001"])
+        self.assertIn("take_002.flac", take_files["utt_001"])
+        self.assertIn("take_001.wav", take_files["utt_002"])
 
     def test_directory_structure(self):
         """Test that correct directory structure is created."""

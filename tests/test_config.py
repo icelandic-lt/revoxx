@@ -2,6 +2,12 @@
 
 This module provides default audio configurations that work reliably
 in CI/CD environments across different platforms.
+
+Note: When running tests in PyCharm with the working directory set to 'tests/',
+      imports from this module may fail with relative imports. To fix this:
+      1. Change the working directory in your run configuration to the project root
+      2. Or run tests using: python -m pytest tests/
+      3. Or use pytest from the project root directory
 """
 
 from revoxx.session.models import SessionConfig

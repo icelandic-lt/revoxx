@@ -1,7 +1,7 @@
 """File management utilities for the recorder."""
 
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Set
 import soundfile as sf
 import numpy as np
 
@@ -32,6 +32,72 @@ class RecordingFileManager:
         """
         self.recording_dir = Path(recording_dir)
         self.recording_dir.mkdir(exist_ok=True, parents=True)
+
+    @staticmethod
+    def _extract_take_number(file_path: Path) -> Optional[int]:
+        """Extract take number from a file path.
+
+        Args:
+            file_path: Path to a take file
+
+        Returns:
+            Take number if valid, None otherwise
+        """
+        try:
+            # Filename format: take_XXX.ext
+            take_str = file_path.stem.split("_")[1]
+            return int(take_str)
+        except (ValueError, IndexError):
+            return None
+
+    def _get_take_files(self, label: str, include_trash: bool = False) -> List[Path]:
+        """Get all take files for a label.
+
+        Args:
+            label: Script label/ID for the utterance
+            include_trash: Whether to include files in trash directory
+
+        Returns:
+            List of Path objects for all take files
+        """
+        files = []
+
+        # Check main directory
+        utterance_dir = self.recording_dir / label
+        if utterance_dir.exists():
+            # Check for both FLAC and WAV files
+            flac_pattern = f"take_*{FileConstants.AUDIO_FILE_EXTENSION}"
+            wav_pattern = f"take_*{FileConstants.LEGACY_AUDIO_FILE_EXTENSION}"
+            files.extend(utterance_dir.glob(flac_pattern))
+            files.extend(utterance_dir.glob(wav_pattern))
+
+        # Check trash directory if requested
+        if include_trash:
+            trash_dir = self.recording_dir.parent / "trash" / label
+            if trash_dir.exists():
+                files.extend(trash_dir.glob("take_*.*"))
+
+        return files
+
+    def _get_take_numbers(self, label: str, include_trash: bool = False) -> Set[int]:
+        """Get all take numbers for a label.
+
+        Args:
+            label: Script label/ID for the utterance
+            include_trash: Whether to include files in trash directory
+
+        Returns:
+            Set of take numbers
+        """
+        take_numbers = set()
+        files = self._get_take_files(label, include_trash)
+
+        for file in files:
+            take_num = self._extract_take_number(file)
+            if take_num is not None:
+                take_numbers.add(take_num)
+
+        return take_numbers
 
     def get_recording_path(self, label: str, take: int) -> Path:
         """Get the path for a recording file.
@@ -69,7 +135,6 @@ class RecordingFileManager:
         Returns:
             bool: True if the recording file exists
         """
-        # Session structure
         utterance_dir = self.recording_dir / label
         if not utterance_dir.exists():
             return False
@@ -82,105 +147,43 @@ class RecordingFileManager:
             utterance_dir / wav_filename
         ).exists()
 
-    def find_latest_take(self, label: str) -> int:
-        """Find the latest take number for a label.
-
-        This method finds the last consecutive take starting from 1.
-        It stops at the first gap in the sequence.
-
-        Args:
-            label: Script label/ID for the utterance
-
-        Returns:
-            int: Latest consecutive take number (0 if no recordings)
-
-        Note:
-            Use get_highest_take() for finding the actual highest take
-            number when gaps may exist.
-        """
-        take = 0
-        while self.recording_exists(label, take + 1):
-            take += 1
-        return take
-
     def get_highest_take(self, label: str) -> int:
-        """Find the highest take number for a label (handles gaps).
-
-        Unlike find_latest_take(), this method finds the actual highest
-        take number by scanning all files matching the label pattern,
-        even if there are gaps in the numbering. Also checks trash directory
-        to avoid conflicts when creating new recordings.
+        """Find the highest take number including trash (for avoiding conflicts).
 
         Args:
             label: Script label/ID for the utterance
 
         Returns:
             int: Highest take number found (0 if no recordings)
-
-        Example:
-            If files exist: take_001.wav, take_003.wav, take_007.wav
-            And in trash: take_008.wav
-            Returns: 8
         """
-        utterance_dir = self.recording_dir / label
-        if not utterance_dir.exists():
-            return 0
+        take_numbers = self._get_take_numbers(label, include_trash=True)
+        return max(take_numbers, default=0)
 
-        highest = 0
+    def scan_all_take_files(self, labels: List[str]) -> dict[str, List[str]]:
+        """Scan for all existing take filenames for given labels.
 
-        # Check for both FLAC and WAV files in main directory
-        flac_pattern = f"take_*{FileConstants.AUDIO_FILE_EXTENSION}"
-        wav_pattern = f"take_*{FileConstants.LEGACY_AUDIO_FILE_EXTENSION}"
-        files = list(utterance_dir.glob(flac_pattern)) + list(
-            utterance_dir.glob(wav_pattern)
-        )
-
-        for file in files:
-            # Extract take number from filename
-            try:
-                # Filename format: take_XXX.wav
-                take_str = file.stem.split("_")[1]
-                take = int(take_str)
-                highest = max(highest, take)
-            except (ValueError, IndexError):
-                # Skip files that don't match expected format
-                continue
-
-        # Also check session-level trash directory to avoid conflicts
-        # trash is at session_dir/trash/<label>/
-        trash_dir = self.recording_dir.parent / "trash" / label
-        if trash_dir.exists():
-            trash_files = list(trash_dir.glob("take_*.*"))
-            for file in trash_files:
-                try:
-                    take_str = file.stem.split("_")[1]
-                    take = int(take_str)
-                    highest = max(highest, take)
-                except (ValueError, IndexError):
-                    continue
-
-        return highest
-
-    def scan_all_takes(self, labels: List[str]) -> dict[str, int]:
-        """Scan for all existing takes for given labels.
-
-        Efficiently scans the recording directory to find the highest
-        take number for each label in the provided list.
+        Efficiently scans the recording directory to find all take
+        filenames for each label in the provided list.
+        Note: This excludes files in the trash directory.
 
         Args:
             labels: List of script labels to scan
 
         Returns:
-            dict: Mapping of label to highest take number
+            dict: Mapping of label to list of filenames (excluding trash)
         """
         takes = {}
         for label in labels:
-            takes[label] = self.get_highest_take(label)
+            files = self._get_take_files(label, include_trash=False)
+            # Extract just the filenames, not full paths
+            filenames = [
+                f.name for f in files if self._extract_take_number(f) is not None
+            ]
+            takes[label] = sorted(filenames)  # Sort for consistent ordering
         return takes
 
-    def get_file_info(
-        self, file_path: Path
-    ) -> Optional[Tuple[int, int, str, int, float]]:
+    @staticmethod
+    def get_file_info(file_path: Path) -> Optional[Tuple[int, int, str, int, float]]:
         """Get audio file information.
 
         Args:
@@ -213,7 +216,8 @@ class RecordingFileManager:
             print(f"Error reading file info: {e}")
             return None
 
-    def load_audio(self, filepath: Path) -> Tuple[np.ndarray, int]:
+    @staticmethod
+    def load_audio(filepath: Path) -> Tuple[np.ndarray, int]:
         """Load audio file and return data with sample rate.
 
         Loads audio data using soundfile, automatically converting
@@ -243,8 +247,9 @@ class RecordingFileManager:
 
         return data, sample_rate
 
+    @staticmethod
     def save_audio(
-        self, filepath: Path, data: np.ndarray, sample_rate: int, subtype: str
+        filepath: Path, data: np.ndarray, sample_rate: int, subtype: str
     ) -> None:
         """Save audio data to file.
 
@@ -259,69 +264,6 @@ class RecordingFileManager:
         else:
             # For FLAC, let soundfile determine format from extension
             sf.write(str(filepath), data, sample_rate)
-
-    def get_available_takes(self, label: str) -> List[int]:
-        """Get list of available take numbers for a label.
-
-        This method only returns consecutive takes starting from 1,
-        stopping at the first gap.
-
-        Args:
-            label: Script label/ID
-
-        Returns:
-            List[int]: List of consecutive take numbers
-
-        Note:
-            Use get_existing_takes() to get all takes including
-            those with gaps.
-        """
-        takes = []
-        take = 1
-        while self.recording_exists(label, take):
-            takes.append(take)
-            take += 1
-        return takes
-
-    def get_existing_takes(self, label: str) -> List[int]:
-        """Get list of all existing take numbers for a label, including with gaps.
-
-        Unlike get_available_takes(), this method finds all takes
-        by pattern matching, so it handles non-consecutive numbering.
-
-        Args:
-            label: Recording label
-
-        Returns:
-            List[int]: Sorted list of existing take numbers
-
-        Example:
-            If files exist: take_001.wav, take_003.wav, take_007.wav
-            Returns: [1, 3, 7]
-        """
-        utterance_dir = self.recording_dir / label
-        if not utterance_dir.exists():
-            return []
-
-        # Check for both FLAC and WAV files
-        flac_pattern = f"take_*{FileConstants.AUDIO_FILE_EXTENSION}"
-        wav_pattern = f"take_*{FileConstants.LEGACY_AUDIO_FILE_EXTENSION}"
-        files = list(utterance_dir.glob(flac_pattern)) + list(
-            utterance_dir.glob(wav_pattern)
-        )
-
-        existing_takes = []
-        for file in files:
-            try:
-                # Extract take number from filename: take_XXX.wav
-                take_str = file.stem.split("_")[1]
-                take = int(take_str)
-                existing_takes.append(take)
-            except (ValueError, IndexError):
-                # Skip files that don't match expected format
-                continue
-
-        return sorted(existing_takes)
 
     def move_to_trash(self, label: str, take: int) -> bool:
         """Move a recording to the trash directory.
@@ -365,37 +307,9 @@ class RecordingFileManager:
         Returns:
             int: Next available take number (1-based)
         """
-        utterance_dir = self.recording_dir / label
-        if not utterance_dir.exists():
-            return 1
-
-        max_take = 0
-
-        # Check active recordings
-        for pattern in [
-            f"take_*{FileConstants.AUDIO_FILE_EXTENSION}",
-            f"take_*{FileConstants.LEGACY_AUDIO_FILE_EXTENSION}",
-        ]:
-            for file in utterance_dir.glob(pattern):
-                try:
-                    take_str = file.stem.split("_")[1]
-                    take = int(take_str)
-                    max_take = max(max_take, take)
-                except (ValueError, IndexError):
-                    continue
-
-        # Also check session-level trash directory to avoid conflicts
-        trash_dir = self.recording_dir.parent / "trash" / label
-        if trash_dir.exists():
-            for file in trash_dir.glob("take_*.*"):
-                try:
-                    take_str = file.stem.split("_")[1]
-                    take = int(take_str)
-                    max_take = max(max_take, take)
-                except (ValueError, IndexError):
-                    continue
-
-        return max_take + 1
+        # Get highest from both active and trash
+        highest = self.get_highest_take(label)  # This already includes trash
+        return highest + 1
 
 
 class ScriptFileManager:
