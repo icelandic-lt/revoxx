@@ -196,6 +196,7 @@ class KeyBindings:
     TOGGLE_FULLSCREEN = "F10"
     SHOW_HELP = "F1"  # Standard help key
     SHOW_INFO = "i"
+    FIND_UTTERANCE = "f"  # Used with Cmd/Ctrl modifier
 
     # Session management - use platform-specific modifier
     NEW_SESSION = "n"  # Ctrl/Cmd+N

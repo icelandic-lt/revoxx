@@ -25,6 +25,7 @@ class RecordingState:
 
     # Current state
     current_index: int = 0
+    display_position: int = 1  # Display position in custom order (1-based)
     is_recording: bool = False
     is_playing: bool = False
 

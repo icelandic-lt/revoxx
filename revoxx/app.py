@@ -24,6 +24,7 @@ from .constants import KeyBindings, UIConstants, FileConstants
 from .utils.config import RecorderConfig, load_config
 from .utils.state import AppState
 from .utils.file_manager import RecordingFileManager, ScriptFileManager
+from .utils.active_recordings import ActiveRecordings
 from .utils.settings_manager import SettingsManager
 from .ui.main_window import MainWindow
 from .ui.dialogs import NewSessionDialog
@@ -114,10 +115,19 @@ class Revoxx:
         if self.current_session:
             # Initialize with session paths
             self.file_manager = RecordingFileManager(self.recording_dir)
+            self.active_recordings = ActiveRecordings(self.file_manager)
+
+            # Load script first to get data
             self._load_script()
+
+            # Then apply saved sort settings from session
+            self.active_recordings.set_sort(
+                self.current_session.sort_column, self.current_session.sort_reverse
+            )
         else:
             # No session yet - will be initialized after session creation/selection
             self.file_manager = None
+            self.active_recordings = None
             self.state.recording.labels = []
             self.state.recording.utterances = []
             self.state.recording.takes = {}
@@ -140,18 +150,27 @@ class Revoxx:
         # Bind keyboard shortcuts
         self._bind_keys()
 
-        # Initial display update
-        self._update_display()
-
         # Set window title if we have a session
         if self.current_session and self.current_session.name:
             self.window.update_session_title(self.current_session.name)
 
-        # Load initial spectrogram after UI is ready
-        if hasattr(self.window, "mel_spectrogram"):
-            self.root.after(
-                UIConstants.INITIAL_DISPLAY_DELAY_MS, self._show_saved_recording
-            )
+        # Resume at last recorded utterance if we have a session
+        if self.current_session:
+            if (
+                self.current_session.last_recorded_index is not None
+                and self.current_session.last_recorded_take is not None
+            ):
+                self._resume_at_last_recording()
+            else:
+                # Show initial state
+                self._update_display()
+                if hasattr(self.window, "mel_spectrogram"):
+                    self.root.after(
+                        UIConstants.INITIAL_DISPLAY_DELAY_MS, self._show_saved_recording
+                    )
+        else:
+            # No session, just update display
+            self._update_display()
 
     def _apply_saved_settings(self) -> None:
         """Apply saved settings to configuration."""
@@ -226,6 +245,9 @@ class Revoxx:
 
         self._reload_script_and_recordings()
 
+        # Set initial index to 0 (will be overridden by resume if needed)
+        self.state.recording.current_index = 0
+
     def _reload_script_and_recordings(self) -> None:
         """Reload script content and scan for existing recordings.
 
@@ -245,19 +267,9 @@ class Revoxx:
             self.state.recording.labels = labels
             self.state.recording.utterances = utterances
 
-            # Scan for existing recordings if file manager is initialized
-            if self.file_manager:
-                self.state.recording.takes = self.file_manager.scan_all_takes(labels)
-            else:
-                self.state.recording.takes = {}
-
-            # Reset to first utterance
-            self.state.recording.current_index = 0
-
-            # Update display if UI is initialized
-            if hasattr(self, "window") and self.window:
-                self._update_display()
-                self._show_saved_recording()
+            # Update active recordings with new data
+            self.active_recordings.set_data(labels, utterances)
+            self.state.recording.takes = self.active_recordings.get_all_takes()
 
         except Exception as e:
             print(f"Error loading script: {e}")
@@ -374,6 +386,8 @@ class Revoxx:
             "get_recent_sessions": self._get_recent_sessions,
             "get_current_session": self._get_current_session,
             "delete_recording": self._delete_current_recording,
+            "show_find_dialog": self._show_find_dialog,
+            "show_utterance_order": self._show_utterance_order,
             "quit": self._quit,
         }
 
@@ -444,6 +458,8 @@ class Revoxx:
             self.root.bind("<Command-O>", lambda e: self._open_session())
             self.root.bind("<Command-i>", lambda e: self._show_session_settings())
             self.root.bind("<Command-I>", lambda e: self._show_session_settings())
+            self.root.bind("<Command-f>", lambda e: self._show_find_dialog())
+            self.root.bind("<Command-F>", lambda e: self._show_find_dialog())
             self.root.bind("<Command-q>", lambda e: self._quit())
             self.root.bind("<Command-Q>", lambda e: self._quit())
         else:
@@ -454,6 +470,8 @@ class Revoxx:
             self.root.bind("<Control-O>", lambda e: self._open_session())
             self.root.bind("<Control-i>", lambda e: self._show_session_settings())
             self.root.bind("<Control-I>", lambda e: self._show_session_settings())
+            self.root.bind("<Control-f>", lambda e: self._show_find_dialog())
+            self.root.bind("<Control-F>", lambda e: self._show_find_dialog())
             self.root.bind("<Control-q>", lambda e: self._quit())
             self.root.bind("<Control-Q>", lambda e: self._quit())
 
@@ -575,7 +593,8 @@ class Revoxx:
 
             # Get next available take number (considers trash) and update state
             take_num = self.file_manager.get_next_take_number(current_label)
-            self.state.recording.takes[current_label] = take_num
+            # Don't update takes count here - it will be updated after recording is saved
+            # The dialogs should show the current count, not the future count
             save_path = self.file_manager.get_recording_path(current_label, take_num)
             self.manager_dict["save_path"] = str(save_path)
         else:
@@ -704,7 +723,8 @@ class Revoxx:
                 # Wait a bit for the file to be saved by the recording process
                 # then load and display the recording
                 self.root.after(
-                    UIConstants.POST_RECORDING_DELAY_MS, self._show_saved_recording
+                    UIConstants.POST_RECORDING_DELAY_MS,
+                    lambda: self._after_recording_saved(current_label),
                 )
 
             # Update display
@@ -891,26 +911,31 @@ class Revoxx:
         except Exception:
             pass
 
-        # Update index
-        new_index = self.state.recording.current_index + direction
-        if 0 <= new_index < len(self.state.recording.utterances):
-            self.state.recording.current_index = new_index
+        new_index = self.active_recordings.navigate(
+            self.state.recording.current_index, direction
+        )
 
-            # Set to the highest available take for this utterance
-            current_label = self.state.recording.current_label
-            if current_label:
-                highest_take = self.file_manager.get_highest_take(current_label)
-                self.state.recording.set_displayed_take(current_label, highest_take)
+        if new_index is None:
+            return  # No more utterances in that direction
 
-            # Show saved recording if available
-            self._show_saved_recording()
+        # Update to new index
+        self.state.recording.current_index = new_index
 
-            # Update display
-            self._update_display()
+        # Set to the highest available take for this utterance
+        current_label = self.state.recording.current_label
+        if current_label:
+            highest_take = self.active_recordings.get_highest_take(current_label)
+            self.state.recording.set_displayed_take(current_label, highest_take)
 
-            # Update info overlay if visible
-            if self.window.info_overlay.visible:
-                self._update_info_overlay()
+        # Show saved recording if available
+        self._show_saved_recording()
+
+        # Update display
+        self._update_display()
+
+        # Update info overlay if visible
+        if self.window.info_overlay.visible:
+            self._update_info_overlay()
 
     def _browse_takes(self, direction: int) -> None:
         """Browse through different takes."""
@@ -925,7 +950,7 @@ class Revoxx:
 
         # Get current take and all existing takes
         current_take = self.state.recording.get_current_take(current_label)
-        existing_takes = self.file_manager.get_existing_takes(current_label)
+        existing_takes = self.active_recordings.get_existing_takes(current_label)
 
         if not existing_takes:
             return
@@ -973,7 +998,7 @@ class Revoxx:
             return
 
         current_take = self.state.recording.get_current_take(current_label)
-        existing_takes = self.file_manager.get_existing_takes(current_label)
+        existing_takes = self.active_recordings.get_existing_takes(current_label)
 
         # Update label with filename if we have a recording
         if current_take > 0:
@@ -1361,25 +1386,19 @@ class Revoxx:
                 self.window.set_status("Failed to move recording to trash")
                 return
 
-            # Update the takes count - find the highest existing take
-            max_take = 0
-            for take in range(1, current_take + 10):  # Check a reasonable range
-                test_path = self.file_manager.get_recording_path(current_label, take)
-                if test_path.exists() and take != current_take:
-                    max_take = take
-
-            # Update state with new max take
-            self.state.recording.takes[current_label] = max_take
+            # Invalidate cache after deletion
+            self.active_recordings.on_recording_deleted(current_label, current_take)
 
             # If we deleted the currently displayed take, find the next best one
             if current_take == self.state.recording.get_current_take(current_label):
-                if max_take > 0:
-                    # Find the highest available take to display
-                    best_take = max_take
-                    self.state.recording.set_displayed_take(current_label, best_take)
-                else:
-                    # No takes left
-                    self.state.recording.set_displayed_take(current_label, 0)
+                # Find the next best take to display
+                best_take = self.active_recordings.find_next_best_take(
+                    current_label, current_take
+                )
+                self.state.recording.set_displayed_take(current_label, best_take)
+
+            # Update takes from active recordings
+            self.state.recording.takes = self.active_recordings.get_all_takes()
 
             # Update display
             self._show_saved_recording()
@@ -1389,12 +1408,67 @@ class Revoxx:
         except Exception as e:
             self.window.set_status(f"Error deleting recording: {e}")
 
+    def _get_display_position(self, actual_index: int) -> int:
+        """Get the display position for an actual index.
+
+        Args:
+            actual_index: The actual index in the utterances list
+
+        Returns:
+            The display position (1-based) in the current order
+        """
+        return self.active_recordings.get_display_position(actual_index)
+
     def _update_display(self) -> None:
         """Update the main display."""
+        # Update display position in state
+        self.state.recording.display_position = self._get_display_position(
+            self.state.recording.current_index
+        )
+
+        # Pass to window
         self.window.update_display(
-            self.state.recording.current_index, self.state.recording.is_recording
+            self.state.recording.current_index,
+            self.state.recording.is_recording,
+            self.state.recording.display_position,
         )
         self._update_take_status()
+
+    def _after_recording_saved(self, label: str) -> None:
+        """Called after a recording has been saved to disk.
+
+        Args:
+            label: The label of the recording that was saved
+        """
+        # Invalidate cache since we have a new recording
+        self.active_recordings.on_recording_completed(label)
+
+        # Update takes from active recordings
+        self.state.recording.takes = self.active_recordings.get_all_takes()
+
+        # Update the displayed take to the new recording
+        current_label = self.state.recording.current_label
+        if current_label == label:
+            highest_take = self.active_recordings.get_highest_take(current_label)
+            if highest_take > 0:
+                self.state.recording.set_displayed_take(current_label, highest_take)
+
+                # Save this as the last recorded utterance in the session
+                self.current_session.last_recorded_index = (
+                    self.state.recording.current_index
+                )
+                self.current_session.last_recorded_take = highest_take
+                self.current_session.save()
+
+        # Show the saved recording
+        self._show_saved_recording()
+
+        # Update take status display
+        self._update_take_status()
+
+        # Update info overlay if visible
+        if self.window.info_overlay.visible:
+            self._update_info_overlay()
 
     def _stop_synchronized_playback(self) -> None:
         """Stop synchronized playback."""
@@ -1529,6 +1603,141 @@ class Revoxx:
         """Show the session settings dialog."""
         self.window._show_session_settings()
 
+    def _show_find_dialog(self):
+        """Show find dialog for searching and navigating to utterances."""
+        from .ui.dialogs.find_dialog import FindDialog
+
+        # Get current sorted order
+        sorted_indices = self.active_recordings.get_sorted_indices()
+
+        # Create and show dialog with current sort settings
+        dialog = FindDialog(
+            self.root,
+            self.state.recording.utterances,
+            self.state.recording.labels,
+            self.file_manager,
+            self.state.recording.current_index,
+            self._find_utterance,
+            sorted_indices,
+            self.active_recordings.sort_column,
+            self.active_recordings.sort_reverse,
+        )
+        dialog.show()
+
+    def _show_utterance_order(self):
+        """Show utterance order dialog for managing the display order."""
+        from .ui.dialogs.utterance_order_dialog import UtteranceOrderDialog
+
+        # Get current sorted order
+        sorted_indices = self.active_recordings.get_sorted_indices()
+
+        # Create and show dialog
+        dialog = UtteranceOrderDialog(
+            self.root,
+            self.state.recording.utterances,
+            self.state.recording.labels,
+            self.file_manager,
+            sorted_indices,
+            self.active_recordings.sort_column,
+            self.active_recordings.sort_reverse,
+            self.state.recording.current_index,  # Pass current index for selection
+        )
+
+        result = dialog.show()
+
+        if result is not None:
+            # Result should be (sort_column, sort_reverse)
+            sort_column, sort_reverse = result
+
+            # Update active_recordings
+            self.active_recordings.set_sort(sort_column, sort_reverse)
+
+            # Save to session
+            if self.current_session:
+                self.current_session.sort_column = sort_column
+                self.current_session.sort_reverse = sort_reverse
+                self.current_session.save()
+                self.window.set_status("Utterance order saved")
+
+                # Update display
+                self._update_display()
+
+    def _find_utterance(self, index: int):
+        """Navigate directly to a specific utterance by index.
+
+        Args:
+            index: The utterance index to jump to
+        """
+        # Stop any current activity
+        if self.state.recording.is_recording:
+            self._stop_recording()
+
+        self._stop_synchronized_playback()
+        if hasattr(self.window, "mel_spectrogram"):
+            self.window.mel_spectrogram.stop_playback()
+
+        # Reset level meter via shared state
+        try:
+            self.shared_state.reset_level_meter()
+        except Exception:
+            pass
+
+        # Update index
+        if 0 <= index < len(self.state.recording.utterances):
+            self.state.recording.current_index = index
+
+            # Set to the highest available take for this utterance
+            current_label = self.state.recording.current_label
+            if current_label:
+                highest_take = self.active_recordings.get_highest_take(current_label)
+                self.state.recording.set_displayed_take(current_label, highest_take)
+
+            # Show saved recording if available
+            self._show_saved_recording()
+
+            # Update display
+            self._update_display()
+
+            # Update info overlay if visible
+            if self.window.info_overlay.visible:
+                self._update_info_overlay()
+
+    def _resume_at_last_recording(self) -> None:
+        """Resume at the last recorded utterance if available in session."""
+        if not self.current_session:
+            return
+
+        if (
+            self.current_session.last_recorded_index is not None
+            and self.current_session.last_recorded_take is not None
+        ):
+
+            # Check if the index is valid
+            if (
+                0
+                <= self.current_session.last_recorded_index
+                < len(self.state.recording.utterances)
+            ):
+                self._find_utterance(self.current_session.last_recorded_index)
+
+                # Now check if we need to set a specific take
+                current_label = self.state.recording.current_label
+                existing_takes = self.active_recordings.get_existing_takes(
+                    current_label
+                )
+
+                if self.current_session.last_recorded_take in existing_takes:
+                    # Set the specific take if it's different from what _find_utterance set
+                    current_take = self.state.recording.get_current_take(current_label)
+                    if current_take != self.current_session.last_recorded_take:
+                        self.state.recording.set_displayed_take(
+                            current_label, self.current_session.last_recorded_take
+                        )
+                        self._show_saved_recording()
+                        self._update_take_status()
+
+                self.window.set_status(f"Resumed at last recording: {current_label}")
+
     def _load_session(self, session: Session):
         """Load a session and update the application state."""
         self.current_session = session
@@ -1539,9 +1748,20 @@ class Revoxx:
 
         # Initialize or reinitialize file manager with new recording dir
         self.file_manager = RecordingFileManager(self.recording_dir)
+        self.active_recordings = ActiveRecordings(self.file_manager)
+
+        # Apply saved sort settings from session
+        if session:
+            self.active_recordings.set_sort(session.sort_column, session.sort_reverse)
 
         # Load script and scan recordings
         self._reload_script_and_recordings()
+
+        # Set default to first utterance
+        self.state.recording.current_index = 0
+
+        # Resume at last recorded utterance
+        self._resume_at_last_recording()
 
         # Apply session audio config to runtime config
         if session.audio_config:
@@ -1947,9 +2167,10 @@ def main() -> None:
     # Create and run application
     app = Revoxx(config, session, debug=args.debug)
 
-    # Set starting index if we have a session
-    if session and hasattr(app.state, "recording"):
-        app.state.recording.current_index = args.start_idx
+    # Set starting index if explicitly provided
+    if args.start_idx != 0 and session and hasattr(app.state, "recording"):
+        # Use _find_utterance to properly set the index with all updates
+        app._find_utterance(args.start_idx)
 
     # Run
     app.run()

@@ -151,6 +151,12 @@ class Session:
     created_at: Optional[datetime] = None
     modified_at: Optional[datetime] = None
     session_dir: Optional[Path] = None
+    # Sorting configuration
+    sort_column: str = "label"  # Default: alphabetical by label
+    sort_reverse: bool = False
+    # Last recorded utterance (to resume where left off)
+    last_recorded_index: Optional[int] = None
+    last_recorded_take: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -171,6 +177,16 @@ class Session:
 
         if self.modified_at:
             data["modified_at"] = self.modified_at.isoformat()
+
+        # Save sort configuration
+        data["sort_column"] = self.sort_column
+        data["sort_reverse"] = self.sort_reverse
+
+        # Save last recorded utterance info
+        if self.last_recorded_index is not None:
+            data["last_recorded_index"] = self.last_recorded_index
+        if self.last_recorded_take is not None:
+            data["last_recorded_take"] = self.last_recorded_take
 
         return data
 
@@ -205,6 +221,21 @@ class Session:
 
         if "modified_at" in data:
             session.modified_at = datetime.fromisoformat(data["modified_at"])
+
+        # Load sort configuration
+        session.sort_column = data.get("sort_column", "label")
+        session.sort_reverse = data.get("sort_reverse", False)
+
+        # Load last recorded utterance info
+        session.last_recorded_index = data.get("last_recorded_index")
+        session.last_recorded_take = data.get("last_recorded_take")
+
+        # Handle legacy utterance_order for backwards compatibility
+        if "utterance_order" in data and "sort_column" not in data:
+            # Old session with utterance_order - don't try to restore it
+            # Just use default sorting
+            session.sort_column = "label"
+            session.sort_reverse = False
 
         return session
 

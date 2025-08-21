@@ -272,6 +272,21 @@ class MainWindow:
         edit_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Edit", menu=edit_menu)
 
+        # Find utterance
+        find_accel = "Cmd+F" if platform.system() == "Darwin" else "Ctrl+F"
+        find_cmd = (
+            self.app_callbacks.get("show_find_dialog")
+            if self.app_callbacks and "show_find_dialog" in self.app_callbacks
+            else lambda: None
+        )
+        edit_menu.add_command(
+            label="Find Utterance...",
+            command=find_cmd,
+            accelerator=find_accel,
+        )
+
+        edit_menu.add_separator()
+
         # Delete recording
         delete_accel = "Cmd+D" if platform.system() == "Darwin" else "Ctrl+D"
         delete_cmd = (
@@ -283,6 +298,19 @@ class MainWindow:
             label="Delete Recording",
             command=delete_cmd,
             accelerator=delete_accel,
+        )
+
+        edit_menu.add_separator()
+
+        # Utterance Order
+        order_cmd = (
+            self.app_callbacks.get("show_utterance_order")
+            if self.app_callbacks and "show_utterance_order" in self.app_callbacks
+            else lambda: None
+        )
+        edit_menu.add_command(
+            label="Utterance Order...",
+            command=order_cmd,
         )
 
         # View menu
@@ -453,6 +481,7 @@ RECORDING CONTROLS:
 NAVIGATION:
   ↑/↓        Navigate Previous/Next Utterance
   ←/→        Browse Takes (Previous/Next)
+  {cmd_key}+F      Find Utterance
 
 DISPLAY:
   M          Toggle Mel Spectrogram
@@ -858,7 +887,9 @@ A tool for recording (emotional) speech datasets."""
             if hasattr(self, "info_overlay"):
                 self.info_overlay.update_position()
 
-    def update_display(self, index: int, is_recording: bool) -> None:
+    def update_display(
+        self, index: int, is_recording: bool, display_position: int
+    ) -> None:
         """Update the display with current utterance.
 
         Updates the main text display, label, progress counter, and
@@ -867,11 +898,14 @@ A tool for recording (emotional) speech datasets."""
         Args:
             index: Current utterance index
             is_recording: Whether currently recording
+            display_position: Display position for progress counter (1-based)
         """
         if 0 <= index < len(self.recording_state.utterances):
             self.text_var.set(self.recording_state.utterances[index])
             self.label_var.set(f"{self.recording_state.labels[index]}:")
-            self.progress_var.set(f"{index + 1}/{len(self.recording_state.utterances)}")
+            self.progress_var.set(
+                f"{display_position}/{len(self.recording_state.utterances)}"
+            )
 
         # Update recording indicator
         if is_recording:
@@ -1064,7 +1098,9 @@ A tool for recording (emotional) speech datasets."""
         the current utterance display.
         """
         self.update_display(
-            self.recording_state.current_index, self.recording_state.is_recording
+            self.recording_state.current_index,
+            self.recording_state.is_recording,
+            self.recording_state.display_position,
         )
 
     def focus_window(self) -> None:
