@@ -1,27 +1,44 @@
-"""Audio controller for recording and playback operations."""
+"""Audio controller for orchestrating recording and playback operations.
 
-import queue
+This controller acts as the high-level orchestrator for all audio-related
+operations in the application. It coordinates between different subsystems
+and manages the overall audio workflow.
+"""
+
 import time
-import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 import sounddevice as sd
 
 from ..constants import UIConstants
 from ..utils.device_manager import get_device_manager
+from ..audio.audio_queue_processor import AudioQueueProcessor
 
 if TYPE_CHECKING:
     from ..app import Revoxx
 
 
 class AudioController:
-    """Handles audio recording and playback operations.
+    """High-level orchestrator for audio operations.
 
-    This controller manages:
-    - Recording start/stop
-    - Playback control
-    - Monitoring mode
-    - Audio capture and processing
+    This controller is responsible for:
+    - **Recording Control**: Starting/stopping recordings, managing recording state
+    - **Playback Control**: Playing audio files, managing synchronized playback
+    - **Monitoring Mode**: Live audio input monitoring with visualizations
+    - **Device Management**: Verifying and managing audio input/output devices
+    - **Mode Coordination**: Switching between recording/monitoring/playback modes
+    - **UI State Management**: Preserving and restoring UI state during mode changes
+
+    The controller delegates low-level audio queue processing to AudioQueueProcessor
+    and coordinates with other controllers (FileManager, DisplayController, etc.)
+    for a complete audio workflow.
+
+    Attributes:
+        app: Reference to the main application
+        is_monitoring: Whether monitoring mode is active
+        saved_spectrogram_state: Preserved spectrogram visibility state
+        saved_level_meter_state: Preserved level meter visibility state
+        audio_queue_processor: Handles audio data queue processing
     """
 
     def __init__(self, app: "Revoxx"):
@@ -34,7 +51,88 @@ class AudioController:
         self.is_monitoring = False
         self.saved_spectrogram_state = None
         self.saved_level_meter_state = None
-        self.transfer_thread = None
+        self.audio_queue_processor = AudioQueueProcessor(app)
+
+    @staticmethod
+    def _refresh_device_manager():
+        """Refresh the audio device manager to detect any hardware changes.
+
+        The device manager caches the list of available audio devices. This method
+        forces it to re-scan the system for any newly connected or disconnected
+        audio devices.
+
+        Returns:
+            DeviceManager instance with refreshed device list, or None if the
+            device manager service is unavailable.
+        """
+        try:
+            device_manager = get_device_manager()
+            device_manager.refresh()
+            return device_manager
+        except (ImportError, RuntimeError):
+            # Device manager might not be available or initialized
+            return None
+
+    def _verify_output_device(self) -> None:
+        """Verify output device is still available, fallback to default if not."""
+        if self.app.config.audio.output_device is None:
+            return
+
+        device_manager = self._refresh_device_manager()
+        if not device_manager:
+            return
+
+        available = [d["index"] for d in device_manager.get_output_devices()]
+        if self.app.config.audio.output_device not in available:
+            self.app.window.set_status(
+                "Selected output device not found. Using system default."
+            )
+            self.app.queue_manager.set_output_device(None)
+
+    def _verify_input_device(self) -> None:
+        """Verify input device is still available, fallback to default if not."""
+        if self.app.config.audio.input_device is None:
+            return
+
+        device_manager = self._refresh_device_manager()
+        if not device_manager:
+            return
+
+        available = [d["index"] for d in device_manager.get_input_devices()]
+        if self.app.config.audio.input_device not in available:
+            self.app.window.set_status(
+                "Selected input device not found. Using system default."
+            )
+            self.app.queue_manager.set_input_device(None)
+
+    def stop_all_playback_activities(self) -> None:
+        """Stop all current playback and monitoring activities.
+
+        Ensure consistent playback stopping behavior across navigation, recording,
+        and playback.
+        """
+        if self.is_monitoring:
+            self.stop_monitoring_mode()
+
+        # Stop playback exactly like Left/Right keys do
+        sd.stop()  # Immediate stop in main process
+        self.stop_synchronized_playback()
+        if hasattr(self.app.window, "mel_spectrogram"):
+            self.app.window.mel_spectrogram.stop_playback()
+
+        # Reset meter via shared state before starting a new playback
+        try:
+            self.app.shared_state.reset_level_meter()
+        except AttributeError:
+            pass
+
+        # Give the playback process time to handle the stop command
+        time.sleep(UIConstants.PLAYBACK_STOP_DELAY)
+        # Also clear playback status to IDLE
+        try:
+            self.app.shared_state.stop_playback()
+        except AttributeError:
+            pass
 
     def toggle_recording(self) -> None:
         """Toggle recording state."""
@@ -51,133 +149,84 @@ class AudioController:
         """Stop recording."""
         self._stop_audio_capture("recording")
 
+    def _execute_playback(self, filepath: Path) -> None:
+        """Execute playback of audio file.
+
+        Args:
+            filepath: Path to the audio file to play
+        """
+        if not filepath.exists():
+            return
+
+        # Load audio
+        audio_data, sr = self.app.file_manager.load_audio(filepath)
+        duration = len(audio_data) / sr
+
+        # Reset meter when starting playback of a file
+        if (
+            hasattr(self.app.window, "embedded_level_meter")
+            and self.app.window.embedded_level_meter
+        ):
+            try:
+                self.app.window.embedded_level_meter.reset()
+            except AttributeError:
+                # Level meter might not exist or have reset method
+                pass
+
+        # Create shared audio buffer using buffer manager
+        audio_buffer = self.app.buffer_manager.create_buffer(audio_data)
+        metadata = audio_buffer.get_metadata()
+
+        # Send play command with buffer metadata
+        self.app.queue_manager.start_playback(buffer_metadata=metadata, sample_rate=sr)
+
+        # Close our reference but don't unlink - buffer manager handles lifecycle
+        audio_buffer.close()
+
+        # Start animations
+        if hasattr(self.app.window, "mel_spectrogram"):
+            self.app.window.mel_spectrogram.start_playback(duration, sr)
+
+        # Note: Level meter updates during playback happen automatically
+        # via shared memory from the playback process (AudioPlayer._update_level_meter)
+
     def play_current(self) -> None:
         """Play current recording."""
         if not self.app.state.is_ready_to_play():
             self.app.window.show_message("No recording available")
             return
 
-        # Stop monitoring if active
-        if self.is_monitoring:
-            self.stop_monitoring_mode()
-
-        # Stop playback exactly like Left/Right keys do
-        sd.stop()  # Immediate stop in main process
-        self.stop_synchronized_playback()
-        if hasattr(self.app.window, "mel_spectrogram"):
-            self.app.window.mel_spectrogram.stop_playback()
-
-        # Reset meter via shared state before starting a new playback
-        try:
-            self.app.shared_state.reset_level_meter()
-        except AttributeError:
-            # Shared state or method might not exist
-            pass
-
-        # Give the playback process time to handle the stop command
-        time.sleep(UIConstants.PLAYBACK_STOP_DELAY)
-        # Also clear playback status to IDLE
-        try:
-            self.app.shared_state.stop_playback()
-        except AttributeError:
-            # Shared state or method might not exist
-            pass
+        # Stop all current playback/monitoring
+        self.stop_all_playback_activities()
 
         current_label = self.app.state.recording.current_label
         current_take = self.app.state.recording.get_current_take(current_label)
 
-        # If default output device is in effect and not yet notified, inform user once
-        if self.app._default_output_in_effect and not self.app._notified_default_output:
-            try:
-                self.app.window.show_message(
-                    "Using system default output device (no saved/available selection)"
-                )
-            except AttributeError:
-                # Window or method might not exist
-                pass
-            self.app._notified_default_output = True
+        # Handle device notifications
+        self.app.notify_if_default_device("output")
 
-        # Additionally, warn once if last stream open failed or device likely unavailable
-        if hasattr(self.app, "last_output_error") and self.app.last_output_error:
-            self.app.window.set_status(
-                "Output device unavailable. Using system default if possible."
-            )
-            self.app.last_output_error = False
+        # Refresh and verify output device
+        self._verify_output_device()
 
-        # Quick rescan before playback
-        try:
-            device_manager = get_device_manager()
-            device_manager.refresh()
-        except (ImportError, RuntimeError):
-            # Device manager might not be available or initialized
-            pass
-
-        # Verify selected output device still exists (if set)
-        if self.app.config.audio.output_device is not None:
-            device_manager = get_device_manager()
-            available = [d["index"] for d in device_manager.get_output_devices()]
-            if self.app.config.audio.output_device not in available:
-                self.app.window.set_status(
-                    "Selected output device not found. Using system default."
-                )
-                try:
-                    self.app.playback_queue.put(
-                        {"action": "set_output_device", "index": None}, block=False
-                    )
-                except (queue.Full, AttributeError):
-                    # Queue might be full or not exist
-                    pass
-
-        # Hardware synchronized playback
+        # Execute playback
         filepath = self.app.file_manager.get_recording_path(current_label, current_take)
-        if filepath.exists():
-            # Load audio
-            audio_data, sr = self.app.file_manager.load_audio(filepath)
-            duration = len(audio_data) / sr
-
-            # Reset meter when starting playback of a file
-            if (
-                hasattr(self.app.window, "embedded_level_meter")
-                and self.app.window.embedded_level_meter
-            ):
-                try:
-                    self.app.window.embedded_level_meter.reset()
-                except AttributeError:
-                    # Level meter might not exist or have reset method
-                    pass
-
-            # Create shared audio buffer using buffer manager
-            audio_buffer = self.app.buffer_manager.create_buffer(audio_data)
-
-            # Send play command with buffer metadata
-            self.app.playback_queue.put(
-                {
-                    "action": "play",
-                    "buffer_metadata": audio_buffer.get_metadata(),
-                    "sample_rate": sr,
-                }
-            )
-
-            # Close our reference but don't unlink - buffer manager handles lifecycle
-            audio_buffer.close()
-
-            # Start animations
-            if hasattr(self.app.window, "mel_spectrogram"):
-                self.app.window.mel_spectrogram.start_playback(duration, sr)
-
-            # Update level meter for playback if visible
-            level_meter_visible = (
-                self.app.window.level_meter_var.get()
-                if hasattr(self.app.window, "level_meter_var")
-                else False
-            )
-            if level_meter_visible:
-                # Schedule periodic updates during playback
-                self.start_playback_level_monitoring(filepath)
+        self._execute_playback(filepath)
 
     def stop_synchronized_playback(self) -> None:
-        """Stop synchronized playback."""
-        self.app.playback_queue.put({"action": "stop"})
+        """Stop audio playback that is synchronized with visual elements.
+
+        This stops playback in the background audio process which is synchronized
+        with the spectrogram display and position cursor. The synchronization happens
+        via shared memory between the playback process and the UI.
+
+        Side effects:
+        - Sends stop command to playback process via queue
+        - Resets the level meter display to idle state
+
+        Note: The corresponding start is handled by play_current() which initiates
+        synchronized playback of the current recording.
+        """
+        self.app.queue_manager.stop_playback()
         # Also reset level meter when playback stops
         if (
             hasattr(self.app.window, "embedded_level_meter")
@@ -204,18 +253,17 @@ class AudioController:
         """Stop monitoring mode - restore UI state."""
         self._stop_audio_capture("monitoring")
 
-    def start_playback_level_monitoring(self, filepath: Path) -> None:
-        """Start monitoring audio levels during playback.
-
-        Args:
-            filepath: Path to the audio file being played
-        """
-        # This is a placeholder for level monitoring during playback
-        # The actual implementation would need to monitor the shared state
-        # or audio output to update the level meter
-
     def _start_audio_capture(self, mode: str) -> None:
         """Start audio capture in recording or monitoring mode.
+
+        This method coordinates the startup of audio capture across multiple components:
+        1. Stops any conflicting audio operations (playback, other recordings)
+        2. Configures the UI for the selected mode (shows spectrogram, level meter)
+        3. Sends start command to the recording process via queue
+        4. Updates application state to reflect active capture
+
+        Recording mode: Captures audio to file for saving
+        Monitoring mode: Captures audio for level display only (no file saved)
 
         Args:
             mode: Must be either 'recording' or 'monitoring'
@@ -225,64 +273,136 @@ class AudioController:
                 f"Invalid mode: {mode}. Must be 'recording' or 'monitoring'"
             )
 
-        is_recording = mode == "recording"
+        # Prepare for audio capture
+        self._prepare_for_audio_capture(mode)
 
-        # Stop any active monitoring or playback
+        # Mode-specific setup
+        if mode == "recording":
+            if not self._setup_recording_mode():
+                return  # No current label, can't record
+        else:
+            self._setup_monitoring_mode()
+
+        # Execute the actual audio capture start
+        self._do_start_audio_capture(mode)
+
+    def _prepare_for_audio_capture(self, mode: str) -> None:
+        """Prepare system for audio capture by stopping conflicting operations.
+
+        Audio capture requires exclusive access to the audio input device.
+        This method stops any operations that would conflict:
+        - Active monitoring (if starting recording)
+        - Active playback (can't record and play simultaneously)
+        - Previous recording sessions
+
+        This ensures clean state before starting new capture.
+        """
+        # Stop any active monitoring
         if self.is_monitoring:
             self.stop_monitoring_mode()
-        if is_recording:
+
+        # Stop playback only for recording
+        if mode == "recording":
             self.stop_synchronized_playback()
 
-        # Recording-specific setup
-        if is_recording:
-            # Update state
-            self.app.state.recording.is_recording = True
-            current_label = self.app.state.recording.current_label
+    def _setup_recording_mode(self) -> bool:
+        """Set up recording mode for capturing audio to file.
 
-            if not current_label:
-                return
+        Prepares the recording environment by:
+        1. Setting recording state flags
+        2. Getting next available take number for the current label
+        3. Creating file path for the new recording
+        4. Storing path in shared dict for the recording process
 
-            # Get next available take number (considers trash) and update state
-            take_num = self.app.file_manager.get_next_take_number(current_label)
-            # Don't update takes count here - it will be updated after recording is saved
-            # The dialogs should show the current count, not the future count
-            save_path = self.app.file_manager.get_recording_path(
-                current_label, take_num
-            )
-            self.app.manager_dict["save_path"] = str(save_path)
-        else:
-            # Monitoring-specific setup
-            self.is_monitoring = True
-            # Save current UI state
-            self.saved_spectrogram_state = self.app.state.ui.spectrogram_visible
-            self.saved_level_meter_state = (
-                self.app.window.level_meter_var.get()
-                if hasattr(self.app.window, "level_meter_var")
-                else False
-            )
+        Returns:
+            True if setup successful, False if no current label
+        """
+        self.app.state.recording.is_recording = True
+        current_label = self.app.state.recording.current_label
 
-            # Show both visualizations
-            if not self.app.state.ui.spectrogram_visible:
-                self.app.display_controller.toggle_mel_spectrogram()
-            if (
-                hasattr(self.app.window, "level_meter_var")
-                and not self.app.window.level_meter_var.get()
-            ):
-                self.app.window._toggle_level_meter_callback()
-                self.app.settings_manager.update_setting("show_level_meter", True)
-                self.app.root.update_idletasks()
+        if not current_label:
+            return False
 
-            # Reset level meter when entering monitoring mode
-            if (
-                hasattr(self.app.window, "embedded_level_meter")
-                and self.app.window.embedded_level_meter
-            ):
-                try:
-                    self.app.window.embedded_level_meter.reset()
-                except AttributeError:
-                    # Level meter might not exist or have reset method
-                    pass
+        # Get next available take number and set save path
+        take_num = self.app.file_manager.get_next_take_number(current_label)
+        save_path = self.app.file_manager.get_recording_path(current_label, take_num)
+        self.app.manager_dict["save_path"] = str(save_path)
+        return True
 
+    def _setup_monitoring_mode(self) -> None:
+        """Set up monitoring mode for live audio level display.
+
+        Monitoring mode shows real-time audio input levels without saving to file.
+        This is useful for:
+        - Checking microphone levels before recording
+        - Adjusting input gain
+        - Testing audio setup
+
+        The method preserves current UI state so it can be restored when
+        monitoring stops.
+        """
+        self.is_monitoring = True
+
+        # Save current UI state
+        self._save_ui_state_for_monitoring()
+
+        # Show monitoring visualizations
+        self._show_monitoring_visualizations()
+
+        # Reset level meter
+        self._reset_level_meter()
+
+    def _save_ui_state_for_monitoring(self) -> None:
+        """Save current UI state before entering monitoring mode.
+
+        Monitoring mode temporarily shows the spectrogram and level meter
+        even if they were hidden. This method saves the current visibility
+        state so the UI can be restored to user preferences when monitoring
+        ends.
+        """
+        self.saved_spectrogram_state = self.app.state.ui.spectrogram_visible
+        self.saved_level_meter_state = (
+            self.app.window.level_meter_var.get()
+            if hasattr(self.app.window, "level_meter_var")
+            else False
+        )
+
+    def _show_monitoring_visualizations(self) -> None:
+        """Enable visualizations for monitoring mode."""
+        # Show spectrogram if not visible
+        if not self.app.state.ui.spectrogram_visible:
+            self.app.display_controller.toggle_mel_spectrogram()
+
+        # Show level meter if not visible
+        if (
+            hasattr(self.app.window, "level_meter_var")
+            and not self.app.window.level_meter_var.get()
+        ):
+            self.app.window.toggle_level_meter_callback()
+            self.app.settings_manager.update_setting("show_level_meter", True)
+            self.app.root.update_idletasks()
+
+    def _reset_level_meter(self) -> None:
+        """Reset level meter when entering monitoring mode."""
+        if (
+            hasattr(self.app.window, "embedded_level_meter")
+            and self.app.window.embedded_level_meter
+        ):
+            try:
+                self.app.window.embedded_level_meter.reset()
+            except AttributeError:
+                # Level meter might not exist or have reset method
+                pass
+
+    def _do_start_audio_capture(self, mode: str) -> None:
+        """Execute the actual audio capture start.
+
+        This is the final step that actually begins audio capture by:
+        1. Clearing the spectrogram display for fresh data
+        2. Starting spectrogram recording at current sample rate
+        3. Sending start command to the recording process
+        4. Updating status message in UI
+        """
         # Clear and start spectrogram
         if hasattr(self.app.window, "mel_spectrogram"):
             self.app.window.mel_spectrogram.clear()
@@ -291,6 +411,25 @@ class AudioController:
             )
 
         # Update info overlay
+        self._update_info_overlay_for_capture(mode)
+
+        # Handle device notifications and verify availability
+        self.app.notify_if_default_device("input")
+        self._verify_input_device()
+
+        # Start audio capture
+        self.app.queue_manager.start_recording()
+
+        # Update UI based on mode
+        if mode == "recording":
+            self.app.display_controller.update_display()
+        else:
+            self.app.window.set_status("Monitoring input levels...")
+            if hasattr(self.app.window, "monitoring_var"):
+                self.app.window.monitoring_var.set(True)
+
+    def _update_info_overlay_for_capture(self, mode: str) -> None:
+        """Update info overlay for audio capture."""
         if self.app.window.info_overlay.visible:
             recording_params = {
                 "sample_rate": self.app.config.audio.sample_rate,
@@ -303,48 +442,6 @@ class AudioController:
                 is_monitoring=(mode == "monitoring"),
             )
 
-        # If default input device is in effect and not yet notified, inform user once
-        if self.app._default_input_in_effect and not self.app._notified_default_input:
-            try:
-                self.app.window.show_message(
-                    "Using system default input device (no saved/available selection)"
-                )
-            except AttributeError:
-                # Window or method might not exist
-                pass
-            self.app._notified_default_input = True
-
-        # Preflight: quick rescan and availability check
-        try:
-            device_manager = get_device_manager()
-            device_manager.refresh()
-        except (ImportError, RuntimeError):
-            # Device manager might not be available or initialized
-            pass
-
-        # Verify selected input device still exists (if set)
-        if self.app.config.audio.input_device is not None:
-            device_manager = get_device_manager()
-            available = [d["index"] for d in device_manager.get_input_devices()]
-            if self.app.config.audio.input_device not in available:
-                # Device missing → message and fallback to default for this run
-                self.app.window.set_status(
-                    "Selected input device not found. Using system default."
-                )
-                # Do not change persisted selection; just let record process try with None
-                self.app.record_queue.put({"action": "set_input_device", "index": None})
-
-        # Start audio capture
-        self.app.record_queue.put({"action": "start"})
-
-        # Update UI
-        if is_recording:
-            self.app.display_controller.update_display()
-        else:
-            self.app.window.set_status("Monitoring input levels...")
-            if hasattr(self.app.window, "monitoring_var"):
-                self.app.window.monitoring_var.set(True)
-
     def _stop_audio_capture(self, mode: str) -> None:
         """Stop audio capture in recording or monitoring mode.
 
@@ -356,76 +453,87 @@ class AudioController:
                 f"Invalid mode: {mode}. Must be 'recording' or 'monitoring'"
             )
 
-        is_recording = mode == "recording"
+        # Execute the actual audio capture stop
+        self._do_stop_audio_capture()
 
-        # Stop audio capture & spectrogram
-        self.app.record_queue.put({"action": "stop"})
+        # Mode-specific cleanup
+        if mode == "recording":
+            self._cleanup_recording_mode()
+        else:
+            self._cleanup_monitoring_mode()
+
+    def _do_stop_audio_capture(self) -> None:
+        """Execute the actual audio capture stop."""
+        self.app.queue_manager.stop_recording()
         if hasattr(self.app.window, "mel_spectrogram"):
             self.app.window.mel_spectrogram.stop_recording()
 
-        # Recording-specific cleanup
-        if is_recording:
-            # Update state
-            self.app.state.recording.is_recording = False
+    def _cleanup_recording_mode(self) -> None:
+        """Clean up after recording mode ends.
 
-            # Update displayed take
-            current_label = self.app.state.recording.current_label
-            if current_label:
-                current_take = self.app.state.recording.get_take_count(current_label)
-                self.app.state.recording.set_displayed_take(current_label, current_take)
+        Resets recording-related state flags and updates UI to reflect
+        that recording has stopped. This ensures the application state
+        is consistent and ready for the next operation.
+        """
+        self.app.state.recording.is_recording = False
 
-                # Wait a bit for the file to be saved by the recording process
-                # then load and display the recording
-                self.app.root.after(
-                    UIConstants.POST_RECORDING_DELAY_MS,
-                    lambda: self._after_recording_saved(current_label),
-                )
+        current_label = self.app.state.recording.current_label
+        if current_label:
+            # Update displayed take & Schedule post-recording actions
+            current_take = self.app.state.recording.get_take_count(current_label)
+            self.app.state.recording.set_displayed_take(current_label, current_take)
+            self.app.root.after(
+                UIConstants.POST_RECORDING_DELAY_MS,
+                lambda: self._after_recording_saved(current_label),
+            )
 
-            # Update display
-            self.app.display_controller.update_display()
+        self.app.display_controller.update_display()
+        if self.app.window.info_overlay.visible:
+            self.app.root.after(
+                UIConstants.POST_RECORDING_DELAY_MS,
+                self.app.display_controller.update_info_overlay,
+            )
 
-            # Update info overlay if visible to show the new recording
-            if self.app.window.info_overlay.visible:
-                # Wait a bit for the file to be saved
-                self.app.root.after(
-                    UIConstants.POST_RECORDING_DELAY_MS,
-                    self.app.display_controller.update_info_overlay,
-                )
-        else:
-            # Monitoring-specific cleanup
-            self.is_monitoring = False
+    def _cleanup_monitoring_mode(self) -> None:
+        """Clean up after monitoring mode ends.
 
-            # Restore UI state
-            if (
-                self.saved_spectrogram_state is not None
-                and self.saved_spectrogram_state
-                != self.app.state.ui.spectrogram_visible
-            ):
-                self.app.display_controller.toggle_mel_spectrogram()
+        Resets monitoring flag and restores UI elements (spectrogram,
+        level meter) to their state before monitoring started. This
+        ensures the UI returns to user preferences.
+        """
+        self.is_monitoring = False
+        self._restore_ui_state_after_monitoring()
 
-            if (
-                hasattr(self.app.window, "level_meter_var")
-                and self.saved_level_meter_state is not None
-            ):
-                current_state = self.app.window.level_meter_var.get()
-                if self.saved_level_meter_state != current_state:
-                    self.app.window._toggle_level_meter_callback()
+        # Clear saved states
+        self.saved_spectrogram_state = None
+        self.saved_level_meter_state = None
 
-            # Clear saved states
-            self.saved_spectrogram_state = None
-            self.saved_level_meter_state = None
+        # Update UI
+        self.app.window.set_status("Ready")
+        if hasattr(self.app.window, "monitoring_var"):
+            self.app.window.monitoring_var.set(False)
 
-            # Update UI
-            self.app.window.set_status("Ready")
-            if hasattr(self.app.window, "monitoring_var"):
-                self.app.window.monitoring_var.set(False)
+        self.app.display_controller.show_saved_recording()
+        if self.app.window.info_overlay.visible:
+            self.app.display_controller.update_info_overlay()
 
-            # Show previous recording if one exists
-            self.app.display_controller.show_saved_recording()
+    def _restore_ui_state_after_monitoring(self) -> None:
+        """Restore UI state after monitoring mode."""
+        # Restore spectrogram state
+        if (
+            self.saved_spectrogram_state is not None
+            and self.saved_spectrogram_state != self.app.state.ui.spectrogram_visible
+        ):
+            self.app.display_controller.toggle_mel_spectrogram()
 
-            # Update info overlay if visible to show the current recording
-            if self.app.window.info_overlay.visible:
-                self.app.display_controller.update_info_overlay()
+        # Restore level meter state
+        if (
+            hasattr(self.app.window, "level_meter_var")
+            and self.saved_level_meter_state is not None
+        ):
+            current_state = self.app.window.level_meter_var.get()
+            if self.saved_level_meter_state != current_state:
+                self.app.window.toggle_level_meter_callback()
 
     def _save_last_recording_position(self, take_number: int) -> None:
         """Save the current recording position to the session.
@@ -441,7 +549,11 @@ class AudioController:
             self.app.current_session.save()
 
     def _after_recording_saved(self, label: str) -> None:
-        """Called after a recording has been saved to disk.
+        """Handle post-save operations after a recording is written to disk.
+
+        This method is called after the audio file has been successfully saved.
+        It updates the UI to show the newly saved recording and refreshes the
+        file list to include it.
 
         Args:
             label: The label of the recording that was saved
@@ -476,103 +588,23 @@ class AudioController:
             # Update take status
             self.app.navigation_controller.update_take_status()
 
-    def start_audio_queue_processing(self):
-        """Start processing audio queue for real-time display."""
-        self.app.manager_dict["audio_queue_active"] = True
+    def start_audio_queue_processing(self) -> None:
+        """Start processing audio queue for real-time display.
 
-        # Start a transfer thread
-        def audio_transfer_thread():
-            try:
-                while True:
-                    # Check active flag with guard; manager may already be gone
-                    try:
-                        active = self.app.manager_dict.get("audio_queue_active", False)
-                    except Exception:
-                        break
-                    if not active:
-                        break
+        Delegates to AudioQueueProcessor for the actual processing logic.
+        """
+        self.audio_queue_processor.start()
 
-                    try:
-                        # Get audio data from queue with timeout
-                        audio_data = self.app.audio_queue.get(timeout=0.1)
+    def update_audio_queue_state(self) -> None:
+        """Update audio queue processing state based on what's visible.
 
-                        # Process based on type
-                        if isinstance(audio_data, dict):
-                            if audio_data.get("type") == "audio":
-                                # Transfer to mel spectrogram widget for display
-                                if (
-                                    hasattr(self.app.window, "mel_spectrogram")
-                                    and self.app.window.mel_spectrogram
-                                ):
-                                    audio_array = audio_data.get("data")
-                                    if audio_array is not None:
-                                        self.app.root.after(
-                                            0,
-                                            lambda data=audio_array: self.app.window.mel_spectrogram.update_audio(
-                                                data
-                                            ),
-                                        )
-                            elif audio_data.get("type") == "level":
-                                # Process level meter data
-                                if hasattr(self.app.window, "embedded_level_meter"):
-                                    level = audio_data.get("level", 0.0)
-                                    # Use thread-safe method to update
-                                    self.app.root.after(
-                                        0,
-                                        self.app.window.embedded_level_meter.update_level,
-                                        level,
-                                    )
-                        elif isinstance(audio_data, tuple) and len(audio_data) == 2:
-                            # Legacy format: (audio_array, sample_rate)
-                            audio_array, sample_rate = audio_data
-                            if (
-                                hasattr(self.app.window, "mel_spectrogram")
-                                and self.app.window.mel_spectrogram
-                            ):
-                                self.app.root.after(
-                                    0,
-                                    lambda data=audio_array: self.app.window.mel_spectrogram.update_audio(
-                                        data
-                                    ),
-                                )
-                        else:
-                            # Direct numpy array
-                            if (
-                                hasattr(self.app.window, "mel_spectrogram")
-                                and self.app.window.mel_spectrogram
-                            ):
-                                self.app.root.after(
-                                    0,
-                                    lambda data=audio_data: self.app.window.mel_spectrogram.update_audio(
-                                        data
-                                    ),
-                                )
-                    except queue.Empty:
-                        continue
-                    except queue.Full:
-                        # Mel spectrogram queue is full, skip this data
-                        continue
-                    except (BrokenPipeError, OSError, EOFError):
-                        # Queue was closed, exit cleanly
-                        break
-                    except Exception as e:
-                        if "closed" not in str(e).lower():
-                            print(f"Error in audio transfer thread: {e}")
-                        break
-            except (BrokenPipeError, OSError, EOFError):
-                # IPC endpoints closed during shutdown; exit quietly
-                pass
+        Delegates to AudioQueueProcessor to update the processing state.
+        """
+        self.audio_queue_processor.update_state()
 
-        self.transfer_thread = threading.Thread(target=audio_transfer_thread)
-        self.transfer_thread.daemon = True
-        self.transfer_thread.start()
+    def stop_audio_queue_processing(self) -> None:
+        """Stop audio queue processing.
 
-    def update_audio_queue_state(self):
-        """Update audio queue processing state based on what's visible."""
-        level_meter_visible = (
-            hasattr(self.app.window, "level_meter_var")
-            and self.app.window.level_meter_var.get()
-        )
-        needs_audio = self.app.state.ui.spectrogram_visible or level_meter_visible
-
-        self.app.manager_dict["audio_queue_active"] = needs_audio
+        Delegates to AudioQueueProcessor to stop the processing thread.
+        """
+        self.audio_queue_processor.stop()

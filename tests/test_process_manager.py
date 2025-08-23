@@ -28,12 +28,14 @@ class TestProcessManager(unittest.TestCase):
         self.controller.audio_queue = Mock()
         self.controller.record_queue = Mock()
         self.controller.playback_queue = Mock()
+        self.controller.queue_manager = Mock()
+        self.controller.queue_manager.get_audio_data = Mock(side_effect=queue.Empty)
 
+    @patch("revoxx.controllers.process_manager.AudioQueueManager")
     @patch("revoxx.controllers.process_manager.mp.Manager")
     @patch("revoxx.controllers.process_manager.mp.Event")
-    @patch("revoxx.controllers.process_manager.mp.Queue")
     def test_initialize_resources(
-        self, mock_queue_class, mock_event_class, mock_manager_class
+        self, mock_event_class, mock_manager_class, mock_queue_manager_class
     ):
         """Test initializing multiprocessing resources."""
         # Setup mocks
@@ -45,8 +47,15 @@ class TestProcessManager(unittest.TestCase):
         mock_event = Mock()
         mock_event_class.return_value = mock_event
 
-        mock_queues = [Mock(), Mock(), Mock()]
-        mock_queue_class.side_effect = mock_queues
+        # Mock AudioQueueManager
+        mock_queue_manager = Mock()
+        mock_audio_queue = Mock()
+        mock_record_queue = Mock()
+        mock_playback_queue = Mock()
+        mock_queue_manager.audio_queue = mock_audio_queue
+        mock_queue_manager.record_queue = mock_record_queue
+        mock_queue_manager.playback_queue = mock_playback_queue
+        mock_queue_manager_class.return_value = mock_queue_manager
 
         # Create new controller to test initialization
         controller = ProcessManager(self.mock_app)
@@ -54,24 +63,23 @@ class TestProcessManager(unittest.TestCase):
         # Verify manager creation
         mock_manager_class.assert_called_once()
         mock_event_class.assert_called_once()
-
-        # Verify queue creation (3 queues)
-        self.assertEqual(mock_queue_class.call_count, 3)
+        mock_queue_manager_class.assert_called_once()
 
         # Verify controller has correct references
         self.assertEqual(controller.manager, mock_manager)
         self.assertEqual(controller.shutdown_event, mock_event)
         self.assertEqual(controller.manager_dict, mock_dict)
-        self.assertEqual(controller.audio_queue, mock_queues[0])
-        self.assertEqual(controller.record_queue, mock_queues[1])
-        self.assertEqual(controller.playback_queue, mock_queues[2])
+        self.assertEqual(controller.queue_manager, mock_queue_manager)
+        self.assertEqual(controller.audio_queue, mock_audio_queue)
+        self.assertEqual(controller.record_queue, mock_record_queue)
+        self.assertEqual(controller.playback_queue, mock_playback_queue)
 
         # Verify app references set
         self.assertEqual(self.mock_app.shutdown_event, mock_event)
         self.assertEqual(self.mock_app.manager_dict, mock_dict)
-        self.assertEqual(self.mock_app.audio_queue, mock_queues[0])
-        self.assertEqual(self.mock_app.record_queue, mock_queues[1])
-        self.assertEqual(self.mock_app.playback_queue, mock_queues[2])
+        self.assertEqual(self.mock_app.queue_manager, mock_queue_manager)
+        # Direct queue references are no longer set in app
+        self.assertIsNotNone(self.mock_app.queue_manager)
 
     @patch("revoxx.controllers.process_manager.mp.Process")
     def test_start_processes(self, mock_process_class):
@@ -157,60 +165,6 @@ class TestProcessManager(unittest.TestCase):
         # Test with None
         self.controller.set_save_path(None)
         self.assertIsNone(self.controller.manager_dict["save_path"])
-
-    def test_send_record_command(self):
-        """Test sending command to record process."""
-        command = {"action": "start", "path": "/test.wav"}
-
-        self.controller.send_record_command(command)
-
-        self.controller.record_queue.put.assert_called_once_with(command, block=False)
-
-    def test_send_record_command_queue_full(self):
-        """Test sending command when queue is full."""
-        self.controller.record_queue.put.side_effect = queue.Full
-        command = {"action": "start"}
-
-        # Should not raise exception
-        self.controller.send_record_command(command)
-
-    def test_send_playback_command(self):
-        """Test sending command to playback process."""
-        command = {"action": "play", "path": "/test.wav"}
-
-        self.controller.send_playback_command(command)
-
-        self.controller.playback_queue.put.assert_called_once_with(command, block=False)
-
-    def test_send_playback_command_queue_full(self):
-        """Test sending playback command when queue is full."""
-        self.controller.playback_queue.put.side_effect = queue.Full
-        command = {"action": "play"}
-
-        # Should not raise exception
-        self.controller.send_playback_command(command)
-
-    def test_clear_audio_queue(self):
-        """Test clearing audio queue."""
-        # Setup queue with items
-        self.controller.audio_queue.get_nowait.side_effect = [
-            "item1",
-            "item2",
-            "item3",
-            queue.Empty,
-        ]
-
-        self.controller.clear_audio_queue()
-
-        # Verify all items were removed
-        self.assertEqual(self.controller.audio_queue.get_nowait.call_count, 4)
-
-    def test_clear_audio_queue_already_empty(self):
-        """Test clearing already empty queue."""
-        self.controller.audio_queue.get_nowait.side_effect = queue.Empty
-
-        # Should not raise exception
-        self.controller.clear_audio_queue()
 
     def test_shutdown_process_not_responding(self):
         """Test shutdown when process doesn't respond to terminate."""

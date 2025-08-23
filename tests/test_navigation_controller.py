@@ -39,6 +39,9 @@ class TestNavigationController(unittest.TestCase):
 
         # Mock audio controller
         self.mock_app.audio_controller = Mock()
+        self.mock_app.audio_controller.stop_all_playback_activities = Mock()
+        self.mock_app.audio_controller.stop_recording = Mock()
+        self.mock_app.audio_controller.stop_synchronized_playback = Mock()
 
         # Mock active recordings
         self.mock_app.active_recordings = Mock()
@@ -80,8 +83,7 @@ class TestNavigationController(unittest.TestCase):
         self.controller.navigate(1)
 
         # Verify navigation
-        self.mock_app.audio_controller.stop_synchronized_playback.assert_called_once()
-        self.mock_app.window.mel_spectrogram.stop_playback.assert_called_once()
+        self.mock_app.audio_controller.stop_all_playback_activities.assert_called_once()
         self.mock_app.active_recordings.navigate.assert_called_once_with(0, 1)
         self.assertEqual(self.mock_app.state.recording.current_index, 1)
         self.mock_app.active_recordings.get_highest_take.assert_called_once()
@@ -127,8 +129,7 @@ class TestNavigationController(unittest.TestCase):
         self.controller.browse_takes(1)
 
         # Verify take browsing
-        self.mock_app.audio_controller.stop_synchronized_playback.assert_called_once()
-        self.mock_app.window.mel_spectrogram.stop_playback.assert_called_once()
+        self.mock_app.audio_controller.stop_all_playback_activities.assert_called_once()
         # get_existing_takes is called twice: once in browse_takes and once in update_take_status
         self.assertEqual(
             self.mock_app.active_recordings.get_existing_takes.call_count, 2

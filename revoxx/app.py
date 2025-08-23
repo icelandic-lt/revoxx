@@ -124,12 +124,10 @@ class Revoxx:
         # Initialize process manager first (creates queues and shared resources)
         self.process_manager = ProcessManager(self)
 
-        # Copy queue references for compatibility
-        self.audio_queue = self.process_manager.audio_queue
-        self.record_queue = self.process_manager.record_queue
-        self.playback_queue = self.process_manager.playback_queue
+        # Copy references for compatibility
         self.manager_dict = self.process_manager.manager_dict
         self.shutdown_event = self.process_manager.shutdown_event
+        self.queue_manager = self.process_manager.queue_manager
 
         # Initialize manager_dict state
         self.manager_dict["recording"] = False
@@ -516,6 +514,41 @@ class Revoxx:
         # Update settings
         self.settings_manager.update_setting("fullscreen", not current_state)
 
+    def notify_if_default_device(self, device_type: str = "output") -> None:
+        """Notify user once if using default device due to missing selection.
+
+        Args:
+            device_type: Either 'output' or 'input'
+        """
+        if device_type == "output":
+            # If default output device is in effect and not yet notified, inform user once
+            if self._default_output_in_effect and not self._notified_default_output:
+                try:
+                    self.window.show_message(
+                        "Using system default output device (no saved/available selection)"
+                    )
+                except AttributeError:
+                    pass
+                self._notified_default_output = True
+
+            # Additionally, warn once if last stream open failed
+            if hasattr(self, "last_output_error") and self.last_output_error:
+                self.window.set_status(
+                    "Output device unavailable. Using system default if possible."
+                )
+                self.last_output_error = False
+
+        elif device_type == "input":
+            # If default input device is in effect and not yet notified, inform user once
+            if self._default_input_in_effect and not self._notified_default_input:
+                try:
+                    self.window.show_message(
+                        "Using system default input device (no saved/available selection)"
+                    )
+                except AttributeError:
+                    pass
+                self._notified_default_input = True
+
     def run(self):
         """Run the application."""
         self.window.focus_window()
@@ -567,30 +600,29 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
-    """Main entry point for the application."""
-    # Parse arguments
-    args = parse_arguments()
+def _handle_show_devices() -> None:
+    """Display available audio devices and exit."""
+    device_manager = get_device_manager()
+    print("\nInput Devices:")
+    for device in device_manager.get_input_devices():
+        print(
+            f"  [{device['index']}] {device['name']} ({device['max_input_channels']} channels)"
+        )
+    print("\nOutput Devices:")
+    for device in device_manager.get_output_devices():
+        print(
+            f"  [{device['index']}] {device['name']} ({device['max_output_channels']} channels)"
+        )
+    sys.exit(0)
 
-    # Show devices if requested
-    if args.show_devices:
-        device_manager = get_device_manager()
-        print("\nInput Devices:")
-        for device in device_manager.get_input_devices():
-            print(
-                f"  [{device['index']}] {device['name']} ({device['max_input_channels']} channels)"
-            )
-        print("\nOutput Devices:")
-        for device in device_manager.get_output_devices():
-            print(
-                f"  [{device['index']}] {device['name']} ({device['max_output_channels']} channels)"
-            )
-        sys.exit(0)
 
-    # Load configuration
-    config = load_config()
+def _apply_command_line_overrides(args, config) -> None:
+    """Apply command line arguments to configuration.
 
-    # Apply command line overrides
+    Args:
+        args: Parsed command line arguments
+        config: Application configuration to modify
+    """
     if args.audio_device:
         # Set both input and output to the same device
         config.audio.input_device = args.audio_device
@@ -605,32 +637,56 @@ def main():
     config.display.show_info_overlay = True
     config.display.show_level_meter = True
 
-    # Load or create session
-    session = None
-    session_manager = SessionManager()
 
+def _load_session_from_args(args, session_manager):
+    """Load session from command line arguments or last session.
+
+    Args:
+        args: Parsed command line arguments
+        session_manager: Session manager instance
+
+    Returns:
+        Session object or None
+    """
     if args.session:
         session_path = Path(args.session)
-        if session_path.exists():
-            # Load session from command line argument
-            session = session_manager.load_session(session_path)
-            if not session:
-                print(f"Error: Failed to load session from {session_path}")
-                sys.exit(1)
-        else:
+        if not session_path.exists():
             print(f"Error: Session directory not found: {session_path}")
             sys.exit(1)
-    else:
-        # Try to load last session
-        last_session_path = session_manager.get_last_session()
-        if last_session_path:
-            try:
-                session = session_manager.load_session(last_session_path)
-                if session:
-                    print(f"Loaded last session: {session.name}")
-            except Exception:
-                # Last session not available, will need to create/select one
-                pass
+
+        session = session_manager.load_session(session_path)
+        if not session:
+            print(f"Error: Failed to load session from {session_path}")
+            sys.exit(1)
+        return session
+
+    # Try to load last session
+    last_session_path = session_manager.get_last_session()
+    if last_session_path:
+        try:
+            session = session_manager.load_session(last_session_path)
+            if session:
+                print(f"Loaded last session: {session.name}")
+                return session
+        except Exception:
+            # Last session not available, will need to create/select one
+            pass
+
+    return None
+
+
+def main():
+    """Main entry point for the application."""
+    args = parse_arguments()
+
+    if args.show_devices:
+        _handle_show_devices()
+
+    config = load_config()
+
+    _apply_command_line_overrides(args, config)
+    session_manager = SessionManager()
+    session = _load_session_from_args(args, session_manager)
 
     # Create and run application
     try:

@@ -103,7 +103,7 @@ class DisplayController:
         """Toggle level meter visibility."""
         # Use the window's level meter toggle callback
         if hasattr(self.app.window, "_toggle_level_meter_callback"):
-            self.app.window._toggle_level_meter_callback()
+            self.app.window.toggle_level_meter_callback()
         else:
             # Fallback: directly toggle the level meter
             if hasattr(self.app.window, "level_meter_var"):

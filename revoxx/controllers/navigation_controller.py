@@ -37,19 +37,8 @@ class NavigationController:
         if self.app.state.recording.is_recording:
             self.app.audio_controller.stop_recording()
 
-        self.app.audio_controller.stop_synchronized_playback()
-        if (
-            hasattr(self.app.window, "mel_spectrogram")
-            and self.app.window.mel_spectrogram
-        ):
-            self.app.window.mel_spectrogram.stop_playback()
-
-        # Reset level meter via shared state to ensure producer/consumer sync
-        try:
-            self.app.shared_state.reset_level_meter()
-        except AttributeError:
-            # Shared state or method might not exist
-            pass
+        # Stop all playback activities (same as when starting new playback)
+        self.app.audio_controller.stop_all_playback_activities()
 
         # Check if we have a session loaded
         if not self.app.active_recordings:
@@ -100,13 +89,8 @@ class NavigationController:
         if not current_label:
             return
 
-        # Stop playback and animation
-        self.app.audio_controller.stop_synchronized_playback()
-        if (
-            hasattr(self.app.window, "mel_spectrogram")
-            and self.app.window.mel_spectrogram
-        ):
-            self.app.window.mel_spectrogram.stop_playback()
+        # Stop all playback activities
+        self.app.audio_controller.stop_all_playback_activities()
 
         # Get current take and all existing takes
         current_take = self.app.state.recording.get_current_take(current_label)
@@ -140,12 +124,7 @@ class NavigationController:
         if 0 <= new_index < len(existing_takes):
             new_take = existing_takes[new_index]
             self.app.state.recording.set_displayed_take(current_label, new_take)
-            # Reset level meter via shared state when switching takes
-            try:
-                self.app.shared_state.reset_level_meter()
-            except AttributeError:
-                # Shared state or method might not exist
-                pass
+            # Level meter reset is already handled by stop_all_playback_activities above
             self.app.display_controller.show_saved_recording()
             self.update_take_status()
 

@@ -9,6 +9,7 @@ from multiprocessing.sharedctypes import Synchronized
 
 from ..audio.recorder import record_process
 from ..audio.player import playback_process
+from ..audio.queue_manager import AudioQueueManager
 
 if TYPE_CHECKING:
     from ..app import Revoxx
@@ -44,6 +45,7 @@ class ProcessManager:
         self.audio_queue: Optional[mp.Queue] = None
         self.record_queue: Optional[mp.Queue] = None
         self.playback_queue: Optional[mp.Queue] = None
+        self.queue_manager: Optional[AudioQueueManager] = None
 
         # Initialize resources
         self._initialize_resources()
@@ -59,17 +61,18 @@ class ProcessManager:
         self.manager_dict["audio_queue_active"] = False
         self.manager_dict["save_path"] = None
 
-        # Create communication queues
-        self.audio_queue = mp.Queue(maxsize=100)
-        self.record_queue = mp.Queue(maxsize=10)
-        self.playback_queue = mp.Queue(maxsize=10)
+        # Create queue manager (which creates and owns the queues)
+        self.queue_manager = AudioQueueManager()
+
+        # Get queue references for process initialization
+        self.audio_queue = self.queue_manager.audio_queue
+        self.record_queue = self.queue_manager.record_queue
+        self.playback_queue = self.queue_manager.playback_queue
 
         # Store references in app for other controllers
         self.app.shutdown_event = self.shutdown_event
         self.app.manager_dict = self.manager_dict
-        self.app.audio_queue = self.audio_queue
-        self.app.record_queue = self.record_queue
-        self.app.playback_queue = self.playback_queue
+        self.app.queue_manager = self.queue_manager
 
     def start_processes(self) -> None:
         """Start background recording and playback processes."""
@@ -104,53 +107,53 @@ class ProcessManager:
         self.manager_dict["audio_queue_active"] = True
 
         # Start transfer thread
-        def audio_transfer_thread():
-            try:
-                while True:
-                    # Check active flag
-                    try:
-                        active = self.manager_dict.get("audio_queue_active", False)
-                    except (AttributeError, KeyError):
-                        break
-                    if not active:
-                        break
-
-                    try:
-                        audio_data = self.audio_queue.get(timeout=0.1)
-
-                        # Update mel spectrogram if visible
-                        if (
-                            hasattr(self.app.window, "mel_spectrogram")
-                            and self.app.window.ui_state.spectrogram_visible
-                        ):
-                            # Use after() to update in main thread
-                            self.app.root.after(
-                                0,
-                                lambda data=audio_data: self.app.window.mel_spectrogram.update_audio(
-                                    data
-                                ),
-                            )
-
-                    except queue.Empty:
-                        # Timeout is normal
-                        pass
-                    except EOFError:
-                        # Queue was closed
-                        break
-                    except BrokenPipeError:
-                        # IPC endpoints closed
-                        break
-                    except OSError as e:
-                        if "handle is closed" not in str(e):
-                            print(f"Error in audio transfer thread: {e}")
-                        break
-            except (BrokenPipeError, OSError, EOFError):
-                # IPC endpoints closed during shutdown
-                pass
-
-        self.transfer_thread = threading.Thread(target=audio_transfer_thread)
+        self.transfer_thread = threading.Thread(target=self._audio_transfer_worker)
         self.transfer_thread.daemon = True
         self.transfer_thread.start()
+
+    def _audio_transfer_worker(self) -> None:
+        """Worker thread for processing audio queue data."""
+        try:
+            while self._is_audio_transfer_active():
+                self._process_single_audio_item()
+        except (BrokenPipeError, OSError, EOFError):
+            # IPC endpoints closed during shutdown - this is expected
+            pass
+
+    def _is_audio_transfer_active(self) -> bool:
+        """Check if audio transfer should continue."""
+        try:
+            return self.manager_dict.get("audio_queue_active", False)
+        except (AttributeError, KeyError):
+            return False
+
+    def _process_single_audio_item(self) -> None:
+        """Process one item from audio queue and update UI."""
+        try:
+            audio_data = self.queue_manager.get_audio_data(timeout=0.1)
+
+            # Update mel spectrogram if visible
+            if (
+                hasattr(self.app.window, "mel_spectrogram")
+                and self.app.window.ui_state.spectrogram_visible
+            ):
+                # Use after() to update in main thread
+                self.app.root.after(
+                    0,
+                    lambda data=audio_data: self.app.window.mel_spectrogram.update_audio(
+                        data
+                    ),
+                )
+        except queue.Empty:
+            # Timeout is normal - no data available
+            pass
+        except (EOFError, BrokenPipeError):
+            # Queue was closed or IPC endpoints closed - propagate to exit loop
+            raise
+        except OSError as e:
+            if "handle is closed" not in str(e):
+                print(f"Error in audio transfer thread: {e}")
+            raise
 
     def stop_audio_queue_processing(self) -> None:
         """Stop audio queue processing."""
@@ -179,76 +182,62 @@ class ProcessManager:
         if self.manager_dict:
             self.manager_dict["save_path"] = path
 
-    def send_record_command(self, command: dict) -> None:
-        """Send command to record process.
-
-        Args:
-            command: Command dictionary to send
-        """
-        if self.record_queue:
-            try:
-                self.record_queue.put(command, block=False)
-            except queue.Full:
-                # Queue is full, command will be dropped
-                pass
-
-    def send_playback_command(self, command: dict) -> None:
-        """Send command to playback process.
-
-        Args:
-            command: Command dictionary to send
-        """
-        if self.playback_queue:
-            try:
-                self.playback_queue.put(command, block=False)
-            except queue.Full:
-                # Queue is full, command will be dropped
-                pass
-
-    def clear_audio_queue(self) -> None:
-        """Clear the audio queue."""
-        if self.audio_queue:
-            try:
-                while True:
-                    self.audio_queue.get_nowait()
-            except queue.Empty:
-                pass
-
     def shutdown(self) -> None:
         """Shutdown all processes and cleanup resources."""
-        # Set shutdown event
+        # Signal shutdown to all processes
         if self.shutdown_event:
             self.shutdown_event.set()
 
-        # Stop audio queue processing
+        # Stop audio queue processing thread
         self.stop_audio_queue_processing()
 
-        # Terminate processes
-        for process in [self.record_process, self.playback_process]:
-            if process and process.is_alive():
-                process.terminate()
-                process.join(timeout=2.0)
-                if process.is_alive():
-                    process.kill()
-                    process.join(timeout=1.0)
+        # Terminate all processes
+        self._terminate_all_processes()
 
-        # Close queues
+        # Cleanup IPC resources (queues and manager)
+        self._cleanup_ipc_resources()
+
+        # Clear all references
+        self._clear_all_references()
+
+    def _terminate_all_processes(self) -> None:
+        """Terminate recording and playback processes gracefully."""
+        for process_name, process in [
+            ("record", self.record_process),
+            ("playback", self.playback_process),
+        ]:
+            if not process or not process.is_alive():
+                continue
+
+            # Try graceful termination first
+            process.terminate()
+            process.join(timeout=2.0)
+
+            # Force kill if still alive
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=1.0)
+
+    def _cleanup_ipc_resources(self) -> None:
+        """Close queues and shutdown multiprocessing manager."""
+        # Close all queues
         for queue_obj in [self.audio_queue, self.record_queue, self.playback_queue]:
             if queue_obj:
                 try:
                     queue_obj.close()
                     queue_obj.join_thread()
                 except (AttributeError, OSError):
-                    pass
+                    pass  # Queue already closed or invalid
 
-        # Shutdown manager
+        # Shutdown multiprocessing manager
         if self.manager:
             try:
                 self.manager.shutdown()
             except (BrokenPipeError, OSError):
-                pass
+                pass  # Manager already shutdown or pipe broken
 
-        # Clear references
+    def _clear_all_references(self) -> None:
+        """Clear all object references to allow garbage collection."""
         self.record_process = None
         self.playback_process = None
         self.transfer_thread = None

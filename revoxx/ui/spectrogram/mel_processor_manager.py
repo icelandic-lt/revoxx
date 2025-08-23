@@ -3,8 +3,7 @@
 from typing import Tuple
 import numpy as np
 
-from ...audio.mel_factory import MelProcessorFactory
-from ...audio.processors import MelSpectrogramProcessor
+from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor, MEL_CONFIG
 from .display_utils import create_empty_spectrogram
 
 
@@ -26,7 +25,7 @@ class MelProcessorManager:
         self.fmin = fmin
 
         # Create initial processor
-        self.mel_processor, self.n_mels = MelProcessorFactory.create_for_sample_rate(
+        self.mel_processor, self.n_mels = MelSpectrogramProcessor.create_for(
             initial_sample_rate, fmin
         )
 
@@ -61,21 +60,17 @@ class MelProcessorManager:
                 {
                     "old_n_mels": old_n_mels,
                     "needs_display_update": False,
-                    "params": MelProcessorFactory.calculate_adaptive_params(
-                        new_sample_rate, self.fmin
-                    ),
+                    "params": MEL_CONFIG.calculate_params(new_sample_rate, self.fmin),
                 },
             )
 
         # Create new processor
-        new_processor, new_n_mels = MelProcessorFactory.create_for_sample_rate(
+        new_processor, new_n_mels = MelSpectrogramProcessor.create_for(
             new_sample_rate, self.fmin
         )
 
         # Get parameters for additional info
-        params = MelProcessorFactory.calculate_adaptive_params(
-            new_sample_rate, self.fmin
-        )
+        params = MEL_CONFIG.calculate_params(new_sample_rate, self.fmin)
 
         # Update internal state
         self.mel_processor = new_processor
@@ -126,7 +121,7 @@ class MelProcessorManager:
         Args:
             default_sample_rate: Default sample rate to reset to
         """
-        self.mel_processor, self.n_mels = MelProcessorFactory.create_for_sample_rate(
+        self.mel_processor, self.n_mels = MelSpectrogramProcessor.create_for(
             default_sample_rate, self.fmin
         )
         self.current_sample_rate = default_sample_rate

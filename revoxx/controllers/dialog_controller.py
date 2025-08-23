@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 
 from ..ui.dialogs import NewSessionDialog
 from ..ui.dialogs.find_dialog import FindDialog
+from ..ui.dialogs.help_dialog import HelpDialog
 from ..ui.dialogs.open_session_dialog import OpenSessionDialog
 from ..ui.dialogs.utterance_order_dialog import UtteranceOrderDialog
 from ..ui.dialogs.utterance_list_base import SortDirection
@@ -278,11 +279,14 @@ class DialogController:
         )
         self.settings_dialog.geometry(f"+{x}+{y}")
 
-    def show_device_selection_dialog(self, device_type: str) -> None:
-        """Show device selection dialog.
+    def _get_device_info(self, device_type: str):
+        """Get device list and configuration based on type.
 
         Args:
             device_type: Either 'input' or 'output'
+
+        Returns:
+            Tuple of (devices, title, current_device)
         """
         device_manager = get_device_manager()
 
@@ -294,6 +298,50 @@ class DialogController:
             devices = device_manager.get_output_devices()
             title = "Select Output Device"
             current_device = self.app.config.audio.output_device
+
+        return devices, title, current_device
+
+    def _populate_device_listbox(
+        self, listbox, devices, device_type: str, current_device
+    ):
+        """Populate listbox with devices and select current one.
+
+        Args:
+            listbox: Tkinter listbox widget
+            devices: List of device dictionaries
+            device_type: Either 'input' or 'output'
+            current_device: Currently selected device index
+        """
+        # Add system default option
+        listbox.insert(tk.END, "System Default")
+
+        # Add devices
+        channel_key = (
+            "max_input_channels" if device_type == "input" else "max_output_channels"
+        )
+        for device in devices:
+            name = device["name"]
+            index = device["index"]
+            channels = device.get(channel_key, 0)
+            listbox.insert(tk.END, f"{name} (ID: {index}, {channels} ch)")
+
+        # Select current device
+        if current_device is None:
+            listbox.selection_set(0)
+        else:
+            for i, device in enumerate(devices, 1):
+                if device["index"] == current_device:
+                    listbox.selection_set(i)
+                    break
+
+    def show_device_selection_dialog(self, device_type: str) -> None:
+        """Show device selection dialog.
+
+        Args:
+            device_type: Either 'input' or 'output'
+        """
+        # Get device information
+        devices, title, current_device = self._get_device_info(device_type)
 
         if not devices:
             messagebox.showerror(
@@ -311,31 +359,8 @@ class DialogController:
         listbox = tk.Listbox(self.device_dialog, width=50, height=15)
         listbox.pack(padx=10, pady=10)
 
-        # Add system default option
-        listbox.insert(tk.END, "System Default")
-
-        # Add devices
-        for device in devices:
-            name = device["name"]
-            index = device["index"]
-            channels = device.get(
-                (
-                    "max_input_channels"
-                    if device_type == "input"
-                    else "max_output_channels"
-                ),
-                0,
-            )
-            listbox.insert(tk.END, f"{name} (ID: {index}, {channels} ch)")
-
-        # Select current device
-        if current_device is None:
-            listbox.selection_set(0)
-        else:
-            for i, device in enumerate(devices, 1):
-                if device["index"] == current_device:
-                    listbox.selection_set(i)
-                    break
+        # Populate listbox
+        self._populate_device_listbox(listbox, devices, device_type, current_device)
 
         def select_device():
             selection = listbox.curselection()
@@ -443,41 +468,6 @@ class DialogController:
             self.device_dialog.destroy()
 
     def show_help(self) -> None:
-        """Show help dialog with keyboard shortcuts from resources file."""
-        help_dialog = tk.Toplevel(self.app.root)
-        help_dialog.title("Keyboard Shortcuts")
-        help_dialog.geometry("500x600")
-        help_dialog.transient(self.app.root)
-
-        # Create scrollable text widget
-        frame = tk.Frame(help_dialog)
-        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        text_widget = tk.Text(frame, wrap=tk.WORD, font=("Courier", 10))
-        scrollbar = tk.Scrollbar(frame, command=text_widget.yview)
-        text_widget.config(yscrollcommand=scrollbar.set)
-
-        # Load help text from resources file
-        try:
-            resources_path = (
-                Path(__file__).parent.parent / "resources" / "keyboard_shortcuts.txt"
-            )
-            with open(resources_path, "r", encoding="utf-8") as f:
-                help_text = f.read()
-        except (OSError, ValueError):
-            help_text = "Help file not found. Please check the installation."
-
-        text_widget.insert(tk.END, help_text)
-        text_widget.config(state=tk.DISABLED)
-
-        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Close button
-        tk.Button(help_dialog, text="Close", command=help_dialog.destroy).pack(pady=10)
-
-        # Center dialog
-        help_dialog.update_idletasks()
-        x = (help_dialog.winfo_screenwidth() // 2) - (help_dialog.winfo_width() // 2)
-        y = (help_dialog.winfo_screenheight() // 2) - (help_dialog.winfo_height() // 2)
-        help_dialog.geometry(f"+{x}+{y}")
+        """Show help dialog with keyboard shortcuts."""
+        dialog = HelpDialog(self.app.root)
+        dialog.show()

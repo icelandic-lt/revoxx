@@ -157,6 +157,45 @@ class DeviceManager:
             pass
         return None, None
 
+    def _get_device_index(self, device_name: Optional[str]) -> Optional[int]:
+        """Get device index for the given device name.
+
+        Args:
+            device_name: Device name or None for default
+
+        Returns:
+            Device index or None
+        """
+        if device_name:
+            return self.get_device_index_by_name(device_name)
+        return self.get_default_input_device()
+
+    def _test_sample_rates(
+        self, device_index: int, standard_rates: List[int]
+    ) -> List[int]:
+        """Test which sample rates are supported by the device.
+
+        Args:
+            device_index: Device index to test
+            standard_rates: List of rates to test
+
+        Returns:
+            List of supported sample rates
+        """
+        supported_rates = []
+        for rate in standard_rates:
+            try:
+                sd.check_input_settings(
+                    device=device_index,
+                    channels=1,
+                    dtype="float32",
+                    samplerate=rate,
+                )
+                supported_rates.append(rate)
+            except sd.PortAudioError:
+                pass
+        return supported_rates
+
     def get_supported_sample_rates(
         self, device_name: Optional[str] = None
     ) -> List[int]:
@@ -168,14 +207,12 @@ class DeviceManager:
         Returns:
             List of supported sample rates
         """
-        device_index = None
-        if device_name:
-            device_index = self.get_device_index_by_name(device_name)
-            if device_index is None:
-                # Fallback
-                return [48000]
-        else:
-            device_index = self.get_default_input_device()
+        # Get device index
+        device_index = self._get_device_index(device_name)
+
+        # Handle device not found
+        if device_name and device_index is None:
+            return [48000]  # Fallback for named device not found
 
         # Common sample rates to test
         standard_rates = [
@@ -193,14 +230,14 @@ class DeviceManager:
             192000,
         ]
 
+        # Return common rates if no device index
         if device_index is None:
-            # Return common rates for system default
             return [16000, 22050, 44100, 48000]
 
-        supported_rates = []
-
+        # Try to test rates
         try:
             device_info = self._devices[device_index]
+
             # Add device's default rate if available
             default_rate = device_info.get("default_samplerate")
             if default_rate and default_rate > 0:
@@ -210,17 +247,7 @@ class DeviceManager:
                     standard_rates.sort()
 
             # Test each rate
-            for rate in standard_rates:
-                try:
-                    sd.check_input_settings(
-                        device=device_index,
-                        channels=1,
-                        dtype="float32",
-                        samplerate=rate,
-                    )
-                    supported_rates.append(rate)
-                except sd.PortAudioError:
-                    pass
+            supported_rates = self._test_sample_rates(device_index, standard_rates)
 
         except Exception:
             # Fallback to common rates
@@ -291,6 +318,7 @@ class DeviceManager:
         sample_rate: int,
         bit_depth: int,
         channels: int = 1,
+        is_input: bool = True,
     ) -> bool:
         """Check if a device supports the given audio configuration.
 
@@ -299,41 +327,44 @@ class DeviceManager:
             sample_rate: Sample rate in Hz
             bit_depth: Bit depth (16 or 24)
             channels: Number of channels
+            is_input: True for input device, False for output device
 
         Returns:
             True if configuration is supported
         """
-
-        device_index = None
-        if device_name and device_name != "default":
-            device_index = self.get_device_index_by_name(device_name)
-            if device_index is None:
-                return False
-        else:
-            device_index = self.get_default_input_device()
-
-        # Check channel support (only if we have a specific device)
-        if device_index is not None:
-            device_info = self._devices[device_index]
-            max_channels = device_info.get("max_input_channels", 0)
-            if max_channels < channels:
-                return False
-
         # Map bit depth to dtype
         dtype_map = {16: "int16", 24: "int32"}
         if bit_depth not in dtype_map:
             return False
 
+        # Get device index
+        if device_name and device_name != "default":
+            device_index = self.get_device_index_by_name(device_name)
+            if device_index is None:
+                return False
+        elif is_input:
+            device_index = self.get_default_input_device()
+        else:
+            _, device_index = self.get_default_device_indices()
+
+        # Check channel support if we have a device
+        if device_index is not None:
+            device_info = self._devices[device_index]
+            channel_key = "max_input_channels" if is_input else "max_output_channels"
+            if device_info.get(channel_key, 0) < channels:
+                return False
+
         # Test the configuration
         try:
-            sd.check_input_settings(
-                device=device_index,  # None is valid for system default
+            check_fn = sd.check_input_settings if is_input else sd.check_output_settings
+            check_fn(
+                device=device_index,
                 channels=channels,
                 dtype=dtype_map[bit_depth],
                 samplerate=sample_rate,
             )
             return True
-        except Exception:
+        except (sd.PortAudioError, ValueError):
             return False
 
     def find_compatible_device(

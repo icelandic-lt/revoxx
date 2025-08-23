@@ -9,12 +9,12 @@ import numpy as np
 import sounddevice as sd
 from typing import Optional, Any
 import multiprocessing as mp
-import queue
 import traceback
 
 from .audio_buffer import AudioBuffer
 from .shared_state import SharedState
 from .level_calculator import LevelCalculator
+from .queue_manager import AudioQueueManager
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
 from ..constants import UIConstants
@@ -158,6 +158,79 @@ class AudioPlayer:
             self.audio_buffer = None
             self.audio_data = None
 
+    def handle_command(
+        self, command: dict, attached_buffer: Optional["AudioBuffer"] = None
+    ) -> Optional["AudioBuffer"]:
+        """Handle a command from the control queue.
+
+        Args:
+            command: Command dictionary with 'action' key
+            attached_buffer: Currently attached buffer (for cleanup)
+
+        Returns:
+            Updated attached_buffer or None if released
+        """
+        action = command.get("action")
+
+        if action == "play":
+            # Clean up previous buffer if exists
+            if attached_buffer:
+                attached_buffer.close()
+
+            # Get and attach to new buffer
+            buffer_metadata = command.get("buffer_metadata")
+            if buffer_metadata:
+                attached_buffer = AudioBuffer.attach_to_existing(
+                    buffer_metadata["name"],
+                    tuple(buffer_metadata["shape"]),
+                    np.dtype(buffer_metadata["dtype"]),
+                )
+
+                # Start playback
+                audio_data = attached_buffer.get_array()
+                sample_rate = command.get("sample_rate", self.config.sample_rate)
+                self.start_playback(audio_data, sample_rate, attached_buffer)
+
+                return attached_buffer
+
+        elif action == "stop":
+            self.stop_playback()
+            # Clean up attached buffer
+            if attached_buffer:
+                attached_buffer.close()
+            return None
+
+        elif action == "set_output_device":
+            value = command.get("index", None)
+            if isinstance(value, int):
+                self.set_output_device(value)
+            elif value is None:
+                self.set_output_device(None)
+
+        elif action == "set_output_channel_mapping":
+            mapping = command.get("mapping", None)
+            self._update_channel_mapping(mapping)
+
+        else:
+            return attached_buffer  # Unknown command, keep buffer
+
+        return attached_buffer  # Keep current buffer for most commands
+
+    def _update_channel_mapping(self, mapping: Optional[list]) -> None:
+        """Update the output channel mapping configuration.
+
+        Args:
+            mapping: List of channel indices or None for default
+        """
+        try:
+            if isinstance(mapping, list):
+                mapping = [int(x) for x in mapping]
+                self._output_channel_mapping = mapping
+            else:
+                self._output_channel_mapping = None
+        except (ValueError, TypeError):
+            self._output_channel_mapping = None
+
     def _audio_callback(
         self,
         outdata: np.ndarray,
@@ -176,78 +249,126 @@ class AudioPlayer:
         if status:
             print(f"Playback callback status: {status}")
 
-        # Check if stop was requested
+        # Early exit if stop requested
         if self._stop_requested:
             outdata.fill(0)
             raise sd.CallbackStop()
 
-        # Update shared state with hardware timing
+        # Update playback state
+        self._update_playback_state(time_info)
+
+        # Process audio frames
+        if self.audio_data is None:
+            outdata.fill(0)
+            return
+
+        frames_processed = self._process_audio_frames(outdata, frames)
+
+        if frames_processed == 0:
+            # End of audio reached
+            outdata.fill(0)
+            self.shared_state.stop_playback()
+            self._stop_requested = True
+            raise sd.CallbackStop()
+
+    def _update_playback_state(self, time_info: Any) -> None:
+        """Update shared state with current playback position.
+
+        Args:
+            time_info: Hardware timing information
+        """
         self.shared_state.update_playback_position(
             self.current_position, time_info.outputBufferDacTime
         )
         # Explicitly mark PLAYING to avoid early IDLE reads
         self.shared_state.set_playback_state(status=2)
 
-        # Fill output buffer
-        if self.audio_data is not None:
-            remaining = len(self.audio_data) - self.current_position
+    def _process_audio_frames(self, outdata: np.ndarray, frames: int) -> int:
+        """Process and output audio frames.
 
-            if remaining > 0:
-                # Copy audio data
-                to_copy = min(frames, remaining)
-                audio_chunk = self.audio_data[
-                    self.current_position : self.current_position + to_copy
-                ]
-                out_channel_index = getattr(self, "_playback_output_channel_index", 0)
-                # Only clear buffer if using multichannel output
-                if outdata.shape[1] > 1:
-                    outdata.fill(0)
-                # Guard channel index within bounds
-                if 0 <= out_channel_index < outdata.shape[1]:
-                    outdata[:to_copy, out_channel_index] = audio_chunk
+        Args:
+            outdata: Output buffer to fill
+            frames: Number of frames requested
 
-                # Calculate and update level meter
-                if to_copy > 0:
-                    rms_db, peak_db, peak_hold_db = self.level_calculator.process(
-                        audio_chunk.reshape(-1, 1), 1  # Reshape for mono
-                    )
-                    self.shared_state.update_level_meter(
-                        rms_db=rms_db,
-                        peak_db=peak_db,
-                        peak_hold_db=peak_hold_db,
-                        frame_count=self.level_calculator.get_frame_count(),
-                    )
+        Returns:
+            Number of frames actually processed
+        """
+        remaining = len(self.audio_data) - self.current_position
+        if remaining <= 0:
+            return 0
 
-                # Fill rest with silence if needed
-                if to_copy < frames:
-                    outdata[to_copy:] = 0
+        # Copy audio data
+        to_copy = min(frames, remaining)
+        audio_chunk = self.audio_data[
+            self.current_position : self.current_position + to_copy
+        ]
 
-                # Update position
-                self.current_position += to_copy
+        # Route audio to appropriate channel
+        self._route_audio_to_channel(outdata, audio_chunk, to_copy)
 
-                # Pre-emptively detect if the next callback will exceed the audio data length.
-                # This gives the UI time to prepare for playback end before it actually happens.
-                next_position = self.current_position + frames
-                if self.current_position < len(self.audio_data) <= next_position:
-                    # Signal that we're in the last buffer before completion
-                    self.shared_state.mark_playback_finishing()
+        # Update level meter
+        if to_copy > 0:
+            self._update_level_meter(audio_chunk)
 
-                # Check if we've actually reached the end
-                if self.current_position >= len(self.audio_data):
-                    # Signal that playback is completed
-                    self.shared_state.mark_playback_completed()
-                    self._stop_requested = True
-                    # Return stop signal
-                    raise sd.CallbackStop()
-            else:
-                # No more audio, output silence and stop
-                outdata.fill(0)
-                self.shared_state.stop_playback()
-                self._stop_requested = True
-                raise sd.CallbackStop()
-        else:
-            # No audio loaded
+        # Fill rest with silence if needed
+        if to_copy < frames:
+            outdata[to_copy:] = 0
+
+        # Update position and check for near-end
+        self.current_position += to_copy
+        self._check_playback_near_end()
+
+        return to_copy
+
+    def _route_audio_to_channel(
+        self, outdata: np.ndarray, audio_chunk: np.ndarray, frames: int
+    ) -> None:
+        """Route audio to the appropriate output channel.
+
+        Args:
+            outdata: Output buffer
+            audio_chunk: Audio data to route
+            frames: Number of frames to write
+        """
+        out_channel_index = getattr(self, "_playback_output_channel_index", 0)
+
+        # Only clear buffer if using multichannel output
+        if outdata.shape[1] > 1:
             outdata.fill(0)
+
+        # Guard channel index within bounds
+        if 0 <= out_channel_index < outdata.shape[1]:
+            outdata[:frames, out_channel_index] = audio_chunk
+
+    def _update_level_meter(self, audio_chunk: np.ndarray) -> None:
+        """Update level meter with current audio chunk.
+
+        Args:
+            audio_chunk: Audio data to analyze
+        """
+        rms_db, peak_db, peak_hold_db = self.level_calculator.process(
+            audio_chunk.reshape(-1, 1), 1  # Reshape for mono
+        )
+        self.shared_state.update_level_meter(
+            rms_db=rms_db,
+            peak_db=peak_db,
+            peak_hold_db=peak_hold_db,
+            frame_count=self.level_calculator.get_frame_count(),
+        )
+
+    def _check_playback_near_end(self) -> None:
+        """Check if playback is near the end and update state accordingly."""
+        # detect if next callback will exceed audio length
+        next_position = self.current_position + self.blocksize
+
+        if self.current_position < len(self.audio_data) <= next_position:
+            # Signal that we're in the last buffer before completion
+            self.shared_state.mark_playback_finishing()
+
+        if self.current_position >= len(self.audio_data):
+            # Signal that playback is completed
+            self.shared_state.mark_playback_completed()
+            self._stop_requested = True
 
     def _finished_callback(self) -> None:
         """Called when stream finishes."""
@@ -274,6 +395,13 @@ def playback_process(
         shared_state_name: Name of shared memory block
         shutdown_event: End Playback process ?
     """
+    # Create AudioQueueManager with existing queues
+    queue_manager = AudioQueueManager(
+        record_queue=None,  # Not used in playback process
+        playback_queue=control_queue,
+        audio_queue=None,  # Not used in playback process
+    )
+
     player = None
     attached_buffer: Optional[AudioBuffer] = None
 
@@ -283,75 +411,28 @@ def playback_process(
 
         while True:
             try:
-                command = control_queue.get(timeout=UIConstants.PROCESS_JOIN_TIMEOUT)
+                # Get next command
+                command = queue_manager.get_playback_command(
+                    timeout=UIConstants.PROCESS_JOIN_TIMEOUT
+                )
+            except TypeError as e:
+                print(f"Playback process received invalid command: {e}")
+                continue
 
-                # Only accept dictionary commands for consistency
-                if not isinstance(command, dict):
-                    print(f"Warning: Received non-dictionary command: {command}")
-                    continue
-
-                action = command.get("action")
-
-                if action == "play":
-                    # Get audio buffer metadata
-                    buffer_metadata = command.get("buffer_metadata")
-                    if buffer_metadata:
-                        # Attach to shared audio buffer
-                        if attached_buffer:
-                            attached_buffer.close()
-
-                        attached_buffer = AudioBuffer.attach_to_existing(
-                            buffer_metadata["name"],
-                            tuple(buffer_metadata["shape"]),
-                            np.dtype(buffer_metadata["dtype"]),
-                        )
-
-                        # Start playback
-                        audio_data = attached_buffer.get_array()
-                        sample_rate = command.get("sample_rate", config.sample_rate)
-                        player.start_playback(audio_data, sample_rate, attached_buffer)
-
-                elif action == "stop":
-                    player.stop_playback()
-                    # Clean up attached buffer when playback stops
-                    if attached_buffer:
-                        attached_buffer.close()
-                        attached_buffer = None
-
-                elif action == "quit":
-                    break
-
-                elif action == "set_output_device":
-                    value = command.get("index", None)
-                    if isinstance(value, int):
-                        player.set_output_device(value)
-                    elif value is None:
-                        player.set_output_device(None)
-
-                elif action == "set_output_channel_mapping":
-                    mapping = command.get("mapping", None)
-                    try:
-                        if isinstance(mapping, list):
-                            mapping = [int(x) for x in mapping]
-                            player._output_channel_mapping = mapping
-                        else:
-                            player._output_channel_mapping = None
-                    except (ValueError, TypeError):
-                        # Invalid channel mapping values
-                        player._output_channel_mapping = None
-
-                else:
-                    print(f"Warning: Unsupported action: {action}")
-
-            except queue.Empty:
+            if command is None:
                 if shutdown_event.is_set():
                     break
                 continue
-            except KeyboardInterrupt:
+
+            if command.get("action") == "quit":
                 break
 
-    except Exception as e:
-        print(f"Playback process error: {e}")
+            attached_buffer = player.handle_command(command, attached_buffer)
+
+    except KeyboardInterrupt:
+        # Handle graceful shutdown on Ctrl+C
+        print("")
+    except Exception:
         traceback.print_exc()
 
     finally:

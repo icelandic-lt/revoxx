@@ -9,7 +9,7 @@ from matplotlib.image import AxesImage
 
 from ...constants import AudioConstants, UIConstants
 from ...audio.processors import ClippingDetector
-from ...audio.mel_factory import MelProcessorFactory
+from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor, MEL_CONFIG
 from ...utils.config import AudioConfig, DisplayConfig
 
 from .display_base import SpectrogramDisplayBase
@@ -69,10 +69,8 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         self.shared_audio_state = shared_audio_state
 
         # Initialize mel processor
-        self.mel_processor, self.adaptive_n_mels = (
-            MelProcessorFactory.create_for_sample_rate(
-                audio_config.sample_rate, display_config.fmin
-            )
+        self.mel_processor, self.adaptive_n_mels = MelSpectrogramProcessor.create_for(
+            audio_config.sample_rate, display_config.fmin
         )
 
         # Initialize recording-specific parameters
@@ -228,10 +226,8 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         """
         try:
             # Recreate mel processor with new sample rate
-            new_mel_processor, new_adaptive_n_mels = (
-                MelProcessorFactory.create_for_sample_rate(
-                    sample_rate, self.display_config.fmin
-                )
+            new_mel_processor, new_adaptive_n_mels = MelSpectrogramProcessor.create_for(
+                sample_rate, self.display_config.fmin
             )
 
             # Update audio config
@@ -328,9 +324,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         # Set recording-specific parameters for live recording
         # Calculate adaptive parameters based on the recording sample rate
 
-        params = MelProcessorFactory.calculate_adaptive_params(
-            sample_rate, self.display_config.fmin
-        )
+        params = MEL_CONFIG.calculate_params(sample_rate, self.display_config.fmin)
         self._recording_sample_rate = sample_rate
         self._recording_n_mels = params["n_mels"]
         self._recording_fmax = params["fmax"]

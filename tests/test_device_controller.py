@@ -2,7 +2,6 @@
 
 import unittest
 from unittest.mock import Mock, patch
-import queue
 
 from revoxx.controllers.device_controller import DeviceController
 
@@ -33,9 +32,13 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.settings_manager = Mock()
         self.mock_app.settings_manager.get_setting = Mock(return_value=None)
 
-        # Mock queues
-        self.mock_app.record_queue = Mock()
-        self.mock_app.playback_queue = Mock()
+        # Mock queue_manager instead of direct queues
+        self.mock_app.queue_manager = Mock()
+        self.mock_app.queue_manager.set_input_device = Mock(return_value=True)
+        self.mock_app.queue_manager.set_output_device = Mock(return_value=True)
+        self.mock_app.queue_manager.set_input_channel_mapping = Mock(return_value=True)
+        self.mock_app.queue_manager.set_output_channel_mapping = Mock(return_value=True)
+        self.mock_app.queue_manager.update_audio_settings = Mock()
 
         # Mock shared state
         self.mock_app.shared_state = Mock()
@@ -66,9 +69,7 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.settings_manager.update_setting.assert_called_with(
             "input_device", 1
         )
-        self.mock_app.record_queue.put.assert_called_with(
-            {"action": "set_input_device", "index": 1}
-        )
+        self.mock_app.queue_manager.set_input_device.assert_called_with(1)
         self.assertFalse(self.controller.is_default_input_active)
         self.mock_app.window.set_status.assert_called_with("Input device: Device 1")
 
@@ -88,9 +89,7 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.settings_manager.update_setting.assert_called_with(
             "input_device", None
         )
-        self.mock_app.record_queue.put.assert_called_with(
-            {"action": "set_input_device", "index": None}
-        )
+        self.mock_app.queue_manager.set_input_device.assert_called_with(None)
         self.assertTrue(self.controller.is_default_input_active)
         self.mock_app.window.set_status.assert_called_with(
             "Input device: System Default"
@@ -122,7 +121,7 @@ class TestDeviceController(unittest.TestCase):
             return_value=[{"index": 1, "name": "Device 1"}]
         )
         mock_get_dm.return_value = mock_dm
-        self.mock_app.record_queue.put.side_effect = queue.Full
+        self.mock_app.queue_manager.set_input_device = Mock(return_value=False)
 
         # Execute - should not raise exception
         self.controller.set_input_device(1)
@@ -151,9 +150,7 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.settings_manager.update_setting.assert_called_with(
             "output_device", 2
         )
-        self.mock_app.playback_queue.put.assert_called_with(
-            {"action": "set_output_device", "index": 2}
-        )
+        self.mock_app.queue_manager.set_output_device.assert_called_with(2)
         self.assertFalse(self.controller.is_default_output_active)
         self.mock_app.window.set_status.assert_called_with("Output device: Device 2")
 
@@ -185,9 +182,7 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.settings_manager.update_setting.assert_called_with(
             "input_channel_mapping", [0, 1]
         )
-        self.mock_app.record_queue.put.assert_called_with(
-            {"action": "set_channel_mapping", "mapping": [0, 1]}
-        )
+        self.mock_app.queue_manager.set_input_channel_mapping.assert_called_with([0, 1])
         self.mock_app.window.set_status.assert_called_with(
             "Input channel mapping: [0, 1]"
         )
@@ -213,8 +208,8 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.settings_manager.update_setting.assert_called_with(
             "output_channel_mapping", [1, 0]
         )
-        self.mock_app.playback_queue.put.assert_called_with(
-            {"action": "set_channel_mapping", "mapping": [1, 0]}
+        self.mock_app.queue_manager.set_output_channel_mapping.assert_called_with(
+            [1, 0]
         )
         self.mock_app.window.set_status.assert_called_with(
             "Output channel mapping: [1, 0]"
@@ -234,24 +229,9 @@ class TestDeviceController(unittest.TestCase):
             sample_rate=48000, bit_depth=24, channels=1, format_type=1
         )
 
-        # Verify record queue update
-        self.mock_app.record_queue.put.assert_called_with(
-            {
-                "action": "update_settings",
-                "sample_rate": 48000,
-                "bit_depth": 24,
-                "channels": 1,
-            }
-        )
-
-        # Verify playback queue update
-        self.mock_app.playback_queue.put.assert_called_with(
-            {
-                "action": "update_settings",
-                "sample_rate": 48000,
-                "bit_depth": 24,
-                "channels": 1,
-            }
+        # Verify update_audio_settings call
+        self.mock_app.queue_manager.update_audio_settings.assert_called_with(
+            sample_rate=48000, bit_depth=24, channels=1
         )
 
     @patch("revoxx.controllers.device_controller.get_device_manager")
@@ -306,7 +286,11 @@ class TestDeviceController(unittest.TestCase):
         # Verify
         self.assertTrue(result)
         mock_dm.check_device_compatibility.assert_called_once_with(
-            device_name="Test Device", sample_rate=48000, bit_depth=24, channels=1
+            device_name="Test Device",
+            sample_rate=48000,
+            bit_depth=24,
+            channels=1,
+            is_input=True,
         )
 
     @patch("revoxx.controllers.device_controller.get_device_manager")

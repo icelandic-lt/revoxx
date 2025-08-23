@@ -1,6 +1,5 @@
 """Device controller for managing audio input/output devices."""
 
-import queue
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from ..utils.device_manager import get_device_manager
@@ -59,7 +58,7 @@ class DeviceController:
         if saved_output_mapping is not None:
             self.set_output_channel_mapping(saved_output_mapping, save=False)
 
-    def set_input_device(self, index: int, save: bool = True) -> None:
+    def set_input_device(self, index: Optional[int], save: bool = True) -> None:
         """Set the input device for recording.
 
         Args:
@@ -80,10 +79,7 @@ class DeviceController:
             pass
 
         # Send to record process
-        try:
-            self.app.record_queue.put({"action": "set_input_device", "index": index})
-        except (queue.Full, AttributeError):
-            pass
+        self.app.queue_manager.set_input_device(index)
 
         # Update device status flags
         if index is None:
@@ -124,12 +120,7 @@ class DeviceController:
         self.app.config.audio.input_channel_mapping = mapping
 
         # Send to record process
-        try:
-            self.app.record_queue.put(
-                {"action": "set_channel_mapping", "mapping": mapping}
-            )
-        except (queue.Full, AttributeError):
-            pass
+        self.app.queue_manager.set_input_channel_mapping(mapping)
 
         # Save to settings if requested
         if save:
@@ -166,10 +157,7 @@ class DeviceController:
             pass
 
         # Send to playback process
-        try:
-            self.app.playback_queue.put({"action": "set_output_device", "index": index})
-        except (queue.Full, AttributeError):
-            pass
+        self.app.queue_manager.set_output_device(index)
 
         # Update device status flags
         if index is None:
@@ -210,12 +198,7 @@ class DeviceController:
         self.app.config.audio.output_channel_mapping = mapping
 
         # Send to playback process
-        try:
-            self.app.playback_queue.put(
-                {"action": "set_channel_mapping", "mapping": mapping}
-            )
-        except (queue.Full, AttributeError):
-            pass
+        self.app.queue_manager.set_output_channel_mapping(mapping)
 
         # Save to settings if requested
         if save:
@@ -245,33 +228,15 @@ class DeviceController:
         except AttributeError:
             pass
 
-        # Send updated settings to record process
-        try:
-            self.app.record_queue.put(
-                {
-                    "action": "update_settings",
-                    "sample_rate": self.app.config.audio.sample_rate,
-                    "bit_depth": self.app.config.audio.bit_depth,
-                    "channels": self.app.config.audio.channels,
-                }
-            )
-        except (queue.Full, AttributeError):
-            pass
+        # Send updated settings to processes
+        self.app.queue_manager.update_audio_settings(
+            sample_rate=self.app.config.audio.sample_rate,
+            bit_depth=self.app.config.audio.bit_depth,
+            channels=self.app.config.audio.channels,
+        )
 
-        # Send updated settings to playback process
-        try:
-            self.app.playback_queue.put(
-                {
-                    "action": "update_settings",
-                    "sample_rate": self.app.config.audio.sample_rate,
-                    "bit_depth": self.app.config.audio.bit_depth,
-                    "channels": self.app.config.audio.channels,
-                }
-            )
-        except (queue.Full, AttributeError):
-            pass
-
-    def get_available_input_devices(self) -> List[Dict[str, Any]]:
+    @staticmethod
+    def get_available_input_devices() -> List[Dict[str, Any]]:
         """Get list of available input devices.
 
         Returns:
@@ -280,7 +245,8 @@ class DeviceController:
         device_manager = get_device_manager()
         return device_manager.get_input_devices()
 
-    def get_available_output_devices(self) -> List[Dict[str, Any]]:
+    @staticmethod
+    def get_available_output_devices() -> List[Dict[str, Any]]:
         """Get list of available output devices.
 
         Returns:
@@ -307,6 +273,7 @@ class DeviceController:
             sample_rate=self.app.config.audio.sample_rate,
             bit_depth=self.app.config.audio.bit_depth,
             channels=self.app.config.audio.channels,
+            is_input=is_input,
         )
 
     def find_compatible_device(self, is_input: bool = True) -> Optional[int]:
@@ -331,7 +298,8 @@ class DeviceController:
 
         return None
 
-    def refresh_devices(self) -> None:
+    @staticmethod
+    def refresh_devices() -> None:
         """Refresh the device list from the system."""
         try:
             device_manager = get_device_manager()
@@ -368,6 +336,22 @@ class DeviceController:
         """Mark that user has been notified about default output."""
         self._notified_default_output = True
 
+    def _get_device_name_from_index(self, index: Optional[int]) -> str:
+        """Convert device index to device name.
+
+        Args:
+            index: Device index (None for system default)
+
+        Returns:
+            Device name or "default" for system default
+        """
+        if index is None:
+            return "default"
+
+        device_manager = get_device_manager()
+        device_name = device_manager.get_device_name_by_index(index)
+        return device_name if device_name else "default"
+
     def _update_session_input_device(
         self, index: Optional[int], device_changed: bool
     ) -> None:
@@ -380,15 +364,8 @@ class DeviceController:
         if not self.app.current_session or not self.app.current_session.audio_config:
             return
 
-        device_manager = get_device_manager()
-
-        # Convert index to device name
-        if index is None:
-            device_name = "default"
-        else:
-            device_name = device_manager.get_device_name_by_index(index)
-            if not device_name:
-                device_name = "default"
+        # Convert index to device name using shared method
+        device_name = self._get_device_name_from_index(index)
 
         # Update session
         self.app.current_session.audio_config.input_device = device_name
@@ -414,15 +391,8 @@ class DeviceController:
         if not self.app.current_session or not self.app.current_session.audio_config:
             return
 
-        device_manager = get_device_manager()
-
-        # Convert index to device name
-        if index is None:
-            device_name = "default"
-        else:
-            device_name = device_manager.get_device_name_by_index(index)
-            if not device_name:
-                device_name = "default"
+        # Convert index to device name using shared method
+        device_name = self._get_device_name_from_index(index)
 
         # Update session
         self.app.current_session.audio_config.output_device = device_name
@@ -487,7 +457,7 @@ class DeviceController:
         # Apply output device (if configured)
         if hasattr(session_config, "output_device") and session_config.output_device:
             if session_config.output_device == "default":
-                # Use system default
+                # Use system default (None represents system default)
                 self.set_output_device(None, save=False)
                 self.set_output_channel_mapping(None, save=False)
             else:

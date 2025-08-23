@@ -353,7 +353,7 @@ class MainWindow:
         view_menu.add_checkbutton(
             label="Show Level Meter",
             variable=self.level_meter_var,
-            command=self._toggle_level_meter_callback,
+            command=self.toggle_level_meter_callback,
             accelerator="L",
         )
 
@@ -451,71 +451,11 @@ class MainWindow:
         self.menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(
             label="Keyboard Shortcuts",
-            command=self._show_keyboard_shortcuts,
+            command=make_menu_cb("show_help"),
             accelerator=KeyBindings.SHOW_HELP,
         )
         help_menu.add_separator()
         help_menu.add_command(label="About", command=self._show_about)
-
-    def _show_keyboard_shortcuts(self) -> None:
-        """Show keyboard shortcuts in a dialog window."""
-        shortcuts_window = tk.Toplevel(self.root)
-        shortcuts_window.title("Keyboard Shortcuts")
-        shortcuts_window.geometry("800x600")
-        shortcuts_window.resizable(False, False)
-
-        # Create text widget with monospaced font for alignment
-        text = tk.Text(
-            shortcuts_window,
-            wrap=tk.WORD,
-            padx=30,
-            pady=30,
-            bg=UIConstants.COLOR_BACKGROUND,
-            fg=UIConstants.COLOR_TEXT_NORMAL,
-            font=("Courier New", 18),
-        )
-        text.pack(fill=tk.BOTH, expand=True)
-
-        # Add shortcuts text
-        cmd_key = "Cmd" if platform.system() == "Darwin" else "Ctrl"
-
-        shortcuts_text = f"""
-RECORDING CONTROLS:
-  SPACE      Start/Stop Recording
-  P          Play Current Recording
-  {cmd_key}+D      Delete Current Recording (Move to Trash)
-
-NAVIGATION:
-  ↑/↓        Navigate Previous/Next Utterance
-  ←/→        Browse Takes (Previous/Next)
-  {cmd_key}+F      Find Utterance
-
-DISPLAY:
-  M          Toggle Mel Spectrogram
-  L          Toggle Level Meter
-  O          Monitor Input Levels
-  F10        Toggle Fullscreen
-  I          Show Audio Info Overlay
-
-SESSION:
-  {cmd_key}+N      New Session
-  {cmd_key}+O      Open Session
-
-GENERAL:
-  F1         Show Keyboard Shortcuts (this window)
-  {cmd_key}+Q      Quit Application
-"""
-        text.insert("1.0", shortcuts_text)
-        text.config(state=tk.DISABLED)  # Make read-only
-
-        # Add close button
-        close_btn = tk.Button(
-            shortcuts_window, text="Close", command=shortcuts_window.destroy
-        )
-        close_btn.pack(pady=10)
-
-        # Focus the window
-        shortcuts_window.focus_set()
 
     def _show_about(self) -> None:
         """Show about dialog."""
@@ -546,7 +486,7 @@ A tool for recording (emotional) speech datasets."""
         else:
             self.toggle_spectrogram()
 
-    def _toggle_level_meter_callback(self) -> None:
+    def toggle_level_meter_callback(self) -> None:
         """Callback for menu toggle level meter."""
         # Toggle embedded level meter
         show_meter = self.level_meter_var.get()

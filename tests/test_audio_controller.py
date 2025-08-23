@@ -1,5 +1,6 @@
 """Tests for the AudioController."""
 
+import queue
 import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
@@ -51,8 +52,17 @@ class TestAudioController(unittest.TestCase):
         self.mock_app.buffer_manager.create_buffer = Mock()
 
         self.mock_app.manager_dict = {}
-        self.mock_app.record_queue = Mock()
-        self.mock_app.playback_queue = Mock()
+
+        # Mock queue_manager instead of direct queues
+        self.mock_app.queue_manager = Mock()
+        self.mock_app.queue_manager.start_recording = Mock()
+        self.mock_app.queue_manager.stop_recording = Mock()
+        self.mock_app.queue_manager.start_playback = Mock()
+        self.mock_app.queue_manager.stop_playback = Mock()
+        self.mock_app.queue_manager.set_input_device = Mock()
+        self.mock_app.queue_manager.set_output_device = Mock()
+        self.mock_app.queue_manager.get_audio_data = Mock(side_effect=queue.Empty)
+
         self.mock_app.root = Mock()
         self.mock_app.settings_manager = Mock()
 
@@ -117,11 +127,19 @@ class TestAudioController(unittest.TestCase):
     @patch("revoxx.controllers.audio_controller.get_device_manager")
     def test_play_current_with_recording(self, mock_get_dm, mock_sleep, mock_sd):
         """Test play_current when a recording is available."""
+        import numpy as np
+
         # Setup
         self.mock_app.state.recording.get_current_take = Mock(return_value=1)
         mock_path = Mock()
         mock_path.exists = Mock(return_value=True)
         self.mock_app.file_manager.get_recording_path = Mock(return_value=mock_path)
+
+        # Mock load_audio to return numpy array
+        mock_audio_data = np.zeros(48000)  # 1 second of audio at 48kHz
+        self.mock_app.file_manager.load_audio = Mock(
+            return_value=(mock_audio_data, 48000)
+        )
 
         mock_buffer = Mock()
         mock_buffer.get_metadata = Mock(return_value={"test": "metadata"})
@@ -133,7 +151,7 @@ class TestAudioController(unittest.TestCase):
 
         # Verify
         mock_sd.stop.assert_called_once()
-        self.mock_app.playback_queue.put.assert_any_call({"action": "stop"})
+        self.mock_app.queue_manager.stop_playback.assert_called_once()
         self.mock_app.window.mel_spectrogram.stop_playback.assert_called_once()
         self.mock_app.shared_state.reset_level_meter.assert_called()
         self.mock_app.file_manager.load_audio.assert_called_once_with(mock_path)
@@ -186,7 +204,7 @@ class TestAudioController(unittest.TestCase):
             "test_label", 1
         )
         self.assertIn("save_path", self.mock_app.manager_dict)
-        self.mock_app.record_queue.put.assert_called_with({"action": "start"})
+        self.mock_app.queue_manager.start_recording.assert_called_once()
         self.mock_app.window.mel_spectrogram.clear.assert_called_once()
         self.mock_app.window.mel_spectrogram.start_recording.assert_called_once_with(
             48000
@@ -208,7 +226,7 @@ class TestAudioController(unittest.TestCase):
         self.assertTrue(self.controller.is_monitoring)
         self.assertEqual(self.controller.saved_spectrogram_state, True)
         self.assertFalse(self.mock_app.state.recording.is_recording)
-        self.mock_app.record_queue.put.assert_called_with({"action": "start"})
+        self.mock_app.queue_manager.start_recording.assert_called_once()
         self.mock_app.window.set_status.assert_called_with("Monitoring input levels...")
 
     def test_start_audio_capture_invalid_mode(self):
@@ -225,7 +243,7 @@ class TestAudioController(unittest.TestCase):
 
         # Verify
         self.assertFalse(self.mock_app.state.recording.is_recording)
-        self.mock_app.record_queue.put.assert_called_with({"action": "stop"})
+        self.mock_app.queue_manager.stop_recording.assert_called_once()
         self.mock_app.window.mel_spectrogram.stop_recording.assert_called_once()
         self.mock_app.display_controller.update_display.assert_called_once()
 
@@ -242,7 +260,7 @@ class TestAudioController(unittest.TestCase):
 
         # Verify
         self.assertFalse(self.controller.is_monitoring)
-        self.mock_app.record_queue.put.assert_called_with({"action": "stop"})
+        self.mock_app.queue_manager.stop_recording.assert_called_once()
         self.mock_app.window.mel_spectrogram.stop_recording.assert_called_once()
         self.mock_app.window.set_status.assert_called_with("Ready")
         self.mock_app.display_controller.show_saved_recording.assert_called_once()
@@ -258,7 +276,7 @@ class TestAudioController(unittest.TestCase):
         """Test stop_synchronized_playback sends stop command and resets meter."""
         self.controller.stop_synchronized_playback()
 
-        self.mock_app.playback_queue.put.assert_called_once_with({"action": "stop"})
+        self.mock_app.queue_manager.stop_playback.assert_called_once()
         self.mock_app.window.embedded_level_meter.reset.assert_called_once()
 
 

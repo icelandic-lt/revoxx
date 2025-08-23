@@ -1,13 +1,11 @@
 """Level meter calculations for audio monitoring.
 
 This module provides calculation functionality for the Level widget.
-
-XXX DS: maybe explicit ringbuffer-handling ?
-
 """
 
 import numpy as np
 from typing import Tuple
+from collections import deque
 from ..utils.audio_utils import normalize_audio
 from ..constants import AudioConstants
 
@@ -33,12 +31,14 @@ class LevelCalculator:
         self.rms_window_ms = rms_window_ms or self.DEFAULT_RMS_WINDOW_MS
         self.peak_hold_ms = peak_hold_ms or self.DEFAULT_PEAK_HOLD_MS
 
-        # RMS calculation state
+        # RMS calculation state using deque as ringbuffer
         self.rms_window_samples = int(
             self.rms_window_ms * sample_rate / AudioConstants.MS_TO_SEC
         )
-        self.audio_buffer = np.zeros(self.rms_window_samples)
-        self.buffer_index = 0
+        # Use deque with maxlen for ringbuffer behavior
+        self.audio_buffer = deque(maxlen=self.rms_window_samples)
+        # Initialize with zeros
+        self.audio_buffer.extend(np.zeros(self.rms_window_samples))
 
         # Peak hold state
         self.peak_hold_db = AudioConstants.MIN_DB_LEVEL
@@ -65,14 +65,24 @@ class LevelCalculator:
 
             # Resize RMS buffer if needed
             if new_rms_samples != self.rms_window_samples:
-                # Create new buffer and copy what fits
-                new_buffer = np.zeros(new_rms_samples)
-                copy_size = min(new_rms_samples, self.rms_window_samples)
-                new_buffer[:copy_size] = self.audio_buffer[:copy_size]
+                # Convert current buffer to list to preserve data
+                current_data = list(self.audio_buffer)
 
-                self.audio_buffer = new_buffer
+                # Create new deque with new size
+                self.audio_buffer = deque(maxlen=new_rms_samples)
+
+                # Fill with existing data or zeros
+                if new_rms_samples > len(current_data):
+                    # Larger buffer - pad with zeros
+                    self.audio_buffer.extend(current_data)
+                    self.audio_buffer.extend(
+                        np.zeros(new_rms_samples - len(current_data))
+                    )
+                else:
+                    # Smaller buffer - take most recent samples
+                    self.audio_buffer.extend(current_data[-new_rms_samples:])
+
                 self.rms_window_samples = new_rms_samples
-                self.buffer_index = min(self.buffer_index, new_rms_samples - 1)
 
             # Update peak hold samples
             self.peak_hold_samples = int(
@@ -106,28 +116,19 @@ class LevelCalculator:
         else:
             raise ValueError(f"Unexpected array dimensions: {normalized_data.ndim}")
 
-        # Update circular buffer for RMS calculation
+        # Update ringbuffer with new samples
         samples_to_add = len(mono_data)
         if samples_to_add >= self.rms_window_samples:
-            # Replace entire buffer
-            self.audio_buffer = mono_data[-self.rms_window_samples :]
-            self.buffer_index = 0
+            # Replace entire buffer with most recent samples
+            self.audio_buffer.clear()
+            self.audio_buffer.extend(mono_data[-self.rms_window_samples :])
         else:
-            # Add to circular buffer
-            end_index = self.buffer_index + samples_to_add
-            if end_index <= self.rms_window_samples:
-                self.audio_buffer[self.buffer_index : end_index] = mono_data
-            else:
-                # Wrap around
-                first_part = self.rms_window_samples - self.buffer_index
-                self.audio_buffer[self.buffer_index :] = mono_data[:first_part]
-                self.audio_buffer[: end_index - self.rms_window_samples] = mono_data[
-                    first_part:
-                ]
-            self.buffer_index = end_index % self.rms_window_samples
+            # Add new samples (deque automatically drops oldest when full)
+            self.audio_buffer.extend(mono_data)
 
-        # Calculate RMS
-        rms = np.sqrt(np.mean(self.audio_buffer**2))
+        # Calculate RMS from buffer
+        buffer_array = np.array(self.audio_buffer)
+        rms = np.sqrt(np.mean(buffer_array**2))
         rms_db = AudioConstants.AMPLITUDE_TO_DB_FACTOR * np.log10(
             max(rms, AudioConstants.NOISE_FLOOR)
         )
@@ -154,8 +155,9 @@ class LevelCalculator:
 
     def reset(self) -> None:
         """Reset all level calculations."""
-        self.audio_buffer.fill(0)
-        self.buffer_index = 0
+        # Clear and refill buffer with zeros
+        self.audio_buffer.clear()
+        self.audio_buffer.extend(np.zeros(self.rms_window_samples))
         self.peak_hold_db = AudioConstants.MIN_DB_LEVEL
         self.peak_hold_counter = 0
         self.frame_count = 0

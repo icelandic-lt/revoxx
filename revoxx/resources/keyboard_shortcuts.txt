@@ -1,33 +1,32 @@
 KEYBOARD SHORTCUTS
 
-Recording:
+RECORDING
   Space        Toggle recording
   P            Play current recording
-  M            Toggle monitoring
+  O            Toggle monitoring
 
-Navigation:
+NAVIGATION
   Up/Down      Navigate utterances
   Left/Right   Browse takes
 
-Display:
-  S            Toggle spectrogram
+DISPLAY
+  M            Toggle mel spectrogram
   L            Toggle level meter
   I            Toggle info overlay
   F10          Toggle fullscreen
 
-File Operations:
+FILE OPERATIONS
   Ctrl+D       Delete current recording
-  Delete       Delete current recording
 
-Dialogs:
+DIALOGS
   Ctrl+F       Find utterance
   Ctrl+U       Utterance order
+  Ctrl+I       Session settings
 
-Session Management:
+SESSION MANAGEMENT
   Ctrl+N       New session
   Ctrl+O       Open session
-  Ctrl+I       Session settings
   Ctrl+Q       Quit
 
-Help:
-  F1           This help dialog
+HELP
+  F1           Show keyboard shortcuts

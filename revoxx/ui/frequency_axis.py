@@ -6,7 +6,7 @@ import librosa
 from matplotlib.axes import Axes
 
 from ..constants import UIConstants
-from ..audio.mel_factory import MelProcessorFactory
+from ..audio.processors.mel_spectrogram import MEL_CONFIG
 
 
 class FrequencyAxisManager:
@@ -56,7 +56,7 @@ class FrequencyAxisManager:
         # Reset peak indicator when updating axis
         self._peak_indicator_position = None
 
-        params = MelProcessorFactory.calculate_adaptive_params(sample_rate, fmin)
+        params = MEL_CONFIG.calculate_params(sample_rate, fmin)
         adaptive_n_mels = params["n_mels"]
         adaptive_fmax = params["fmax"]
 
