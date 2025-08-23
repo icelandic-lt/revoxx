@@ -13,6 +13,13 @@ from matplotlib.lines import Line2D
 from ...constants import UIConstants
 from .controllers import PlaybackController, ZoomController
 
+from ...audio.shared_state import (
+    SHARED_STATUS_INVALID,
+    PLAYBACK_STATUS_COMPLETED,
+    PLAYBACK_STATUS_FINISHING,
+    PLAYBACK_STATUS_IDLE,
+)
+
 if TYPE_CHECKING:
     from ...audio.shared_state import SharedState
 
@@ -169,13 +176,6 @@ class PlaybackHandler:
         status = playback_state.get("status", 0)
 
         # Check for invalid state first
-        from ...audio.shared_state import (
-            SHARED_STATUS_INVALID,
-            PLAYBACK_STATUS_COMPLETED,
-            PLAYBACK_STATUS_FINISHING,
-            PLAYBACK_STATUS_IDLE,
-        )
-
         if status == SHARED_STATUS_INVALID:
             print("ERROR: Playback state not initialized", file=sys.stderr)
             self.stop_playback()
@@ -235,10 +235,6 @@ class PlaybackHandler:
 
         # Check if finished
         # For FINISHING status, continue animating even if position hasn't updated
-        from ...audio.shared_state import (
-            PLAYBACK_STATUS_FINISHING,
-            PLAYBACK_STATUS_COMPLETED,
-        )
 
         # Handle FINISHING status - override position to animate to end
         if status == PLAYBACK_STATUS_FINISHING:

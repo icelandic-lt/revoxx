@@ -4,6 +4,16 @@ import tkinter as tk
 from tkinter import ttk
 from typing import List, Dict, Tuple
 import re
+from enum import Enum
+
+from .dialog_utils import setup_dialog_window
+
+
+class SortDirection(Enum):
+    """Sort direction for utterance lists."""
+
+    UP = "up"  # Ascending (A-Z, 0-9)
+    DOWN = "down"  # Descending (Z-A, 9-0)
 
 
 class UtteranceListDialog:
@@ -42,6 +52,8 @@ class UtteranceListDialog:
         show_filters: bool = True,
         utterance_order: List[int] = None,
         default_sort: str = "order",
+        default_sort_direction: SortDirection = SortDirection.UP,
+        current_index: int = None,
     ):
         """Initialize the dialog base.
 
@@ -55,6 +67,8 @@ class UtteranceListDialog:
             show_filters: Whether to show filter checkboxes
             utterance_order: Display order for utterances (list of indices)
             default_sort: Default sort column ("order", "label", etc.)
+            default_sort_direction: Default sort direction (UP or DOWN)
+            current_index: Currently selected utterance index to highlight
         """
         self.parent = parent
         self.utterances = utterances
@@ -66,16 +80,15 @@ class UtteranceListDialog:
         self.show_search = show_search
         self.show_filters = show_filters
         self.utterance_order = utterance_order or list(range(len(utterances)))
+        self.current_index = current_index
 
         # Sorting state
         self.sort_column = default_sort  # Default sort column
-        self.sort_reverse = False
+        self.sort_reverse = default_sort_direction == SortDirection.DOWN
+        self.title = title
 
-        # Create dialog window but don't show it yet
+        # Create dialog window
         self.dialog = tk.Toplevel(parent)
-        self.dialog.withdraw()  # Hide initially to prevent flashing
-        self.dialog.title(title)
-        self.dialog.transient(parent)
 
         # First prepare data to calculate optimal sizes
         self._prepare_data()
@@ -83,21 +96,25 @@ class UtteranceListDialog:
         # Create UI with calculated dimensions
         self._create_ui()
 
-        # Set window size based on content
-        self._setup_window()
-
         # Now populate the tree and apply filters
         self._apply_data()
 
-        # Now show the window after everything is set up
-        self.dialog.deiconify()
-        self.dialog.lift()
+        # Setup window with dynamic size calculation
+        setup_dialog_window(
+            self.dialog,
+            self.parent,
+            title=title,
+            size_callback=self._calculate_optimal_size,
+            min_width=self.MIN_WIDTH,
+            min_height=self.MIN_HEIGHT,
+            center_on_parent=True,
+        )
 
         # Focus handling (can be overridden)
         self._set_initial_focus()
 
-        # Make dialog modal
-        self.dialog.grab_set()
+        # Lift to top
+        self.dialog.lift()
 
     def _prepare_data(self) -> None:
         """Prepare data and calculate optimal column widths."""
@@ -154,6 +171,59 @@ class UtteranceListDialog:
             return emotion, clean_text
         return "", text
 
+    def _calculate_optimal_size(self) -> Tuple[int, int]:
+        """Calculate optimal dialog size based on content.
+
+        Returns:
+            Tuple of (width, height) in pixels
+        """
+        # Update parent to ensure we get correct dimensions
+        self.parent.update_idletasks()
+
+        # Get parent window position and size
+        parent_width = self.parent.winfo_width()
+        parent_height = self.parent.winfo_height()
+
+        # Calculate dialog width based on column widths
+        # Add up column widths plus padding and scrollbar
+        content_width = (
+            self.column_widths["#0"]
+            + self.column_widths["emotion"]
+            + self.column_widths["text"]
+            + self.column_widths["recordings"]
+            + 50  # Extra for padding, borders, scrollbar
+        )
+
+        # Add padding for the dialog frame
+        dialog_width = content_width + 40
+
+        # Ensure minimum width
+        dialog_width = max(dialog_width, self.MIN_WIDTH)
+
+        # Limit to parent width if too large
+        max_width = int(parent_width * 0.9)
+        dialog_width = min(dialog_width, max_width)
+
+        # For height: Since the dialog will be centered, we need to ensure
+        # it doesn't extend beyond parent bounds when centered
+        # Maximum height should be at most the parent height
+        # (centering will place it within parent bounds)
+
+        # Start with desired height based on ratio
+        desired_height = int(parent_height * self.DIALOG_HEIGHT_RATIO)
+
+        # But limit to parent height with some margin
+        # Using 95% to leave a small visual margin
+        max_height = int(parent_height * 0.95)
+
+        # Apply constraints
+        dialog_height = max(self.MIN_HEIGHT, min(desired_height, max_height))
+
+        # Final check: if dialog would be taller than parent, limit it
+        if dialog_height > parent_height:
+            dialog_height = parent_height
+        return dialog_width, dialog_height
+
     def _calculate_column_widths(self) -> Dict[str, int]:
         """Calculate optimal column widths based on content.
 
@@ -198,53 +268,6 @@ class UtteranceListDialog:
         )
 
         return widths
-
-    def _setup_window(self) -> None:
-        """Set up window size and position based on content."""
-        # Update parent to ensure we get correct dimensions
-        self.parent.update_idletasks()
-
-        # Get parent window position and size
-        parent_x = self.parent.winfo_rootx()
-        parent_y = self.parent.winfo_rooty()
-        parent_width = self.parent.winfo_width()
-        parent_height = self.parent.winfo_height()
-
-        # Calculate dialog width based on column widths
-        # Add up column widths plus padding and scrollbar
-        content_width = (
-            self.column_widths["#0"]
-            + self.column_widths["emotion"]
-            + self.column_widths["text"]
-            + self.column_widths["recordings"]
-            + 50  # Extra for padding, borders, scrollbar
-        )
-
-        # Add padding for the dialog frame
-        dialog_width = content_width + 40
-
-        # Ensure minimum width
-        dialog_width = max(dialog_width, self.MIN_WIDTH)
-
-        # Limit to parent width if too large
-        max_width = int(parent_width * 0.9)
-        dialog_width = min(dialog_width, max_width)
-
-        # Height based on parent height ratio
-        dialog_height = max(
-            int(parent_height * self.DIALOG_HEIGHT_RATIO), self.MIN_HEIGHT
-        )
-
-        # Center dialog on parent window
-        x = parent_x + (parent_width - dialog_width) // 2
-        y = parent_y + (parent_height - dialog_height) // 2
-
-        # Set geometry before showing
-        self.dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
-        self.dialog.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)
-
-        # Ensure the dialog updates its geometry
-        self.dialog.update_idletasks()
 
     def _create_ui(self) -> None:
         """Create the UI elements."""
@@ -409,33 +432,53 @@ class UtteranceListDialog:
         self._update_column_headers()  # Show initial sort indicators
         self._apply_filters()
 
+        # Select current utterance if provided
+        if self.current_index is not None:
+            self.select_utterance_by_index(self.current_index)
+
     def _sort_items(self) -> None:
-        """Sort items based on current sort column and direction."""
+        """Sort items based on current sort column and direction.
+
+        For all columns except label/index, use label as secondary sort key
+        to ensure stable and predictable ordering when primary values are equal.
+        """
         if self.sort_column == "order":
-            # Sort by display order (session order)
+            # Sort by display order (session order), then by label
             self.all_items.sort(
-                key=lambda x: x["display_pos"], reverse=self.sort_reverse
+                key=lambda x: (x["display_pos"], x["label"]), reverse=self.sort_reverse
             )
         elif self.sort_column == "index" or self.sort_column == "label":
-            # Sort by label/index
+            # Sort by label/index only
             self.all_items.sort(key=lambda x: x["label"], reverse=self.sort_reverse)
         elif self.sort_column == "emotion":
-            # Sort by emotion (empty values last)
+            # Sort by emotion (empty values last), then by label
             self.all_items.sort(
-                key=lambda x: (x["emotion"] == "", x["emotion"]),
+                key=lambda x: (x["emotion"] == "", x["emotion"], x["label"]),
                 reverse=self.sort_reverse,
             )
         elif self.sort_column == "text":
-            # Sort by text alphabetically
+            # Sort by text alphabetically, then by label
             self.all_items.sort(
-                key=lambda x: x["clean_text"].lower(), reverse=self.sort_reverse
+                key=lambda x: (x["clean_text"].lower(), x["label"]),
+                reverse=self.sort_reverse,
             )
         elif self.sort_column == "recordings":
-            # Sort by number of recordings
-            self.all_items.sort(key=lambda x: x["takes"], reverse=self.sort_reverse)
+            # Sort by number of recordings, then by label
+            self.all_items.sort(
+                key=lambda x: (x["takes"], x["label"]), reverse=self.sort_reverse
+            )
 
     def _sort_by(self, column: str) -> None:
         """Sort tree by specified column."""
+        # Remember currently selected utterance
+        selected_index = None
+        selection = self.tree.selection()
+        if selection:
+            item = self.tree.item(selection[0])
+            tags = item.get("tags")
+            if tags:
+                selected_index = int(tags[0])
+
         # Toggle sort direction if same column, otherwise reset
         if self.sort_column == column:
             self.sort_reverse = not self.sort_reverse
@@ -451,6 +494,10 @@ class UtteranceListDialog:
 
         # Reapply filters to update display
         self._apply_filters()
+
+        # Restore selection if we had one
+        if selected_index is not None:
+            self.select_utterance_by_index(selected_index)
 
     def select_utterance_by_index(self, utterance_index: int) -> None:
         """Select and scroll to a specific utterance by its index.

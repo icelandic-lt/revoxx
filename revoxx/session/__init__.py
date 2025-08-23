@@ -1,7 +1,7 @@
 """Session management for Revoxx.
 
 This module provides session management functionality for organizing
-recordings into coherent sessions with consistent audio settings.
+recordings into coherent sessions.
 """
 
 from .manager import SessionManager

@@ -1,5 +1,7 @@
 """Factory for creating mel spectrogram processors."""
 
+# XXX DS: can this be integrated somewhere else ?
+
 from typing import Tuple
 from .processors import MelSpectrogramProcessor
 from .mel_constants import MEL_CONSTANTS
@@ -22,17 +24,13 @@ class MelProcessorFactory:
         Returns:
             Tuple of (processor, n_mels) where n_mels is the adaptive bin count
         """
-        # Use centralized calculation
         params = MEL_CONSTANTS.calculate_adaptive_params(sample_rate, fmin)
-
-        # Create processor
         processor = MelSpectrogramProcessor(
             sample_rate=sample_rate,
             n_mels=params["n_mels"],
             fmin=fmin,
             fmax=params["fmax"],
         )
-
         return processor, params["n_mels"]
 
     @staticmethod

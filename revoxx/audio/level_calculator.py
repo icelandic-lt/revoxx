@@ -1,6 +1,9 @@
 """Level meter calculations for audio monitoring.
 
 This module provides calculation functionality for the Level widget.
+
+XXX DS: maybe explicit ringbuffer-handling ?
+
 """
 
 import numpy as np

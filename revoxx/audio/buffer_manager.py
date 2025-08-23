@@ -56,7 +56,6 @@ class BufferManager:
             # Add to ring
             self.buffers.append(buffer)
             self._active_buffer = buffer
-
             return buffer
 
     @staticmethod
@@ -68,12 +67,12 @@ class BufferManager:
         """
         try:
             buffer.unlink()
-        except Exception:
-            pass  # Already unlinked or other error
+        except (FileNotFoundError, AttributeError):
+            pass  # Already unlinked or buffer has no shm
         try:
             buffer.close()
-        except Exception:
-            pass
+        except (AttributeError, ValueError):
+            pass  # Buffer already closed or invalid
 
     def get_active_buffer(self) -> Optional[AudioBuffer]:
         """Get the currently active buffer.

@@ -131,16 +131,26 @@ class ActiveRecordings:
         return match.group(1) if match else text
 
     def _get_sort_key(self):
-        """Get the sort key function for current sort column."""
+        """Get the sort key function for current sort column.
+
+        For all columns except label, use label as secondary sort key
+        to ensure stable and predictable ordering when primary values are equal.
+        """
         if self.sort_column == "label":
             return lambda item: item["label"].lower()
         elif self.sort_column == "text":
-            return lambda item: item["text"].lower()
+            # Sort by text, then by label for stable ordering
+            return lambda item: (item["text"].lower(), item["label"].lower())
         elif self.sort_column == "emotion":
-            # Empty emotions sort last
-            return lambda item: (item["emotion"] == "", item["emotion"])
+            # Empty emotions sort last, then by emotion, then by label
+            return lambda item: (
+                item["emotion"] == "",
+                item["emotion"],
+                item["label"].lower(),
+            )
         elif self.sort_column == "recordings":
-            return lambda item: item["takes"]
+            # Sort by takes, then by label for stable ordering
+            return lambda item: (item["takes"], item["label"].lower())
         else:
             # Default to index (no sort)
             return lambda item: item["index"]
@@ -158,7 +168,7 @@ class ActiveRecordings:
             for i, label in enumerate(self._labels):
                 item = {
                     "index": i,
-                    "label": label,
+                    "label": label,  # Always include label for secondary sorting
                 }
 
                 # Add fields as needed based on sort column
@@ -166,7 +176,6 @@ class ActiveRecordings:
                     item["text"] = self._extract_clean_text(self._utterances[i])
                 elif self.sort_column == "emotion":
                     item["emotion"] = self._extract_emotion(self._utterances[i])
-                    item["text"] = self._extract_clean_text(self._utterances[i])
                 elif self.sort_column == "recordings":
                     filenames = self._takes_cache.get(label, [])
                     item["takes"] = len(filenames)

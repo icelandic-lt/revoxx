@@ -96,7 +96,8 @@ class AudioPlayer:
             try:
                 target_channel_index = int(output_mapping[0])
                 num_stream_channels = max(1, target_channel_index + 1)
-            except Exception:
+            except (ValueError, TypeError, IndexError):
+                # Invalid channel mapping format
                 target_channel_index = 0
                 num_stream_channels = 1
 
@@ -114,7 +115,7 @@ class AudioPlayer:
                 callback=self._audio_callback,
                 finished_callback=self._finished_callback,
             )
-        except (sd.PortAudioError, OSError) as e:
+        except (sd.PortAudioError, OSError):
             try:
                 self.stream = sd.OutputStream(
                     samplerate=sample_rate,
@@ -198,7 +199,7 @@ class AudioPlayer:
                     self.current_position : self.current_position + to_copy
                 ]
                 out_channel_index = getattr(self, "_playback_output_channel_index", 0)
-                # Only clear buffer if using multi-channel output
+                # Only clear buffer if using multichannel output
                 if outdata.shape[1] > 1:
                     outdata.fill(0)
                 # Guard channel index within bounds
@@ -335,7 +336,8 @@ def playback_process(
                             player._output_channel_mapping = mapping
                         else:
                             player._output_channel_mapping = None
-                    except Exception:
+                    except (ValueError, TypeError):
+                        # Invalid channel mapping values
                         player._output_channel_mapping = None
 
                 else:

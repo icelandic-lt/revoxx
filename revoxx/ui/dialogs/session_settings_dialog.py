@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from ...session import Session
+from .dialog_utils import setup_dialog_window
 
 
 class SessionSettingsDialog:
@@ -21,61 +22,22 @@ class SessionSettingsDialog:
 
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Session Settings")
-
-        # Set a fixed size that should fit all content
-        self.dialog.geometry("450x600")
         self.dialog.resizable(False, False)
-
-        # Hide window initially (to prevent flashing)
-        self.dialog.withdraw()
-
-        # Set as modal dialog
-        self.dialog.transient(parent)
 
         # Create UI
         self._create_widgets()
-
-        # Center the window before showing
-        self._center_window()
-
-        # Now show the window at the correct position
-        self.dialog.deiconify()
-
-        # Grab focus after showing
-        self.dialog.grab_set()
+        setup_dialog_window(
+            self.dialog,
+            self.parent,
+            title="Session Settings",
+            width=450,
+            height=600,
+            center_on_parent=True,
+        )
 
         # Setup keyboard bindings
         self.dialog.bind("<Escape>", lambda e: self._on_close())
         self.dialog.bind("<Return>", lambda e: self._on_close())
-
-    def _center_window(self):
-        """Center the dialog on the parent window."""
-        self.dialog.update_idletasks()
-
-        # Get parent position and size
-        parent_x = self.parent.winfo_x()
-        parent_y = self.parent.winfo_y()
-        parent_width = self.parent.winfo_width()
-        parent_height = self.parent.winfo_height()
-
-        # Get dialog size
-        dialog_width = self.dialog.winfo_width()
-        dialog_height = self.dialog.winfo_height()
-
-        # Calculate center position
-        x = parent_x + (parent_width - dialog_width) // 2
-        y = parent_y + (parent_height - dialog_height) // 2
-
-        # Ensure dialog stays on screen
-        screen_width = self.dialog.winfo_screenwidth()
-        screen_height = self.dialog.winfo_screenheight()
-
-        # Adjust if necessary
-        x = max(10, min(x, screen_width - dialog_width - 10))
-        y = max(10, min(y, screen_height - dialog_height - 50))
-
-        self.dialog.geometry(f"+{x}+{y}")
 
     def _create_widgets(self):
         """Create and layout dialog widgets."""

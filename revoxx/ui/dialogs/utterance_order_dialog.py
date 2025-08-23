@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import List, Optional
-from .utterance_list_base import UtteranceListDialog
+from .utterance_list_base import UtteranceListDialog, SortDirection
 
 
 class UtteranceOrderDialog(UtteranceListDialog):
@@ -17,7 +17,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
         file_manager,
         current_order: Optional[List[int]] = None,
         current_sort_column: str = "label",
-        current_sort_reverse: bool = False,
+        current_sort_direction: SortDirection = SortDirection.UP,
         current_index: Optional[int] = None,
     ):
         """Initialize the utterance order dialog.
@@ -29,7 +29,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
             file_manager: RecordingFileManager for scanning files
             current_order: Current order as list of indices, None for original order
             current_sort_column: Current sort column from session
-            current_sort_reverse: Current sort direction from session
+            current_sort_direction: Current sort direction from session
             current_index: Currently selected utterance index to highlight
         """
         self.current_order = current_order or list(range(len(utterances)))
@@ -47,18 +47,10 @@ class UtteranceOrderDialog(UtteranceListDialog):
             show_search=False,  # No search needed
             show_filters=False,  # No filters needed for ordering
             utterance_order=self.current_order,
-            default_sort=current_sort_column,  # Use current sort column
+            default_sort=current_sort_column,
+            default_sort_direction=current_sort_direction,
+            current_index=current_index,
         )
-
-        # Apply current sort direction
-        self.sort_reverse = current_sort_reverse
-
-        # Select current utterance if provided after dialog is fully initialized
-        if self.current_index is not None:
-            # Schedule selection after the dialog is fully rendered
-            parent.after(
-                100, lambda: self.select_utterance_by_index(self.current_index)
-            )
 
     def _create_info_frame(self, parent: ttk.Frame) -> None:
         """Add info text at the top of the dialog."""

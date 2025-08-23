@@ -69,9 +69,9 @@ class MainWindow:
         self.config = config
         self.recording_state = recording_state
         self.ui_state = ui_state
-        self.manager_dict = manager_dict or {}
-        self.app_callbacks = app_callbacks or {}
-        self.settings_manager = settings_manager or SettingsManager()
+        self.manager_dict = manager_dict
+        self.app_callbacks = app_callbacks
+        self.settings_manager = settings_manager
         self.shared_audio_state = shared_audio_state
 
         # Get screen information
@@ -225,6 +225,30 @@ class MainWindow:
         self.menubar = tk.Menu(self.root)
         self.root.config(menu=self.menubar)
 
+        # Helper function to create menu commands that look up callbacks at runtime
+        def make_menu_cb(callback_name: str, fallback=None):
+            """Create a lambda that looks up menu callback at runtime.
+
+            Args:
+                callback_name: Name of callback in app_callbacks dict
+                fallback: Optional fallback function if callback not found
+
+            Returns:
+                Lambda function that performs runtime lookup
+            """
+            if fallback is None:
+                return lambda: (
+                    self.app_callbacks[callback_name]()
+                    if callback_name in self.app_callbacks
+                    else None
+                )
+            else:
+                return lambda: (
+                    self.app_callbacks[callback_name]()
+                    if callback_name in self.app_callbacks
+                    else fallback()
+                )
+
         # File menu
         file_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="File", menu=file_menu)
@@ -260,13 +284,9 @@ class MainWindow:
         file_menu.add_separator()
 
         # Route Quit via app callback if provided to ensure clean shutdown
-        quit_cmd = (
-            self.app_callbacks.get("quit")
-            if isinstance(getattr(self, "app_callbacks", None), dict)
-            and "quit" in self.app_callbacks
-            else self.root.quit
+        file_menu.add_command(
+            label="Quit", command=make_menu_cb("quit", self.root.quit), accelerator="Q"
         )
-        file_menu.add_command(label="Quit", command=quit_cmd, accelerator="Q")
 
         # Edit menu
         edit_menu = tk.Menu(self.menubar, tearoff=0)
@@ -274,14 +294,9 @@ class MainWindow:
 
         # Find utterance
         find_accel = "Cmd+F" if platform.system() == "Darwin" else "Ctrl+F"
-        find_cmd = (
-            self.app_callbacks.get("show_find_dialog")
-            if self.app_callbacks and "show_find_dialog" in self.app_callbacks
-            else lambda: None
-        )
         edit_menu.add_command(
             label="Find Utterance...",
-            command=find_cmd,
+            command=make_menu_cb("show_find_dialog"),
             accelerator=find_accel,
         )
 
@@ -289,28 +304,20 @@ class MainWindow:
 
         # Delete recording
         delete_accel = "Cmd+D" if platform.system() == "Darwin" else "Ctrl+D"
-        delete_cmd = (
-            self.app_callbacks.get("delete_recording")
-            if self.app_callbacks and "delete_recording" in self.app_callbacks
-            else lambda: None
-        )
         edit_menu.add_command(
             label="Delete Recording",
-            command=delete_cmd,
+            command=make_menu_cb("delete_recording"),
             accelerator=delete_accel,
         )
 
         edit_menu.add_separator()
 
         # Utterance Order
-        order_cmd = (
-            self.app_callbacks.get("show_utterance_order")
-            if self.app_callbacks and "show_utterance_order" in self.app_callbacks
-            else lambda: None
-        )
+        order_accel = "Cmd+U" if platform.system() == "Darwin" else "Ctrl+U"
         edit_menu.add_command(
             label="Utterance Order...",
-            command=order_cmd,
+            command=make_menu_cb("show_utterance_order"),
+            accelerator=order_accel,
         )
 
         # View menu
@@ -792,16 +799,34 @@ A tool for recording (emotional) speech datasets."""
         self.spec_container.grid_columnconfigure(1, weight=0)  # level_meter fixed width
         self.spec_container.grid_rowconfigure(0, weight=1)
 
-        # Create mel spectrogram widget
-        self.mel_spectrogram = MelSpectrogramWidget(
-            self.spec_frame,
-            self.config.audio,
-            self.config.display,
-            self.manager_dict,
-            self.shared_audio_state,
-        )
+        # Defer creation of mel_spectrogram widget until window is ready
+        # This avoids the negative figure size error
+        self.mel_spectrogram = None
+        self.root.after(100, self._create_mel_spectrogram_widget_deferred)
 
         self.ui_state.spectrogram_visible = True
+
+    def _create_mel_spectrogram_widget_deferred(self) -> None:
+        """Create the mel spectrogram widget after window is properly sized."""
+        if not hasattr(self, "spec_frame"):
+            return
+
+        # Ensure frame has proper size
+        self.root.update_idletasks()
+
+        # Only create if not already created and frame has size
+        if self.mel_spectrogram is None:
+            if (
+                self.spec_frame.winfo_width() > 10
+                and self.spec_frame.winfo_height() > 10
+            ):
+                self.mel_spectrogram = MelSpectrogramWidget(
+                    self.spec_frame,
+                    self.config.audio,
+                    self.config.display,
+                    self.manager_dict,
+                    self.shared_audio_state,
+                )
 
     def _create_embedded_level_meter(self) -> None:
         """Create the embedded LED level meter."""
@@ -1064,6 +1089,27 @@ A tool for recording (emotional) speech datasets."""
                 # Show spectrogram
                 self.spec_frame.grid(row=0, column=0, sticky="nsew")
                 self.ui_state.spectrogram_visible = True
+
+                # Create mel_spectrogram widget if it doesn't exist yet
+                if self.mel_spectrogram is None and hasattr(
+                    self, "_mel_spectrogram_pending"
+                ):
+                    # Ensure the frame has a size before creating the widget
+                    self.root.update_idletasks()
+
+                    # Only create if frame has reasonable size
+                    if (
+                        self.spec_frame.winfo_width() > 10
+                        and self.spec_frame.winfo_height() > 10
+                    ):
+                        self.mel_spectrogram = MelSpectrogramWidget(
+                            self.spec_frame,
+                            self.config.audio,
+                            self.config.display,
+                            self.manager_dict,
+                            self.shared_audio_state,
+                        )
+                        self._mel_spectrogram_pending = False
 
                 # Force redraw to avoid white display
                 if hasattr(self, "mel_spectrogram") and self.mel_spectrogram:

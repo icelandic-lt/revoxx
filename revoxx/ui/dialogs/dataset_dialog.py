@@ -10,6 +10,7 @@ from ...dataset import DatasetExporter
 from ...utils.settings_manager import SettingsManager
 from ...session.inspector import SessionInspector
 from .progress_dialog import ProgressDialog
+from .dialog_utils import setup_dialog_window
 
 
 class DatasetDialog:
@@ -68,17 +69,9 @@ class DatasetDialog:
     def _create_dialog(self):
         """Create the dialog window and widgets."""
         self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("Create Dataset")
 
-        # Hide dialog immediately to prevent flashing
-        self.dialog.withdraw()
-
-        # Set size and position will be done after widgets are created
+        # Set resizable before setup
         self.dialog.resizable(True, True)
-
-        # Make dialog modal
-        self.dialog.transient(self.parent)
-        self.dialog.grab_set()
 
         # Main container
         main_frame = ttk.Frame(self.dialog, padding=self.PADDING_FRAME)
@@ -263,20 +256,14 @@ class DatasetDialog:
             side=tk.LEFT, padx=self.PADDING_SMALL
         )
 
-        # Set size and center dialog
-        self.dialog.update_idletasks()
-
-        # Set size
-        self.dialog.geometry(f"{self.DIALOG_WIDTH}x{self.DIALOG_HEIGHT}")
-
-        # Calculate center position
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - self.DIALOG_WIDTH) // 2
-        y = (self.dialog.winfo_screenheight() - self.DIALOG_HEIGHT) // 2
-        self.dialog.geometry(f"{self.DIALOG_WIDTH}x{self.DIALOG_HEIGHT}+{x}+{y}")
-
-        # Now show the dialog after it's properly positioned
-        self.dialog.deiconify()
+        setup_dialog_window(
+            self.dialog,
+            self.parent,
+            title="Create Dataset",
+            width=self.DIALOG_WIDTH,
+            height=self.DIALOG_HEIGHT,
+            center_on_parent=False,  # Center on screen for dataset dialog
+        )
 
     def _scan_sessions(self):
         """Scan base directory for Revoxx sessions."""
@@ -587,16 +574,8 @@ class DatasetDialog:
     def _show_export_summary(self, dataset_paths: List[Path], statistics: Dict):
         """Show export summary in a scrollable dialog."""
         summary_dialog = tk.Toplevel(self.dialog)
-        summary_dialog.title("Export Summary")
-
-        # Hide immediately to prevent flashing
-        summary_dialog.withdraw()
 
         summary_dialog.resizable(True, True)
-
-        # Make modal
-        summary_dialog.transient(self.dialog)
-        summary_dialog.grab_set()
 
         # Main frame
         main_frame = ttk.Frame(summary_dialog, padding=self.PADDING_FRAME)
@@ -666,14 +645,14 @@ class DatasetDialog:
         ok_button = ttk.Button(button_frame, text="OK", command=summary_dialog.destroy)
         ok_button.pack(side=tk.RIGHT)
 
-        # Set size and center dialog
-        summary_dialog.update_idletasks()
-        x = (summary_dialog.winfo_screenwidth() - self.SUMMARY_WIDTH) // 2
-        y = (summary_dialog.winfo_screenheight() - self.SUMMARY_HEIGHT) // 2
-        summary_dialog.geometry(f"{self.SUMMARY_WIDTH}x{self.SUMMARY_HEIGHT}+{x}+{y}")
-
-        # Show the dialog after positioning
-        summary_dialog.deiconify()
+        setup_dialog_window(
+            summary_dialog,
+            self.dialog,  # Parent is the dataset dialog, not main window
+            title="Export Summary",
+            width=self.SUMMARY_WIDTH,
+            height=self.SUMMARY_HEIGHT,
+            center_on_parent=True,  # Center on parent (dataset dialog)
+        )
 
         # Focus on OK button
         ok_button.focus_set()

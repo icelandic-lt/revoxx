@@ -51,7 +51,7 @@ class DeviceManager:
                 sd._terminate()
             if hasattr(sd, "_initialize"):
                 sd._initialize()
-        except:
+        except (AttributeError, RuntimeError):
             pass
         self._refresh_cache()
 
@@ -132,7 +132,7 @@ class DeviceManager:
                 in_idx = default[0]
                 if in_idx is not None and in_idx >= 0:
                     return in_idx
-        except:
+        except (AttributeError, IndexError, TypeError):
             pass
         return None
 
@@ -219,7 +219,7 @@ class DeviceManager:
                         samplerate=rate,
                     )
                     supported_rates.append(rate)
-                except:
+                except sd.PortAudioError:
                     pass
 
         except Exception:
@@ -264,7 +264,7 @@ class DeviceManager:
                     samplerate=sample_rate,
                 )
                 supported_depths.append(16)
-            except:
+            except sd.PortAudioError:
                 pass
 
             # Test 24-bit (using int32)
@@ -276,7 +276,7 @@ class DeviceManager:
                     samplerate=sample_rate,
                 )
                 supported_depths.append(24)
-            except:
+            except sd.PortAudioError:
                 pass
 
         except Exception:
@@ -374,7 +374,8 @@ class DeviceManager:
 
         return None  # No compatible device found
 
-    def format_device_label(self, device: Dict) -> str:
+    @staticmethod
+    def format_device_label(device: Dict) -> str:
         """Create a compact label for menus.
 
         Args:

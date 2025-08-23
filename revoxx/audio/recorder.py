@@ -315,10 +315,17 @@ class AudioRecorder:
             # Send to visualization queue if active
             if self.audio_queue and self.shared_state.shm:
                 # Check if audio queue is active (from shared dict if available)
-                try:
-                    self.audio_queue.put_nowait(indata.copy())
-                except queue.Full:
-                    pass
+                audio_queue_active = False
+                if self.manager_dict:
+                    audio_queue_active = self.manager_dict.get(
+                        "audio_queue_active", False
+                    )
+
+                if audio_queue_active:
+                    try:
+                        self.audio_queue.put_nowait(indata.copy())
+                    except queue.Full:
+                        pass
 
             # Update position
             self.current_position += frames
@@ -354,7 +361,7 @@ def record_process(
 
     try:
         # Create recorder with shared state
-        recorder = AudioRecorder(config, shared_state_name, audio_queue)
+        recorder = AudioRecorder(config, shared_state_name, audio_queue, manager_dict)
 
         while True:
             try:
