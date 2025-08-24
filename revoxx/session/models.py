@@ -5,7 +5,7 @@ including Session, SessionConfig, and SpeakerInfo.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 from datetime import datetime
 import json
@@ -37,7 +37,7 @@ class SpeakerInfo:
 class SessionConfig:
     """Audio configuration for a session.
 
-    These settings are locked after session creation to ensure
+    Audio settings are locked after session creation to ensure
     consistency across all recordings.
     """
 
@@ -45,6 +45,13 @@ class SessionConfig:
     bit_depth: int
     format: str  # wav/flac
     input_device: Optional[str] = None  # Device name or "default" for system default
+    output_device: Optional[str] = None  # Device name or "default" for system default
+    input_channel_mapping: Optional[List[int]] = (
+        None  # Channel indices, only valid for input_device
+    )
+    output_channel_mapping: Optional[List[int]] = (
+        None  # Channel indices, only valid for output_device
+    )
     channels: int = 1
 
     def to_dict(self) -> Dict[str, Any]:

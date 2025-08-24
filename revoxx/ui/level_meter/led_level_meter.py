@@ -498,15 +498,29 @@ class LEDLevelMeter(tk.Frame):
         # Update display
         self._update_display()
 
-    def _update_display(self) -> None:
-        """Update the LED display."""
-        # Calculate how many LEDs to light for RMS
-        rms_led_count = self._db_to_led_count(self.current_rms)
+    def _get_color_for_db_value(self, db: float) -> str:
+        """Get color for a given dB value based on thresholds.
 
-        # Calculate peak LED position
-        self._db_to_led_count(self.current_peak) - 1
+        Args:
+            db: Decibel value
 
-        # Update LEDs
+        Returns:
+            Color string
+        """
+        if db >= self.config.danger_level:
+            return self.COLOR_DANGER
+        if db >= self.config.warning_level:
+            return self.COLOR_WARNING
+        if self.config.target_min <= db <= self.config.target_max:
+            return self.COLOR_OPTIMAL
+        return self.COLOR_TEXT
+
+    def _update_led_display(self, rms_led_count: int) -> None:
+        """Update the LED bar display.
+
+        Args:
+            rms_led_count: Number of LEDs to light for RMS level
+        """
         for i in range(self.LED_COUNT):
             led, _ = self.leds[i]
 
@@ -522,57 +536,54 @@ class LEDLevelMeter(tk.Frame):
                     led, fill=self._dim_color(color, self.DIM_FACTOR)
                 )
 
-            # Show peak as brighter LED
-            # No special LED for peak; peak-hold is a line
+    def _update_numeric_labels(self) -> tuple:
+        """Update numeric readout labels.
 
-        # Update numeric readouts (Peak shows hold value) with color by thresholds
+        Returns:
+            Tuple of (rms_text, peak_text)
+        """
+        # Format text values
         rms_text = f"{self.current_rms:.1f}" if self.current_rms > -60 else "--"
         peak_text = (
             f"{self.peak_hold_value:.1f}" if self.peak_hold_value > -60 else "--"
         )
+
+        # Update labels
         self.rms_value_label.config(text=f"{rms_text} dB")
         self.peak_value_label.config(text=f"{peak_text} dB")
-
-        # Color for numeric labels
-        def color_for_value(db: float) -> str:
-            if db >= self.config.danger_level:
-                return self.COLOR_DANGER
-            if db >= self.config.warning_level:
-                return self.COLOR_WARNING
-            if self.config.target_min <= db <= self.config.target_max:
-                return self.COLOR_OPTIMAL
-            return self.COLOR_TEXT
-
-        if self.current_rms > -60:
-            self.rms_value_label.config(fg=color_for_value(self.current_rms))
-        else:
-            self.rms_value_label.config(fg=self.COLOR_TEXT)
-        if self.peak_hold_value > -60:
-            self.peak_value_label.config(fg=color_for_value(self.peak_hold_value))
-        else:
-            self.peak_value_label.config(fg=self.COLOR_TEXT)
         self.level_label.config(text=f"{rms_text} dB")
 
-        # Update text color based on level
-        if self.current_rms >= self.config.danger_level:
-            color = self.COLOR_DANGER
-        elif self.current_rms >= self.config.warning_level:
-            color = self.COLOR_WARNING
-        elif self.config.target_min <= self.current_rms <= self.config.target_max:
-            color = self.COLOR_OPTIMAL
+        # Update colors
+        if self.current_rms > -60:
+            self.rms_value_label.config(
+                fg=self._get_color_for_db_value(self.current_rms)
+            )
+            self.level_label.config(fg=self._get_color_for_db_value(self.current_rms))
         else:
-            color = self.COLOR_TEXT
-        self.level_label.config(fg=color)
+            self.rms_value_label.config(fg=self.COLOR_TEXT)
+            self.level_label.config(fg=self.COLOR_TEXT)
 
-        # Draw/update peak-hold line (on the meter canvas) with zone-based color
+        if self.peak_hold_value > -60:
+            self.peak_value_label.config(
+                fg=self._get_color_for_db_value(self.peak_hold_value)
+            )
+        else:
+            self.peak_value_label.config(fg=self.COLOR_TEXT)
+
+        return rms_text, peak_text
+
+    def _update_peak_hold_line(self) -> None:
+        """Update or create the peak hold line on the meter canvas."""
         if self.peak_hold_value > -60:
             y = self._value_to_y(self.peak_hold_value)
         else:
             y = None
+
         if y is not None:
             x0, x1 = self.LED_X_INSET, self.METER_WIDTH - self.LED_X_INSET
-            # Choose color from the same zone mapping as LEDs (blue/green/yellow/red)
+            # Choose color from the same zone mapping as LEDs
             ph_color = self._get_led_color(self.peak_hold_value)
+
             if self._peak_hold_line_id is None:
                 self._peak_hold_line_id = self.canvas.create_line(
                     x0, y, x1, y, fill=ph_color, width=2
@@ -581,12 +592,30 @@ class LEDLevelMeter(tk.Frame):
                 self.canvas.coords(self._peak_hold_line_id, x0, y, x1, y)
                 self.canvas.itemconfig(self._peak_hold_line_id, fill=ph_color)
         else:
+            # Hide line if below -60 dB
             if self._peak_hold_line_id is not None:
                 try:
                     self.canvas.delete(self._peak_hold_line_id)
                 except Exception:
                     pass
                 self._peak_hold_line_id = None
+
+    def _update_display(self) -> None:
+        """Update the LED display."""
+        # Calculate how many LEDs to light for RMS
+        rms_led_count = self._db_to_led_count(self.current_rms)
+
+        # Calculate peak LED position (unused but kept for compatibility)
+        self._db_to_led_count(self.current_peak) - 1
+
+        # Update LED bar
+        self._update_led_display(rms_led_count)
+
+        # Update numeric labels
+        self._update_numeric_labels()
+
+        # Draw/update peak-hold line
+        self._update_peak_hold_line()
 
     def set_standard(self, standard: RecordingStandard) -> None:
         """Set the recording standard preset.

@@ -10,6 +10,7 @@ from ...dataset import DatasetExporter
 from ...utils.settings_manager import SettingsManager
 from ...session.inspector import SessionInspector
 from .progress_dialog import ProgressDialog
+from .dialog_utils import setup_dialog_window
 
 
 class DatasetDialog:
@@ -68,17 +69,9 @@ class DatasetDialog:
     def _create_dialog(self):
         """Create the dialog window and widgets."""
         self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("Create Dataset")
 
-        # Hide dialog immediately to prevent flashing
-        self.dialog.withdraw()
-
-        # Set size and position will be done after widgets are created
+        # Set resizable before setup
         self.dialog.resizable(True, True)
-
-        # Make dialog modal
-        self.dialog.transient(self.parent)
-        self.dialog.grab_set()
 
         # Main container
         main_frame = ttk.Frame(self.dialog, padding=self.PADDING_FRAME)
@@ -263,20 +256,14 @@ class DatasetDialog:
             side=tk.LEFT, padx=self.PADDING_SMALL
         )
 
-        # Set size and center dialog
-        self.dialog.update_idletasks()
-
-        # Set size
-        self.dialog.geometry(f"{self.DIALOG_WIDTH}x{self.DIALOG_HEIGHT}")
-
-        # Calculate center position
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - self.DIALOG_WIDTH) // 2
-        y = (self.dialog.winfo_screenheight() - self.DIALOG_HEIGHT) // 2
-        self.dialog.geometry(f"{self.DIALOG_WIDTH}x{self.DIALOG_HEIGHT}+{x}+{y}")
-
-        # Now show the dialog after it's properly positioned
-        self.dialog.deiconify()
+        setup_dialog_window(
+            self.dialog,
+            self.parent,
+            title="Create Dataset",
+            width=self.DIALOG_WIDTH,
+            height=self.DIALOG_HEIGHT,
+            center_on_parent=False,  # Center on screen for dataset dialog
+        )
 
     def _scan_sessions(self):
         """Scan base directory for Revoxx sessions."""
@@ -455,9 +442,12 @@ class DatasetDialog:
             "empty": validation_result.empty_sessions,
         }
 
-    def _create_dataset(self):
-        """Create dataset from selected sessions."""
-        # Get selected sessions
+    def _get_selected_session_paths(self) -> Optional[List[Path]]:
+        """Get paths of selected sessions from tree.
+
+        Returns:
+            List of session paths or None if none selected
+        """
         selected = self.session_tree.selection()
         if not selected:
             messagebox.showwarning(
@@ -465,19 +455,24 @@ class DatasetDialog:
                 "Please select at least one session to export.",
                 parent=self.dialog,
             )
-            return
+            return None
 
-        # Get session paths
         session_paths = []
         for item in selected:
             tags = self.session_tree.item(item, "tags")
             if tags:
                 session_paths.append(Path(tags[0]))
+        return session_paths
 
-        # Validate sessions
-        validation_info = self._validate_sessions(session_paths)
-        valid_sessions = validation_info["valid_sessions"]
+    def _handle_session_validation(self, validation_info: Dict) -> Optional[List[Path]]:
+        """Handle validation results and show appropriate warnings.
 
+        Args:
+            validation_info: Validation results dictionary
+
+        Returns:
+            List of valid session paths or None if cancelled
+        """
         # Handle empty sessions
         if validation_info["empty"]:
             empty_names = [s["name"] for s in validation_info["empty"]]
@@ -493,29 +488,37 @@ class DatasetDialog:
             incomplete_msg = "The following sessions have missing recordings:\n\n"
             for session in validation_info["incomplete"]:
                 incomplete_msg += f"• {session['name']}: {session['recorded']}/{session['total']} recordings ({session['missing']} missing)\n"
-
             incomplete_msg += "\nDo you want to continue?"
 
-            result = messagebox.askyesno(
+            if not messagebox.askyesno(
                 "Incomplete Sessions", incomplete_msg, parent=self.dialog
-            )
-            if not result:
-                return
+            ):
+                return None
 
         # Check if we have any valid sessions left
+        valid_sessions = validation_info["valid_sessions"]
         if not valid_sessions:
             messagebox.showerror(
                 "No Valid Sessions",
                 "No sessions with recordings were found.",
                 parent=self.dialog,
             )
-            return
+            return None
 
-        # Update session_paths to only include valid sessions
-        session_paths = valid_sessions
+        return valid_sessions
 
-        # Validate output directory
+    def _prepare_output_directory(self, dataset_name: Optional[str]) -> Optional[Path]:
+        """Prepare and validate output directory.
+
+        Args:
+            dataset_name: Optional dataset name
+
+        Returns:
+            Output directory path or None if error/cancelled
+        """
         output_dir = Path(self.output_dir_var.get())
+
+        # Create directory if needed
         if not output_dir.exists():
             try:
                 output_dir.mkdir(parents=True, exist_ok=True)
@@ -525,31 +528,66 @@ class DatasetDialog:
                     f"Could not create output directory: {e}",
                     parent=self.dialog,
                 )
-                return
-
-        # Get dataset name
-        dataset_name = self.dataset_name_var.get().strip() or None
+                return None
 
         # Check if dataset already exists
         if dataset_name:
             dataset_path = output_dir / dataset_name
             if dataset_path.exists():
-                result = messagebox.askyesno(
+                if not messagebox.askyesno(
                     "Dataset Exists",
                     f"Dataset '{dataset_name}' already exists. Overwrite?",
                     parent=self.dialog,
-                )
-                if not result:
-                    return
+                ):
+                    return None
 
-        # Save settings
+        return output_dir
+
+    def _create_dataset(self):
+        """Create dataset from selected sessions."""
+        # Get selected session paths
+        session_paths = self._get_selected_session_paths()
+        if not session_paths:
+            return
+
+        # Validate sessions
+        validation_info = self._validate_sessions(session_paths)
+        valid_sessions = self._handle_session_validation(validation_info)
+        if not valid_sessions:
+            return
+
+        # Get dataset name and prepare output directory
+        dataset_name = self.dataset_name_var.get().strip() or None
+        output_dir = self._prepare_output_directory(dataset_name)
+        if not output_dir:
+            return
+
+        # Save settings and run export
+        self._save_export_settings(output_dir)
+        self._run_export(valid_sessions, output_dir, dataset_name)
+
+    def _save_export_settings(self, output_dir: Path) -> None:
+        """Save export settings for next time.
+
+        Args:
+            output_dir: Output directory path
+        """
         self.settings_manager.update_setting("last_export_dir", str(output_dir))
         self.settings_manager.update_setting("export_format", self.format_var.get())
         self.settings_manager.update_setting(
             "export_include_intensity", self.include_intensity_var.get()
         )
 
-        # Create progress dialog
+    def _run_export(
+        self, session_paths: List[Path], output_dir: Path, dataset_name: Optional[str]
+    ) -> None:
+        """Run the actual export with progress dialog.
+
+        Args:
+            session_paths: Paths to export
+            output_dir: Output directory
+            dataset_name: Optional dataset name
+        """
         progress_dialog = ProgressDialog(self.dialog, "Creating Dataset")
 
         try:
@@ -572,9 +610,8 @@ class DatasetDialog:
 
             progress_dialog.close()
 
-            # Show success message in scrollable dialog
+            # Show success message
             self._show_export_summary(dataset_paths, statistics)
-
             self.result = dataset_paths
             self.dialog.destroy()
 
@@ -587,16 +624,8 @@ class DatasetDialog:
     def _show_export_summary(self, dataset_paths: List[Path], statistics: Dict):
         """Show export summary in a scrollable dialog."""
         summary_dialog = tk.Toplevel(self.dialog)
-        summary_dialog.title("Export Summary")
-
-        # Hide immediately to prevent flashing
-        summary_dialog.withdraw()
 
         summary_dialog.resizable(True, True)
-
-        # Make modal
-        summary_dialog.transient(self.dialog)
-        summary_dialog.grab_set()
 
         # Main frame
         main_frame = ttk.Frame(summary_dialog, padding=self.PADDING_FRAME)
@@ -666,14 +695,14 @@ class DatasetDialog:
         ok_button = ttk.Button(button_frame, text="OK", command=summary_dialog.destroy)
         ok_button.pack(side=tk.RIGHT)
 
-        # Set size and center dialog
-        summary_dialog.update_idletasks()
-        x = (summary_dialog.winfo_screenwidth() - self.SUMMARY_WIDTH) // 2
-        y = (summary_dialog.winfo_screenheight() - self.SUMMARY_HEIGHT) // 2
-        summary_dialog.geometry(f"{self.SUMMARY_WIDTH}x{self.SUMMARY_HEIGHT}+{x}+{y}")
-
-        # Show the dialog after positioning
-        summary_dialog.deiconify()
+        setup_dialog_window(
+            summary_dialog,
+            self.dialog,  # Parent is the dataset dialog, not main window
+            title="Export Summary",
+            width=self.SUMMARY_WIDTH,
+            height=self.SUMMARY_HEIGHT,
+            center_on_parent=True,  # Center on parent (dataset dialog)
+        )
 
         # Focus on OK button
         ok_button.focus_set()

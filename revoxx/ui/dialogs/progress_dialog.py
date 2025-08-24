@@ -3,6 +3,8 @@
 import tkinter as tk
 from tkinter import ttk
 
+from .dialog_utils import setup_dialog_window
+
 
 class ProgressDialog:
     """Simple progress dialog for long operations.
@@ -20,29 +22,21 @@ class ProgressDialog:
             width: Dialog width in pixels
             height: Dialog height in pixels
         """
+        self.parent = parent
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title(title)
-
-        # Hide immediately to prevent flashing
-        self.dialog.withdraw()
-
         self.dialog.resizable(False, False)
-
-        # Make modal
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
 
         # Create widgets first
         self._create_widgets()
-
-        # Now position and show
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - width) // 2
-        y = (self.dialog.winfo_screenheight() - height) // 2
-        self.dialog.geometry(f"{width}x{height}+{x}+{y}")
-
-        # Show the dialog
-        self.dialog.deiconify()
+        # Note: center_on_parent=False to center on screen
+        setup_dialog_window(
+            self.dialog,
+            self.parent,
+            title=title,
+            width=width,
+            height=height,
+            center_on_parent=False,
+        )
 
     def _create_widgets(self):
         """Create dialog widgets."""

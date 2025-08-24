@@ -44,6 +44,29 @@ class DatasetExporter:
         self.zero_intensity_emotions = zero_intensity_emotions or ["neutral"]
         self.include_intensity = include_intensity
 
+    def _group_sessions_by_speaker(self, session_paths: List[Path]) -> Dict:
+        """Group sessions by speaker name.
+
+        Args:
+            session_paths: List of session paths
+
+        Returns:
+            Dictionary mapping speaker names to session data
+        """
+        speaker_groups = {}
+        for session_path in session_paths:
+            session_data = self._load_session(session_path)
+            if session_data:
+                speaker_name = session_data.get("speaker", {}).get("name", "unknown")
+                speaker_name_normalized = speaker_name.lower().replace(" ", "_")
+
+                if speaker_name_normalized not in speaker_groups:
+                    speaker_groups[speaker_name_normalized] = []
+                speaker_groups[speaker_name_normalized].append(
+                    (session_path, session_data)
+                )
+        return speaker_groups
+
     def export_sessions(
         self,
         session_paths: List[Path],
@@ -66,18 +89,7 @@ class DatasetExporter:
             raise ValueError("No sessions provided")
 
         # Load session metadata and group by speaker name
-        speaker_groups = {}
-        for session_path in session_paths:
-            session_data = self._load_session(session_path)
-            if session_data:
-                speaker_name = session_data.get("speaker", {}).get("name", "unknown")
-                speaker_name_normalized = speaker_name.lower().replace(" ", "_")
-
-                if speaker_name_normalized not in speaker_groups:
-                    speaker_groups[speaker_name_normalized] = []
-                speaker_groups[speaker_name_normalized].append(
-                    (session_path, session_data)
-                )
+        speaker_groups = self._group_sessions_by_speaker(session_paths)
 
         if not speaker_groups:
             raise ValueError("No valid sessions found")
@@ -126,57 +138,16 @@ class DatasetExporter:
 
             # Process each emotion group
             for emotion, emotion_session_list in emotion_sessions.items():
-                emotion_dir = dataset_dir / emotion
-                emotion_dir.mkdir(exist_ok=True)
-
-                # Process all utterances for this emotion
-                utterance_map = self._collect_utterances(emotion_session_list)
-
-                for utterance_id, (
-                    session_path,
-                    take_num,
-                    text,
-                ) in utterance_map.items():
-                    total_statistics["total_utterances"] += 1
-
-                    # Extract intensity and clean text
-                    intensity, clean_text = self._extract_intensity_and_text(text)
-                    if emotion in self.zero_intensity_emotions:
-                        intensity = "0"
-
-                    # Copy/convert audio file
-                    source_file = (
-                        session_path
-                        / "recordings"
-                        / utterance_id
-                        / f"take_{take_num:03d}.flac"
-                    )
-                    if source_file.exists():
-                        file_counter = file_counts[emotion] + 1
-                        output_filename = f"{current_dataset_name}_{emotion}_{file_counter:03d}.{self.format}"
-                        output_path = emotion_dir / output_filename
-
-                        if self.format == "flac" and source_file.suffix == ".flac":
-                            shutil.copy2(source_file, output_path)
-                        else:
-                            self._convert_audio(source_file, output_path)
-
-                        file_counts[emotion] += 1
-
-                        # Add to index (using clean text without intensity prefix)
-                        if self.include_intensity:
-                            index_data.append(
-                                f"{output_filename}\t{current_dataset_name}\t{emotion}\t{intensity}\t{clean_text}\n"
-                            )
-                        else:
-                            index_data.append(
-                                f"{output_filename}\t{current_dataset_name}\t{emotion}\t{clean_text}\n"
-                            )
-                    else:
-                        total_statistics["missing_recordings"] += 1
-
-                    if progress_callback:
-                        progress_callback(total_statistics["total_utterances"])
+                self._process_emotion_group(
+                    emotion,
+                    emotion_session_list,
+                    dataset_dir,
+                    current_dataset_name,
+                    index_data,
+                    file_counts,
+                    total_statistics,
+                    progress_callback,
+                )
 
             # Write index file for this speaker
             index_path = dataset_dir / "index.tsv"
@@ -203,6 +174,78 @@ class DatasetExporter:
 
         return all_datasets, total_statistics
 
+    def _process_emotion_group(
+        self,
+        emotion: str,
+        emotion_session_list: List,
+        dataset_dir: Path,
+        dataset_name: str,
+        index_data: List,
+        file_counts: Counter,
+        total_statistics: Dict,
+        progress_callback=None,
+    ) -> None:
+        """Process all sessions for a specific emotion.
+
+        Args:
+            emotion: Emotion name
+            emotion_session_list: List of sessions for this emotion
+            dataset_dir: Output directory for dataset
+            dataset_name: Name of the dataset
+            index_data: List to append index entries to
+            file_counts: Counter for file numbering
+            total_statistics: Statistics dictionary to update
+            progress_callback: Optional progress callback
+        """
+        emotion_dir = dataset_dir / emotion
+        emotion_dir.mkdir(exist_ok=True)
+
+        # Process all utterances for this emotion
+        utterance_map = self._collect_utterances(emotion_session_list)
+
+        for utterance_id, (session_path, take_num, text) in utterance_map.items():
+            total_statistics["total_utterances"] += 1
+
+            # Extract intensity and clean text
+            intensity, clean_text = self._extract_intensity_and_text(text)
+            if emotion in self.zero_intensity_emotions:
+                intensity = "0"
+
+            # Process audio file
+            source_file = (
+                session_path / "recordings" / utterance_id / f"take_{take_num:03d}.flac"
+            )
+
+            if source_file.exists():
+                file_counter = file_counts[emotion] + 1
+                output_filename = (
+                    f"{dataset_name}_{emotion}_{file_counter:03d}.{self.format}"
+                )
+                output_path = emotion_dir / output_filename
+
+                # Copy or convert audio
+                if self.format == "flac" and source_file.suffix == ".flac":
+                    shutil.copy2(source_file, output_path)
+                else:
+                    self._convert_audio(source_file, output_path)
+
+                file_counts[emotion] += 1
+
+                # Add to index
+                if self.include_intensity:
+                    index_data.append(
+                        f"{output_filename}\t{dataset_name}\t{emotion}\t{intensity}\t{clean_text}\n"
+                    )
+                else:
+                    index_data.append(
+                        f"{output_filename}\t{dataset_name}\t{emotion}\t{clean_text}\n"
+                    )
+            else:
+                total_statistics["missing_recordings"] += 1
+
+            if progress_callback:
+                progress_callback(total_statistics["total_utterances"])
+
     @staticmethod
     def _load_session(session_path: Path) -> Optional[Dict]:
         """Load session metadata from session.json."""
@@ -219,8 +262,6 @@ class DatasetExporter:
         for session_path, session_data in emotion_sessions:
             recordings_dir = session_path / "recordings"
             script_file = session_path / "script.txt"
-
-            # Load script to get utterance texts
             script_data = self._load_script(script_file)
 
             # Find all recordings

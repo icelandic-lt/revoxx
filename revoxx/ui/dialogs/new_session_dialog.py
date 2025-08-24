@@ -8,6 +8,7 @@ from typing import Optional, List
 from dataclasses import dataclass
 
 from ...utils.device_manager import get_device_manager
+from .dialog_utils import setup_dialog_window
 
 
 class NewSessionConstants:
@@ -79,18 +80,6 @@ class NewSessionDialog:
 
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("New Session")
-
-        # Hide window initially to prevent flashing
-        self.dialog.withdraw()
-
-        # Set as modal dialog
-        self.dialog.transient(parent)
-
-        # Make dialog resizable but set minimum size
-        self.dialog.minsize(
-            NewSessionConstants.MIN_WIDTH, NewSessionConstants.MIN_HEIGHT
-        )
 
         # Initialize all variables and data
         self._initialize_variables()
@@ -99,23 +88,28 @@ class NewSessionDialog:
         # Create UI
         self._create_widgets()
 
-        # Calculate optimal width and center the dialog
-        self._calculate_optimal_width()
+        setup_dialog_window(
+            self.dialog,
+            self.parent,
+            title="New Session",
+            center_on_parent=True,
+            size_callback=self._calculate_optimal_size,
+            min_width=NewSessionConstants.MIN_WIDTH,
+            min_height=NewSessionConstants.MIN_HEIGHT,
+        )
 
-        # Show the dialog now that it's positioned
-        self.dialog.deiconify()
-
-        # Grab focus after showing
-        self.dialog.grab_set()
-
-        # Focus on first input
+        # Focus on first input after dialog is shown
         self.speaker_entry.focus_set()
 
         # Setup keyboard bindings
         self._setup_keyboard_bindings()
 
-    def _calculate_optimal_width(self):
-        """Calculate optimal dialog width based on font metrics and path length."""
+    def _calculate_optimal_size(self):
+        """Calculate optimal dialog size based on font metrics and path length.
+
+        Returns:
+            Tuple of (width, height) in pixels
+        """
         # Get the default font used by ttk.Entry
         entry_font = font.nametofont("TkDefaultFont")
 
@@ -136,32 +130,7 @@ class NewSessionDialog:
         # Constrain to reasonable limits
         optimal_width = max(NewSessionConstants.MIN_WIDTH, min(900, total_width))
 
-        # Set the dialog geometry
-        self.dialog.geometry(f"{optimal_width}x{NewSessionConstants.DEFAULT_HEIGHT}")
-
-        # Center after setting size
-        self.dialog.update_idletasks()
-        self._center_window()
-
-    def _center_window(self):
-        """Center the dialog on the parent window."""
-        self.dialog.update_idletasks()
-
-        # Get parent position and size
-        parent_x = self.parent.winfo_x()
-        parent_y = self.parent.winfo_y()
-        parent_width = self.parent.winfo_width()
-        parent_height = self.parent.winfo_height()
-
-        # Get dialog size
-        dialog_width = self.dialog.winfo_width()
-        dialog_height = self.dialog.winfo_height()
-
-        # Calculate center position
-        x = parent_x + (parent_width - dialog_width) // 2
-        y = parent_y + (parent_height - dialog_height) // 2
-
-        self.dialog.geometry(f"+{x}+{y}")
+        return optimal_width, NewSessionConstants.DEFAULT_HEIGHT
 
     def _initialize_variables(self):
         """Initialize all dialog variables."""

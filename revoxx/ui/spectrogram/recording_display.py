@@ -6,7 +6,7 @@ from scipy import interpolate
 
 from ...constants import AudioConstants
 from ...audio.processors import MelSpectrogramProcessor, ClippingDetector
-from ...audio.mel_factory import MelProcessorFactory
+from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor
 from .controllers import ClippingVisualizer, ZoomController
 
 
@@ -135,9 +135,7 @@ class RecordingDisplay:
         self, sample_rate: int
     ) -> Tuple[MelSpectrogramProcessor, int]:
         """Create mel processor optimized for recording's sample rate."""
-        return MelProcessorFactory.create_for_sample_rate(
-            sample_rate, self.display_config.fmin
-        )
+        return MelSpectrogramProcessor.create_for(sample_rate, self.display_config.fmin)
 
     def resample_spectrogram_for_display(
         self, mel_spec: np.ndarray, n_frames: int, n_mels: int

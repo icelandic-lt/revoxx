@@ -44,11 +44,9 @@ class AudioBuffer:
         buffer.shape = audio_data.shape
         buffer.dtype = audio_data.dtype
 
-        # Create shared memory
+        # Create shared memory & copy data
         buffer.shm = shared_memory.SharedMemory(create=True, size=audio_data.nbytes)
         buffer.name = buffer.shm.name
-
-        # Copy data to shared memory
         shared_array = np.ndarray(
             buffer.shape, dtype=buffer.dtype, buffer=buffer.shm.buf
         )

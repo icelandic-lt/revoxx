@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Optional, Callable
-from .utterance_list_base import UtteranceListDialog
+from .utterance_list_base import UtteranceListDialog, SortDirection
 
 
 class FindDialog(UtteranceListDialog):
@@ -19,7 +19,7 @@ class FindDialog(UtteranceListDialog):
         on_find: Callable[[int], None],
         utterance_order: List[int],
         current_sort_column: str = "label",
-        current_sort_reverse: bool = False,
+        current_sort_direction: SortDirection = SortDirection.UP,
     ):
         """Initialize the find dialog.
 
@@ -32,7 +32,7 @@ class FindDialog(UtteranceListDialog):
             on_find: Callback function when finding an utterance
             utterance_order: Display order for utterances (list of indices)
             current_sort_column: Current sort column from session
-            current_sort_reverse: Current sort direction from session
+            current_sort_direction: Current sort direction from session
         """
         self.current_index = current_index
         self.on_find = on_find
@@ -48,14 +48,10 @@ class FindDialog(UtteranceListDialog):
             show_search=True,
             show_filters=True,
             utterance_order=utterance_order,
-            default_sort=current_sort_column,  # Use current sort column
+            default_sort=current_sort_column,
+            default_sort_direction=current_sort_direction,
+            current_index=current_index,
         )
-
-        # Apply current sort direction
-        self.sort_reverse = current_sort_reverse
-
-        # Select current item after initialization
-        self.select_utterance_by_index(self.current_index)
 
     def _create_button_frame(self, parent: ttk.Frame) -> None:
         """Create the button frame with Find and Cancel buttons."""

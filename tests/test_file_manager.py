@@ -93,6 +93,10 @@ class TestRecordingFileManager(unittest.TestCase):
         self.assertTrue(utterance_dir.exists())
         self.assertTrue(utterance_dir.is_dir())
 
+        # Check that returned path is correct
+        expected_path = utterance_dir / "take_001.flac"
+        self.assertEqual(path, expected_path)
+
     def test_load_save_audio(self):
         """Test loading and saving audio files."""
         # Create test audio data (use values in valid range -1 to 1)

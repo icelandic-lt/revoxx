@@ -25,7 +25,7 @@ class TestNewSessionDialog(unittest.TestCase):
         """Clean up test environment."""
         try:
             self.root.destroy()
-        except:
+        except (AttributeError, RuntimeError, tk.TclError):
             pass
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
