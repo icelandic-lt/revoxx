@@ -1157,36 +1157,41 @@ high-quality speech datasets"""
         if not recording_params:
             return
 
-        # Check if we should show "NO RECORDINGS" message
-        if recording_params.get("no_recordings", False):
-            # Show center message and hide other labels
-            self.file_info_label.pack_forget()
-            self.audio_format_label.pack_forget()
-            self.duration_label.pack_forget()
-            self.info_center_message.config(text="NO RECORDINGS")
-            self.info_center_message.place(relx=0.5, rely=0.5, anchor="center")
-        else:
-            # Hide center message and show normal info
-            self.info_center_message.place_forget()
+        # Always hide center message and ensure labels are visible
+        self.info_center_message.place_forget()
 
-            # Ensure labels are packed if not visible
-            if not self.file_info_label.winfo_viewable():
-                self.file_info_label.pack(
-                    side=tk.LEFT,
-                    padx=UIConstants.FRAME_SPACING * 2,
-                    pady=UIConstants.FRAME_SPACING,
-                )
-                self.audio_format_label.pack(
-                    side=tk.LEFT,
-                    expand=True,
-                    padx=UIConstants.FRAME_SPACING * 2,
-                    pady=UIConstants.FRAME_SPACING,
-                )
-                self.duration_label.pack(
-                    side=tk.RIGHT,
-                    padx=UIConstants.MAIN_FRAME_PADDING,
-                    pady=UIConstants.FRAME_SPACING,
-                )
+        # Ensure labels are packed if not visible
+        if not self.file_info_label.winfo_viewable():
+            self.file_info_label.pack(
+                side=tk.LEFT,
+                padx=UIConstants.FRAME_SPACING * 2,
+                pady=UIConstants.FRAME_SPACING,
+            )
+            self.audio_format_label.pack(
+                side=tk.LEFT,
+                expand=True,
+                padx=UIConstants.FRAME_SPACING * 2,
+                pady=UIConstants.FRAME_SPACING,
+            )
+            self.duration_label.pack(
+                side=tk.RIGHT,
+                padx=UIConstants.MAIN_FRAME_PADDING,
+                pady=UIConstants.FRAME_SPACING,
+            )
+
+        # Handle no recordings case - show audio settings instead
+        if recording_params.get("no_recordings", False):
+            # Clear file info and duration
+            self.file_info_var.set("")
+            self.duration_var.set("")
+
+            # Get audio settings from settings manager
+            sample_rate = getattr(self.settings_manager.settings, "sample_rate", 48000)
+            bit_depth = getattr(self.settings_manager.settings, "bit_depth", 24)
+
+            # Display current audio settings
+            self.audio_format_var.set(f"{sample_rate} Hz, {bit_depth} bit FLAC mono")
+            return  # Exit early
 
         # Get label and filename from previous call to update_label_with_filename
         label = getattr(self, "_current_label", "")
