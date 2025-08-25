@@ -129,8 +129,8 @@ class DisplayController:
         if not current_label:
             # No current utterance - show default parameters
             recording_params = self._get_recording_parameters()
-            if hasattr(self.app.window, "update_combined_info_panel"):
-                self.app.window.update_combined_info_panel(recording_params)
+            if hasattr(self.app.window, "update_info_panel"):
+                self.app.window.update_info_panel(recording_params)
             return
 
         # Get recording parameters
@@ -155,8 +155,8 @@ class DisplayController:
             recording_params["no_recordings"] = True
 
         # Update the info panel
-        if hasattr(self.app.window, "update_combined_info_panel"):
-            self.app.window.update_combined_info_panel(recording_params)
+        if hasattr(self.app.window, "update_info_panel"):
+            self.app.window.update_info_panel(recording_params)
 
     def update_recording_timer(self, elapsed_time: float) -> None:
         """Update the recording timer display.

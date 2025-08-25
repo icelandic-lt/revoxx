@@ -1143,11 +1143,11 @@ high-quality speech datasets"""
             label: The utterance label
             filename: Optional filename to display (e.g., "take_001.flac")
         """
-        # Store for use in update_combined_info_panel
+        # Store for use in update_info_panel
         self._current_label = label
         self._current_filename = filename
 
-    def update_combined_info_panel(self, recording_params: dict = None) -> None:
+    def update_info_panel(self, recording_params: dict = None) -> None:
         """Update the combined info panel with recording information.
 
         Args:

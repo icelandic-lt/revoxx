@@ -436,7 +436,7 @@ class AudioController:
                 "bit_depth": self.app.config.audio.bit_depth,
                 "channels": self.app.config.audio.channels,
             }
-            self.app.window.update_combined_info_panel(recording_params)
+            self.app.window.update_info_panel(recording_params)
 
     def _stop_audio_capture(self, mode: str) -> None:
         """Stop audio capture in recording or monitoring mode.
