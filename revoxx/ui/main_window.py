@@ -2,20 +2,24 @@
 
 from typing import Optional, Callable
 import tkinter as tk
-from pathlib import Path
+import tkinter.font as tkfont
 import platform
 
-from ..constants import UIConstants, KeyBindings
+from ..constants import KeyBindings
+from .dialogs import SessionSettingsDialog
+from .dialogs.dataset_dialog import DatasetDialog
+from .icon import AppIcon
+from .level_meter.led_level_meter import LEDLevelMeter
+from .level_meter.config import RECORDING_STANDARDS
+from .level_meter.config import RecordingStandard, get_standard_description
+from .menus.audio_devices import AudioDevicesMenuBuilder
+from pathlib import Path
+from .spectrogram import MelSpectrogramWidget
+from ..constants import UIConstants
+from .themes import theme_manager, ThemePreset
 from ..utils.config import RecorderConfig
 from ..utils.state import UIState, RecordingState
 from ..utils.settings_manager import SettingsManager
-from .spectrogram import MelSpectrogramWidget
-from .icon import AppIcon
-from .info_overlay import InfoOverlay
-from .level_meter import RecordingStandard
-from .level_meter.led_level_meter import LEDLevelMeter
-from .level_meter.config import RECORDING_STANDARDS
-from .menus.audio_devices import AudioDevicesMenuBuilder
 
 
 class MainWindow:
@@ -38,8 +42,9 @@ class MainWindow:
         mel_spectrogram: Optional mel spectrogram visualization widget
         main_frame: Main container frame
         info_frame: Top information bar
-        content_frame: Center content area
-        control_frame: Bottom control area
+        utterance_frame: Middle area for utterance text display
+        spec_container: Container for spectrogram and level meter
+        info_panel: Bottom info panel with recording details
     """
 
     def __init__(
@@ -74,6 +79,18 @@ class MainWindow:
         self.settings_manager = settings_manager
         self.shared_audio_state = shared_audio_state
 
+        # Initialize theme from settings
+        saved_theme = getattr(
+            self.settings_manager.settings, "theme", ThemePreset.CYAN.value
+        )
+        try:
+            theme_manager.set_theme(ThemePreset(saved_theme))
+        except ValueError:
+            theme_manager.set_theme(ThemePreset.CYAN)
+
+        # Refresh UI constants with theme colors
+        UIConstants.refresh()
+
         # Get screen information
         self._setup_screen_geometry()
 
@@ -86,20 +103,8 @@ class MainWindow:
         # Create UI elements
         self._create_ui()
 
-        # Create info overlay
-        self.info_overlay = InfoOverlay(self.root)
-
         # Initialize embedded level meter (will be created in _create_control_area)
         self.embedded_level_meter = None
-
-        # Show overlays if enabled in settings
-        if getattr(self.settings_manager.settings, "show_info_overlay", False):
-            self.info_overlay.visible = True
-            # Update checkbox
-            if hasattr(self, "info_overlay_var"):
-                self.info_overlay_var.set(True)
-            # Show after window is ready
-            self.root.after(100, lambda: self._show_info_overlay_on_startup())
 
         if getattr(self.settings_manager.settings, "show_level_meter", False):
             # Show embedded level meter
@@ -129,7 +134,11 @@ class MainWindow:
         if hasattr(self, "level_meter_frame") and self.level_meter_frame:
             self.level_meter_frame.grid_forget()
             self.level_meter_frame.grid(
-                row=0, column=1, sticky="ns", padx=(UIConstants.FRAME_SPACING, 0)
+                row=0,
+                column=1,
+                sticky="ns",
+                padx=(UIConstants.FRAME_SPACING // 2, UIConstants.FRAME_SPACING),
+                pady=UIConstants.FRAME_SPACING,
             )
             self.level_meter_frame.grid_propagate(False)
 
@@ -149,29 +158,18 @@ class MainWindow:
         # Calculate window dimensions
         width_pct, height_pct = self.config.ui.is_window_size_percentage
 
-        if self.config.ui.window_width:
-            if width_pct:
-                self.ui_state.window_width = int(
-                    self.ui_state.screen_width * self.config.ui.window_width / 100
-                )
-            else:
-                self.ui_state.window_width = self.config.ui.window_width
-        else:
-            self.ui_state.window_width = int(
-                self.ui_state.screen_width * UIConstants.DEFAULT_WINDOW_SIZE_RATIO
-            )
+        # Helper function to calculate dimension
+        def calc_dimension(config_val, screen_val, is_pct):
+            if config_val:
+                return int(screen_val * config_val / 100) if is_pct else config_val
+            return int(screen_val * UIConstants.DEFAULT_WINDOW_SIZE_RATIO)
 
-        if self.config.ui.window_height:
-            if height_pct:
-                self.ui_state.window_height = int(
-                    self.ui_state.screen_height * self.config.ui.window_height / 100
-                )
-            else:
-                self.ui_state.window_height = self.config.ui.window_height
-        else:
-            self.ui_state.window_height = int(
-                self.ui_state.screen_height * UIConstants.DEFAULT_WINDOW_SIZE_RATIO
-            )
+        self.ui_state.window_width = calc_dimension(
+            self.config.ui.window_width, self.ui_state.screen_width, width_pct
+        )
+        self.ui_state.window_height = calc_dimension(
+            self.config.ui.window_height, self.ui_state.screen_height, height_pct
+        )
 
     def _setup_window(self) -> None:
         """Configure the main window.
@@ -222,7 +220,14 @@ class MainWindow:
 
         Creates a menu bar with File, View, and Help menus.
         """
-        self.menubar = tk.Menu(self.root)
+        self.menubar = tk.Menu(
+            self.root,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            borderwidth=0,
+        )
         self.root.config(menu=self.menubar)
 
         # Helper function to create menu commands that look up callbacks at runtime
@@ -250,7 +255,15 @@ class MainWindow:
                 )
 
         # File menu
-        file_menu = tk.Menu(self.menubar, tearoff=0)
+        file_menu = tk.Menu(
+            self.menubar,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         self.menubar.add_cascade(label="File", menu=file_menu)
 
         # Session management
@@ -269,7 +282,15 @@ class MainWindow:
         )
 
         # Recent Sessions submenu
-        self.recent_menu = tk.Menu(file_menu, tearoff=0)
+        self.recent_menu = tk.Menu(
+            file_menu,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         file_menu.add_cascade(label="Recent Sessions", menu=self.recent_menu)
         self._update_recent_sessions_menu()
 
@@ -289,7 +310,15 @@ class MainWindow:
         )
 
         # Edit menu
-        edit_menu = tk.Menu(self.menubar, tearoff=0)
+        edit_menu = tk.Menu(
+            self.menubar,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         self.menubar.add_cascade(label="Edit", menu=edit_menu)
 
         # Find utterance
@@ -321,7 +350,15 @@ class MainWindow:
         )
 
         # View menu
-        view_menu = tk.Menu(self.menubar, tearoff=0)
+        view_menu = tk.Menu(
+            self.menubar,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         self.menubar.add_cascade(label="View", menu=view_menu)
 
         # Session Settings (at the top)
@@ -357,14 +394,14 @@ class MainWindow:
             accelerator="L",
         )
 
-        # Info Overlay checkbutton
-        self.info_overlay_var = tk.BooleanVar(
-            value=getattr(self.settings_manager.settings, "show_info_overlay", False)
+        # Info Panel checkbutton
+        self.info_panel_var = tk.BooleanVar(
+            value=getattr(self.settings_manager.settings, "show_info_panel", True)
         )
         view_menu.add_checkbutton(
-            label="Show Info Overlay",
-            variable=self.info_overlay_var,
-            command=self._toggle_info_overlay_callback,
+            label="Show Info Panel",
+            variable=self.info_panel_var,
+            command=self._toggle_info_panel_callback,
             accelerator="I",
         )
 
@@ -391,7 +428,15 @@ class MainWindow:
         )
 
         # Settings menu
-        settings_menu = tk.Menu(self.menubar, tearoff=0)
+        settings_menu = tk.Menu(
+            self.menubar,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         self.menubar.add_cascade(label="Settings", menu=settings_menu)
 
         # Device submenu
@@ -424,8 +469,45 @@ class MainWindow:
             debug=bool(self.manager_dict.get("debug", False)),
         )
 
+        # Theme submenu
+        theme_menu = tk.Menu(
+            settings_menu,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
+        settings_menu.add_cascade(label="Theme", menu=theme_menu)
+
+        # Create radio buttons for each theme
+        self.theme_var = tk.StringVar(
+            value=getattr(
+                self.settings_manager.settings, "theme", ThemePreset.CYAN.value
+            )
+        )
+
+        for preset_value, theme_name in theme_manager.get_available_themes().items():
+            theme_menu.add_radiobutton(
+                label=theme_name,
+                variable=self.theme_var,
+                value=preset_value,
+                command=lambda p=preset_value: self.set_theme(p),
+            )
+
+        settings_menu.add_separator()
+
         # Level Meter Preset submenu
-        level_meter_menu = tk.Menu(settings_menu, tearoff=0)
+        level_meter_menu = tk.Menu(
+            settings_menu,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         settings_menu.add_cascade(label="Level Meter Preset", menu=level_meter_menu)
 
         # Create radio buttons for each preset
@@ -434,8 +516,6 @@ class MainWindow:
                 self.settings_manager.settings, "level_meter_preset", "broadcast_ebu"
             )
         )
-
-        from .level_meter.config import RecordingStandard, get_standard_description
 
         for standard in RecordingStandard:
             if standard != RecordingStandard.CUSTOM:  # Skip CUSTOM for now
@@ -447,7 +527,15 @@ class MainWindow:
                 )
 
         # Help menu
-        help_menu = tk.Menu(self.menubar, tearoff=0)
+        help_menu = tk.Menu(
+            self.menubar,
+            tearoff=0,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            selectcolor=UIConstants.COLOR_ACCENT,
+        )
         self.menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(
             label="Keyboard Shortcuts",
@@ -463,17 +551,37 @@ class MainWindow:
         about_window.title("About Revoxx")
         about_window.geometry("400x200")
         about_window.resizable(False, False)
+        about_window.configure(bg=UIConstants.COLOR_BACKGROUND)
 
-        about_text = """Revoxx Recorder
+        about_text = """REVOXX RECORDER
 
-A tool for recording (emotional) speech datasets."""
+A tool for recording
+high-quality speech datasets"""
 
         label = tk.Label(
-            about_window, text=about_text, justify=tk.CENTER, padx=20, pady=20
+            about_window,
+            text=about_text,
+            justify=tk.CENTER,
+            padx=20,
+            pady=20,
+            bg=UIConstants.COLOR_BACKGROUND,
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 12),
         )
         label.pack(fill=tk.BOTH, expand=True)
 
-        close_btn = tk.Button(about_window, text="Close", command=about_window.destroy)
+        close_btn = tk.Button(
+            about_window,
+            text="CLOSE",
+            command=about_window.destroy,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            fg=UIConstants.COLOR_ACCENT,
+            activebackground=UIConstants.COLOR_ACCENT,
+            activeforeground=UIConstants.COLOR_BACKGROUND,
+            bd=1,
+            highlightbackground=UIConstants.COLOR_BORDER,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 10),
+        )
         close_btn.pack(pady=10)
 
         about_window.focus_set()
@@ -505,27 +613,27 @@ A tool for recording (emotional) speech datasets."""
             "show_level_meter", self.level_meter_var.get()
         )
 
-    def _toggle_info_overlay_callback(self) -> None:
-        """Callback for menu toggle info overlay."""
-        # Toggle info overlay
-        self.info_overlay.toggle()
-        # Update settings
-        self.settings_manager.update_setting(
-            "show_info_overlay", self.info_overlay.visible
-        )
+    def _toggle_info_panel_callback(self) -> None:
+        """Toggle the combined info panel visibility."""
+        if hasattr(self, "info_panel"):
+            # Toggle visibility
+            if self.info_panel.winfo_viewable():
+                self.info_panel.grid_forget()
+                self.info_panel_visible = False
+            else:
+                # Grid info panel in row 3 (bottom position)
+                self.info_panel.grid(
+                    row=3, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
+                )
+                self.info_panel_visible = True
+                # Update content if callback available
+                if "update_info_panel" in self.app_callbacks:
+                    self.root.after(10, self.app_callbacks["update_info_panel"])
 
-        # If now visible, show content after small delay to ensure frame is placed
-        if self.info_overlay.visible:
-            # Update checkbox
-            if hasattr(self, "info_overlay_var"):
-                self.info_overlay_var.set(True)
-            # Call app callback after delay
-            if "update_info_overlay" in self.app_callbacks:
-                self.root.after(10, self.app_callbacks["update_info_overlay"])
-        else:
-            # Update checkbox
-            if hasattr(self, "info_overlay_var"):
-                self.info_overlay_var.set(False)
+            # Update settings
+            self.settings_manager.update_setting(
+                "show_info_panel", self.info_panel_visible
+            )
 
     def _toggle_monitoring_callback(self) -> None:
         """Callback for menu toggle monitoring mode."""
@@ -543,8 +651,6 @@ A tool for recording (emotional) speech datasets."""
         if "get_current_session" in self.app_callbacks:
             session = self.app_callbacks["get_current_session"]()
             if session:
-                from .dialogs import SessionSettingsDialog
-
                 dialog = SessionSettingsDialog(self.root, session)
                 dialog.show()
             else:
@@ -590,14 +696,24 @@ A tool for recording (emotional) speech datasets."""
             pady=UIConstants.MAIN_FRAME_PADDING,
         )
 
+        # Configure grid layout for main_frame
+        self.main_frame.grid_rowconfigure(0, weight=0)  # Info Bar - fixed height
+        self.main_frame.grid_rowconfigure(1, weight=1)  # Utterance - expands
+        self.main_frame.grid_rowconfigure(2, weight=0)  # Spektrogramm - fixed height
+        self.main_frame.grid_rowconfigure(3, weight=0)  # Info Panel - fixed height
+        self.main_frame.grid_columnconfigure(0, weight=1)  # Full width
+
         # Top info bar
         self._create_info_bar()
 
-        # Center content area
-        self._create_content_area()
+        # Create middle area for utterance text
+        self._create_utterance_display()
 
-        # Bottom control area
-        self._create_control_area()
+        # Spectrogram and level meter (now in row 2)
+        self._create_spectrogram_area()
+
+        # Create combined info panel at the bottom (now in row 3)
+        self._create_combined_info_panel()
 
         # Calculate initial font sizes
         self._calculate_font_sizes()
@@ -612,101 +728,119 @@ A tool for recording (emotional) speech datasets."""
         """Create the top information bar.
 
         Creates the status display, recording indicator, and progress
-        counter. The bar height is proportional to window height.
+        counter. The bar has a fixed height.
         """
-        height = int(self.ui_state.window_height * UIConstants.INFO_FRAME_HEIGHT_RATIO)
+        height = 80  # Fixed height for top panel
 
         self.info_frame = tk.Frame(
-            self.main_frame, bg=UIConstants.COLOR_BACKGROUND, height=height
+            self.main_frame,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            height=height,
+            highlightthickness=0,
         )
-        self.info_frame.pack(fill=tk.X, pady=(0, UIConstants.FRAME_SPACING))
-        self.info_frame.pack_propagate(False)
+        self.info_frame.grid(
+            row=0, column=0, sticky="ew", pady=(0, UIConstants.FRAME_SPACING)
+        )
+        self.info_frame.grid_propagate(False)
 
-        # Status text
-        self.status_var = tk.StringVar(value="Ready")
+        # Status text (only shown during recording)
+        self.status_var = tk.StringVar(value="")
         self.status_label = tk.Label(
             self.info_frame,
             textvariable=self.status_var,
-            fg=UIConstants.COLOR_TEXT_INACTIVE,
-            bg=UIConstants.COLOR_BACKGROUND,
+            fg=UIConstants.COLOR_TEXT_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 14),
         )
-        self.status_label.pack(side=tk.LEFT, padx=UIConstants.FRAME_SPACING)
+        self.status_label.pack(
+            side=tk.LEFT,
+            padx=UIConstants.FRAME_SPACING * 2,
+            pady=UIConstants.FRAME_SPACING,
+        )
 
         # Recording indicator
         self.rec_indicator = tk.Label(
             self.info_frame,
             text="● REC",
             fg=UIConstants.COLOR_TEXT_INACTIVE,
-            bg=UIConstants.COLOR_BACKGROUND,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 14, "bold"),
         )
-        self.rec_indicator.pack(side=tk.RIGHT, padx=UIConstants.FRAME_SPACING)
+        self.rec_indicator.pack(
+            side=tk.RIGHT,
+            padx=UIConstants.FRAME_SPACING * 2,
+            pady=UIConstants.FRAME_SPACING,
+        )
 
         # Progress info
         self.progress_var = tk.StringVar()
         self.progress_label = tk.Label(
             self.info_frame,
             textvariable=self.progress_var,
-            fg=UIConstants.COLOR_TEXT_INACTIVE,
-            bg=UIConstants.COLOR_BACKGROUND,
+            fg=UIConstants.COLOR_ACCENT,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 15, "bold"),
         )
-        self.progress_label.pack(side=tk.RIGHT, padx=UIConstants.MAIN_FRAME_PADDING)
+        self.progress_label.pack(
+            side=tk.RIGHT,
+            padx=UIConstants.MAIN_FRAME_PADDING,
+            pady=UIConstants.FRAME_SPACING,
+        )
 
-    def _create_content_area(self) -> None:
-        """Create the center content area.
+    def _create_utterance_display(self) -> None:
+        """Create the middle area for utterance text display.
 
-        Creates the main display area showing the current utterance
-        label and text. Text is centered and wraps based on window width.
+        This shows only the utterance text in large font, centered.
+        The label/filename info is now in the info panel.
         """
-        self.content_frame = tk.Frame(self.main_frame, bg=UIConstants.COLOR_BACKGROUND)
-        self.content_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Label for utterance ID
-        self.label_var = tk.StringVar()
-        self.label_display = tk.Label(
-            self.content_frame,
-            textvariable=self.label_var,
-            fg=UIConstants.COLOR_TEXT_NORMAL,
+        self.utterance_frame = tk.Frame(
+            self.main_frame,
             bg=UIConstants.COLOR_BACKGROUND,
-            anchor="w",
+            highlightthickness=0,
         )
-        self.label_display.pack(pady=(0, UIConstants.FRAME_SPACING))
+        # Grid in row 1 with weight=1 to expand
+        self.utterance_frame.grid(
+            row=1, column=0, sticky="nsew", pady=UIConstants.FRAME_SPACING
+        )
 
-        # Main text display
+        # Main text display only (no label)
         self.text_var = tk.StringVar()
         self.text_display = tk.Label(
-            self.content_frame,
+            self.utterance_frame,
             textvariable=self.text_var,
             fg=UIConstants.COLOR_TEXT_NORMAL,
             bg=UIConstants.COLOR_BACKGROUND,
             anchor="center",
             justify="center",
+            font=(UIConstants.FONT_FAMILY_SANS[0], 32, "normal"),
+            wraplength=800,  # Will be updated dynamically
         )
-        self.text_display.pack(expand=True)
+        # Configure utterance_frame grid
+        self.utterance_frame.grid_rowconfigure(0, weight=1)
+        self.utterance_frame.grid_columnconfigure(0, weight=1)
+        # Place text_display in grid
+        self.text_display.grid(
+            row=0, column=0, sticky="nsew", padx=UIConstants.MAIN_FRAME_PADDING
+        )
 
-    def _create_control_area(self) -> None:
-        """Create the bottom control area.
+    def _create_spectrogram_area(self) -> None:
+        """Create the bottom area for spectrogram and level meter.
 
-        Creates the bottom panel containing the optional mel spectrogram
-        widget and level meter. Height is proportional
-        to window size.
+        This is now a separate panel, independent from the info panel.
         """
-        height = int(
-            self.ui_state.window_height * UIConstants.CONTROL_FRAME_HEIGHT_RATIO
-        )
+        height = 270  # Fixed pixel height
 
-        self.control_frame = tk.Frame(
-            self.main_frame, bg=UIConstants.COLOR_BACKGROUND, height=height
-        )
-        self.control_frame.pack(fill=tk.X, pady=(UIConstants.FRAME_SPACING, 0))
-        self.control_frame.pack_propagate(False)
-
-        # Create horizontal container for spectrogram and level meter
+        # Create container for spectrogram and level meter
         self.spec_container = tk.Frame(
-            self.control_frame, bg=UIConstants.COLOR_BACKGROUND
+            self.main_frame,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            height=height,
+            highlightthickness=0,
         )
-        self.spec_container.pack(
-            fill=tk.BOTH, expand=True, padx=UIConstants.FRAME_SPACING
+        self.spec_container.grid(
+            row=2, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
         )
+        self.spec_container.grid_propagate(False)  # Critical: prevent size changes
 
         # Configure grid layout for spec_container children
         self.spec_container.grid_columnconfigure(0, weight=1)  # spec_frame expands
@@ -730,14 +864,19 @@ A tool for recording (emotional) speech datasets."""
         Creates a frame and initializes the MelSpectrogramWidget for
         real-time audio visualization.
         """
-        # Create frame for spectrogram
-        self.spec_frame = tk.Frame(self.spec_container, bg=UIConstants.COLOR_BACKGROUND)
-        self.spec_frame.grid(row=0, column=0, sticky="nsew")
-
-        # Configure grid weights for spec_container
-        self.spec_container.grid_columnconfigure(0, weight=1)  # spec_frame expands
-        self.spec_container.grid_columnconfigure(1, weight=0)  # level_meter fixed width
-        self.spec_container.grid_rowconfigure(0, weight=1)
+        # Create frame for spectrogram with padding to contain it
+        self.spec_frame = tk.Frame(
+            self.spec_container,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            highlightthickness=0,
+        )
+        self.spec_frame.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
+            padx=(UIConstants.FRAME_SPACING, UIConstants.FRAME_SPACING // 2),
+            pady=UIConstants.FRAME_SPACING,
+        )
 
         # Defer creation of mel_spectrogram widget until window is ready
         # This avoids the negative figure size error
@@ -768,13 +907,107 @@ A tool for recording (emotional) speech datasets."""
                     self.shared_audio_state,
                 )
 
+    def _create_combined_info_panel(self) -> None:
+        """Create the combined info panel as a separate panel.
+
+        This is now an independent panel between the utterance display and spectrogram.
+        """
+        # Check if info panel should be visible
+        self.info_panel_visible = getattr(
+            self.settings_manager.settings, "show_info_panel", True
+        )
+
+        # Create info panel frame directly in main_frame
+        self.info_panel = tk.Frame(
+            self.main_frame,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            height=60,  # Single line layout like top panel
+            highlightthickness=0,
+        )
+
+        # Only grid if visible
+        if self.info_panel_visible:
+            self.info_panel.grid(
+                row=3, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
+            )
+
+        self.info_panel.pack_propagate(False)
+
+        # Get mono font
+        mono_font = UIConstants.FONT_FAMILY_MONO[0]
+        try:
+            if mono_font not in tkfont.families():
+                mono_font = "Courier"
+        except Exception:
+            mono_font = "Courier"
+
+        # Font size matching top panel style
+        font_size = 24
+
+        # Left side - File information (label/filename, size)
+        self.file_info_var = tk.StringVar(value="")
+        self.file_info_label = tk.Label(
+            self.info_panel,
+            textvariable=self.file_info_var,
+            fg=UIConstants.COLOR_TEXT_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(mono_font, font_size),
+        )
+        self.file_info_label.pack(
+            side=tk.LEFT,
+            padx=UIConstants.FRAME_SPACING * 2,
+            pady=UIConstants.FRAME_SPACING,
+        )
+
+        # Center - Audio format (sample rate, bit depth, format)
+        self.audio_format_var = tk.StringVar(value="48000 Hz, 24 bit FLAC mono")
+        self.audio_format_label = tk.Label(
+            self.info_panel,
+            textvariable=self.audio_format_var,
+            fg=UIConstants.COLOR_TEXT_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(mono_font, font_size),
+        )
+        self.audio_format_label.pack(
+            side=tk.LEFT,
+            expand=True,
+            padx=UIConstants.FRAME_SPACING * 2,
+            pady=UIConstants.FRAME_SPACING,
+        )
+
+        # Right side - Duration in brackets
+        self.duration_var = tk.StringVar(value="")
+        self.duration_label = tk.Label(
+            self.info_panel,
+            textvariable=self.duration_var,
+            fg=UIConstants.COLOR_TEXT_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(mono_font, font_size),
+        )
+        self.duration_label.pack(
+            side=tk.RIGHT,
+            padx=UIConstants.MAIN_FRAME_PADDING,
+            pady=UIConstants.FRAME_SPACING,
+        )
+
+        # Center message label (for "No recordings" etc.)
+        self.info_center_message = tk.Label(
+            self.info_panel,
+            text="",
+            fg=UIConstants.COLOR_TEXT_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(mono_font, font_size + 2, "bold"),
+        )
+        # Don't pack initially - will be shown/hidden as needed
+
     def _create_embedded_level_meter(self) -> None:
         """Create the embedded LED level meter."""
         # Create frame for level meter
         self.level_meter_frame = tk.Frame(
             self.spec_container,
-            bg=UIConstants.COLOR_BACKGROUND,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,  # Match container background
             width=130,  # Increased width for level meter for better readability
+            highlightthickness=0,
         )
         # Don't pack yet - will be managed by toggle methods
 
@@ -813,22 +1046,39 @@ A tool for recording (emotional) speech datasets."""
         Updates all UI elements with appropriately scaled fonts.
         Also adjusts text wrapping width based on window size.
         """
+        # Try to use modern fonts with fallbacks
+        mono_font = None
+        sans_font = None
+        for font in UIConstants.FONT_FAMILY_MONO:
+            try:
+                if font in tkfont.families():
+                    mono_font = font
+                    break
+            except Exception:
+                pass
+        if not mono_font:
+            mono_font = "Courier"
+
+        for font in UIConstants.FONT_FAMILY_SANS:
+            try:
+                if font in tkfont.families():
+                    sans_font = font
+                    break
+            except Exception:
+                pass
+        if not sans_font:
+            sans_font = "Helvetica"
+
         # Large font for main text
         self.text_display.config(
-            font=("Helvetica", self.ui_state.font_size_large),
+            font=(sans_font, self.ui_state.font_size_large, "normal"),
             wraplength=int(self.ui_state.window_width * UIConstants.TEXT_WRAP_RATIO),
         )
 
-        # Medium font for labels
-        self.label_display.config(font=("Helvetica", self.ui_state.font_size_medium))
-
-        # Small font for status and help
-        small_font = ("Helvetica", self.ui_state.font_size_small)
-        self.status_label.config(font=small_font)
-        self.rec_indicator.config(
-            font=("Helvetica", self.ui_state.font_size_small, "bold")
-        )
-        self.progress_label.config(font=small_font)
+        # Fixed font sizes for top panel
+        self.status_label.config(font=(mono_font, 24))
+        self.rec_indicator.config(font=(mono_font, 24, "bold"))
+        self.progress_label.config(font=(mono_font, 24, "bold"))
 
     def _on_window_resize(self, event: tk.Event) -> None:
         """Handle window resize events.
@@ -848,10 +1098,6 @@ A tool for recording (emotional) speech datasets."""
             self._calculate_font_sizes()
             self._apply_fonts()
 
-            # Update overlay position if it exists
-            if hasattr(self, "info_overlay"):
-                self.info_overlay.update_position()
-
     def update_display(
         self, index: int, is_recording: bool, display_position: int
     ) -> None:
@@ -867,7 +1113,7 @@ A tool for recording (emotional) speech datasets."""
         """
         if 0 <= index < len(self.recording_state.utterances):
             self.text_var.set(self.recording_state.utterances[index])
-            self.label_var.set(f"{self.recording_state.labels[index]}:")
+            # Show progress
             self.progress_var.set(
                 f"{display_position}/{len(self.recording_state.utterances)}"
             )
@@ -876,11 +1122,11 @@ A tool for recording (emotional) speech datasets."""
         if is_recording:
             self.text_display.config(fg=UIConstants.COLOR_TEXT_RECORDING)
             self.rec_indicator.config(fg=UIConstants.COLOR_TEXT_RECORDING)
-            self.status_var.set("Recording...")
+            self.status_var.set("RECORDING...")
         else:
             self.text_display.config(fg=UIConstants.COLOR_TEXT_NORMAL)
             self.rec_indicator.config(fg=UIConstants.COLOR_TEXT_INACTIVE)
-            self.status_var.set("Ready")
+            self.status_var.set("")  # Clear status when not recording
 
     def set_status(self, message: str) -> None:
         """Set status message.
@@ -897,10 +1143,90 @@ A tool for recording (emotional) speech datasets."""
             label: The utterance label
             filename: Optional filename to display (e.g., "take_001.flac")
         """
-        if filename:
-            self.label_var.set(f"{label}: {filename}")
+        # Store for use in update_combined_info_panel
+        self._current_label = label
+        self._current_filename = filename
+
+    def update_combined_info_panel(self, recording_params: dict = None) -> None:
+        """Update the combined info panel with recording information.
+
+        Args:
+            recording_params: Dict with recording parameters (sample_rate, bit_depth, channels,
+                            format, duration, size, no_recordings)
+        """
+        if not recording_params:
+            return
+
+        # Check if we should show "NO RECORDINGS" message
+        if recording_params.get("no_recordings", False):
+            # Show center message and hide other labels
+            self.file_info_label.pack_forget()
+            self.audio_format_label.pack_forget()
+            self.duration_label.pack_forget()
+            self.info_center_message.config(text="NO RECORDINGS")
+            self.info_center_message.place(relx=0.5, rely=0.5, anchor="center")
         else:
-            self.label_var.set(f"{label}:")
+            # Hide center message and show normal info
+            self.info_center_message.place_forget()
+
+            # Ensure labels are packed if not visible
+            if not self.file_info_label.winfo_viewable():
+                self.file_info_label.pack(
+                    side=tk.LEFT,
+                    padx=UIConstants.FRAME_SPACING * 2,
+                    pady=UIConstants.FRAME_SPACING,
+                )
+                self.audio_format_label.pack(
+                    side=tk.LEFT,
+                    expand=True,
+                    padx=UIConstants.FRAME_SPACING * 2,
+                    pady=UIConstants.FRAME_SPACING,
+                )
+                self.duration_label.pack(
+                    side=tk.RIGHT,
+                    padx=UIConstants.MAIN_FRAME_PADDING,
+                    pady=UIConstants.FRAME_SPACING,
+                )
+
+        # Get label and filename from previous call to update_label_with_filename
+        label = getattr(self, "_current_label", "")
+        filename = getattr(self, "_current_filename", "")
+
+        # Update left side - file info with size
+        size_bytes = recording_params.get("size", 0)
+
+        file_info_parts = []
+        if label and filename:
+            file_info_parts.append(f"{label}/{filename}")
+        elif label:
+            file_info_parts.append(label)
+
+        # Add size
+        if size_bytes > 0:
+            if size_bytes < 1024 * 1024:
+                size_text = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_text = f"{size_bytes / (1024 * 1024):.1f} MB"
+            file_info_parts.append(size_text)
+
+        self.file_info_var.set(", ".join(file_info_parts) if file_info_parts else "")
+
+        # Update center - audio format
+        sample_rate = recording_params.get("sample_rate", 48000)
+        bit_depth = recording_params.get("bit_depth", 24)
+        format_name = recording_params.get("format", "FLAC")
+        channels = recording_params.get("channels", 1)
+        channel_text = "mono" if channels == 1 else "stereo"
+        self.audio_format_var.set(
+            f"{sample_rate} Hz, {bit_depth} bit {format_name} {channel_text}"
+        )
+
+        # Update right side - duration
+        duration = recording_params.get("duration", 0)
+        if duration > 0:
+            self.duration_var.set(f"{duration:.2f} seconds")
+        else:
+            self.duration_var.set("")
 
     def toggle_fullscreen(self) -> None:
         """Toggle fullscreen mode.
@@ -1026,8 +1352,14 @@ A tool for recording (emotional) speech datasets."""
                 self.spec_frame.grid_forget()
                 self.ui_state.spectrogram_visible = False
             else:
-                # Show spectrogram
-                self.spec_frame.grid(row=0, column=0, sticky="nsew")
+                # Show spectrogram with proper padding
+                self.spec_frame.grid(
+                    row=0,
+                    column=0,
+                    sticky="nsew",
+                    padx=(UIConstants.FRAME_SPACING, UIConstants.FRAME_SPACING // 2),
+                    pady=UIConstants.FRAME_SPACING,
+                )
                 self.ui_state.spectrogram_visible = True
 
                 # Create mel_spectrogram widget if it doesn't exist yet
@@ -1104,8 +1436,6 @@ A tool for recording (emotional) speech datasets."""
         self.root.focus_force()
 
         # Platform-specific focus
-        import platform
-
         if platform.system() == "Darwin":  # macOS
             self.root.after(UIConstants.FOCUS_DELAY_MS, lambda: self.root.focus_force())
 
@@ -1145,27 +1475,137 @@ A tool for recording (emotional) speech datasets."""
         if hasattr(self, "level_meter_preset_var"):
             self.level_meter_preset_var.set(preset_name)
 
-    def show_info_overlay(self, recording_params: dict, is_recording: bool) -> None:
-        """Show or toggle the info overlay.
+    def set_theme(self, theme_preset: str) -> None:
+        """Set the application theme.
 
         Args:
-            recording_params: Recording parameters dict (sample_rate, bit_depth, channels, etc.)
-            is_recording: Whether currently recording
+            theme_preset: Theme preset name (e.g., 'classic', 'modern')
         """
-        # Toggle visibility
-        self.info_overlay.toggle()
+        try:
+            # Convert string to ThemePreset enum
+            preset = ThemePreset(theme_preset)
+            theme_manager.set_theme(preset)
 
-        # If now visible, show with parameters after small delay
-        if self.info_overlay.visible:
-            self.root.after(
-                10, lambda: self.info_overlay.show(recording_params, is_recording)
+            # Refresh UIConstants with new theme colors
+            UIConstants.refresh()
+
+            # Save the setting
+            self.settings_manager.update_setting("theme", theme_preset)
+
+            # Update the menu variable
+            if hasattr(self, "theme_var"):
+                self.theme_var.set(theme_preset)
+
+            # Apply theme to all widgets
+            self._apply_theme_to_widgets()
+
+            # Redraw everything
+            self._force_redraw()
+
+            # Show message to user
+            self.set_status(f"Theme changed to {theme_manager.current_theme.name}")
+        except ValueError:
+            print(f"Unknown theme preset: {theme_preset}")
+
+    def _apply_theme_to_widgets(self) -> None:
+        """Apply current theme colors to all widgets."""
+        # Update main window background
+        self.root.configure(bg=UIConstants.COLOR_BACKGROUND)
+
+        # Update main frame
+        if hasattr(self, "main_frame"):
+            self.main_frame.configure(bg=UIConstants.COLOR_BACKGROUND)
+
+        # Update info frame
+        if hasattr(self, "info_frame"):
+            self.info_frame.configure(bg=UIConstants.COLOR_BACKGROUND_SECONDARY)
+            self.status_label.configure(
+                fg=UIConstants.COLOR_TEXT_SECONDARY,
+                bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            )
+            self.rec_indicator.configure(
+                fg=UIConstants.COLOR_TEXT_INACTIVE,
+                bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            )
+            self.progress_label.configure(
+                fg=UIConstants.COLOR_ACCENT, bg=UIConstants.COLOR_BACKGROUND_SECONDARY
             )
 
-    def _show_info_overlay_on_startup(self) -> None:
-        """Show info overlay on startup with current state."""
-        # Call app's update_info_overlay if available
-        if "update_info_overlay" in self.app_callbacks:
-            self.app_callbacks["update_info_overlay"]()
+        # Update utterance frame
+        if hasattr(self, "utterance_frame"):
+            self.utterance_frame.configure(bg=UIConstants.COLOR_BACKGROUND)
+            self.text_display.configure(
+                fg=UIConstants.COLOR_TEXT_NORMAL, bg=UIConstants.COLOR_BACKGROUND
+            )
+
+        # Update spec container
+        if hasattr(self, "spec_container"):
+            self.spec_container.configure(bg=UIConstants.COLOR_BACKGROUND_SECONDARY)
+
+        # Update info panel
+        if hasattr(self, "info_panel"):
+            self.info_panel.configure(bg=UIConstants.COLOR_BACKGROUND_SECONDARY)
+            self.file_info_label.configure(
+                fg=UIConstants.COLOR_TEXT_SECONDARY,
+                bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            )
+            self.audio_format_label.configure(
+                fg=UIConstants.COLOR_TEXT_SECONDARY,
+                bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            )
+            self.duration_label.configure(
+                fg=UIConstants.COLOR_TEXT_SECONDARY,
+                bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            )
+            if hasattr(self, "info_center_message"):
+                self.info_center_message.configure(
+                    fg=UIConstants.COLOR_TEXT_SECONDARY,
+                    bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+                )
+
+        # Update level meter frame
+        if hasattr(self, "level_meter_frame"):
+            self.level_meter_frame.configure(bg=UIConstants.COLOR_BACKGROUND_SECONDARY)
+            # Level meter needs refresh for new theme colors
+            if hasattr(self, "embedded_level_meter") and self.embedded_level_meter:
+                self.embedded_level_meter.refresh()
+
+    def _force_redraw(self) -> None:
+        """Force redraw of all components."""
+        # Update spectrogram if visible
+        if hasattr(self, "mel_spectrogram") and self.mel_spectrogram:
+            # Update matplotlib figure colors
+            self.mel_spectrogram.fig.set_facecolor(UIConstants.COLOR_BACKGROUND)
+            self.mel_spectrogram.ax.set_facecolor(UIConstants.COLOR_BACKGROUND)
+
+            # Update axes colors
+            self.mel_spectrogram.ax.tick_params(colors=UIConstants.COLOR_TEXT_SECONDARY)
+            self.mel_spectrogram.ax.yaxis.label.set_color(
+                UIConstants.COLOR_TEXT_SECONDARY
+            )
+
+            # Update spines
+            for spine in self.mel_spectrogram.ax.spines.values():
+                if spine.get_visible():
+                    spine.set_color(UIConstants.COLOR_BORDER)
+
+            # Update colormap
+            if self.mel_spectrogram.im:
+                self.mel_spectrogram.im.set_cmap(theme_manager.colormap)
+
+            # Update NO DATA text if visible
+            if hasattr(self.mel_spectrogram, "no_data_text"):
+                self.mel_spectrogram.no_data_text.set_color(
+                    UIConstants.COLOR_TEXT_SECONDARY
+                )
+
+            # Redraw canvas
+            self.mel_spectrogram.canvas.draw()
+
+        # Force Tkinter update
+        self.root.update_idletasks()
+
+    # Info overlay methods removed - using info_panel instead
 
     def _new_session_callback(self) -> None:
         """Handle New Session menu item."""
@@ -1185,9 +1625,6 @@ A tool for recording (emotional) speech datasets."""
 
     def _create_dataset_callback(self):
         """Show dataset creation dialog."""
-        from pathlib import Path
-        from .dialogs.dataset_dialog import DatasetDialog
-
         # Get base directory from settings or use default
         base_dir = getattr(
             self.settings_manager.settings,

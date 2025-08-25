@@ -5,7 +5,7 @@ import numpy as np
 from scipy import interpolate
 
 from ...constants import AudioConstants
-from ...audio.processors import MelSpectrogramProcessor, ClippingDetector
+from ...audio.processors import ClippingDetector
 from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor
 from .controllers import ClippingVisualizer, ZoomController
 

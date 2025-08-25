@@ -51,15 +51,15 @@ class MelConfig:
 
         # Adaptive fmax calculation to prevent empty mel filters
         if sample_rate <= 48000:
-            # For standard rates, use BASE_FMAX or slightly below Nyquist
-            fmax = min(nyquist - 1000, cls.BASE_FMAX)
+            # For standard rates, use BASE_FMAX or Nyquist
+            fmax = min(nyquist, cls.BASE_FMAX)
         else:
             # For high sample rates, use 48% of sample rate to ensure valid mel filters
             # This prevents empty filter banks at frequencies like 192kHz
             fmax = sample_rate * 0.48
 
-        # Ensure fmax doesn't exceed Nyquist (with some margin)
-        fmax = min(fmax, nyquist - 100)
+        # Ensure fmax doesn't exceed Nyquist (with small margin for numerical stability)
+        fmax = min(fmax, nyquist - 1)
 
         freq_range = fmax - fmin
 

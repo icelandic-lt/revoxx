@@ -163,8 +163,7 @@ def center_dialog_on_parent(
     # we move it back to stay within parent (even if partially off-screen)
     x, y = constrain_to_parent((x, y), (dialog_width, dialog_height), parent_bounds)
 
-    # Apply the position and size
-    # Always set both to ensure consistency
+    # Apply position and size
     dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
 

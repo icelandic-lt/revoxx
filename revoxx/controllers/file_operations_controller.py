@@ -43,7 +43,7 @@ class FileOperationsController:
         # Ask for confirmation
         result = messagebox.askyesno(
             "Delete Recording",
-            f"Delete recording {current_label} (take {current_take})?",
+            "Delete recording ?",
             parent=self.app.root,
         )
 
@@ -88,9 +88,9 @@ class FileOperationsController:
             # Update take status
             self.app.navigation_controller.update_take_status()
 
-            # Update info overlay if visible
-            if self.app.window.info_overlay.visible:
-                self.app.display_controller.update_info_overlay()
+            # Update info panel if visible
+            if self.app.window.info_panel_visible:
+                self.app.display_controller.update_info_panel()
 
             self.app.window.show_message(
                 f"Recording moved to trash: take_{current_take:03d}", 2000
@@ -135,9 +135,9 @@ class FileOperationsController:
             # Update take status
             self.app.navigation_controller.update_take_status()
 
-            # Update info overlay if visible
-            if self.app.window.info_overlay.visible:
-                self.app.display_controller.update_info_overlay()
+            # Update info panel if visible
+            if self.app.window.info_panel_visible:
+                self.app.display_controller.update_info_panel()
 
             self.app.window.show_message(
                 f"Recording restored: take_{take_to_restore:03d}", 2000

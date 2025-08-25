@@ -16,6 +16,9 @@ class FrequencyAxisManager:
     highlighting (e.g., maximum detected frequency in orange).
     """
 
+    # Minimum separation between tick labels as fraction of axis height
+    MIN_TICK_SEPARATION_RATIO = 0.03  # 3% of axis height
+
     def __init__(self, ax: Axes):
         """Initialize frequency axis manager.
 
@@ -62,7 +65,9 @@ class FrequencyAxisManager:
 
         # Update axis
         mel_freqs = self._get_mel_frequencies(adaptive_n_mels, fmin, adaptive_fmax)
-        ticks, labels = self._calculate_ticks_and_labels(mel_freqs, adaptive_fmax)
+        # For display, use the exact Nyquist frequency
+        display_fmax = sample_rate / 2
+        ticks, labels = self._calculate_ticks_and_labels(mel_freqs, display_fmax)
         self._apply_ticks_and_labels(ticks, labels)
         self._reset_label_styles()
 
@@ -124,24 +129,20 @@ class FrequencyAxisManager:
                 all_ticks.insert(insert_idx, max_freq_bin)
                 all_labels.insert(insert_idx, self._format_frequency(max_freq))
 
+            # Filter ticks with priority for max frequency
+            filtered_ticks, filtered_labels = self._filter_ticks_with_priority(
+                all_ticks, all_labels, max_freq_bin, n_mels
+            )
+
             # Apply updates
-            self.ax.set_yticks(all_ticks)
-            self.ax.set_yticklabels(all_labels)
+            self.ax.set_yticks(filtered_ticks)
+            self.ax.set_yticklabels(filtered_labels)
 
             # Store the new peak indicator position
             self._peak_indicator_position = max_freq_bin
 
-            # Reset all labels to default style first
-            for label in self.ax.get_yticklabels():
-                label.set_color(UIConstants.COLOR_TEXT_INACTIVE)
-                label.set_weight("normal")
-
-            # Then highlight only the peak indicator
-            for i, tick in enumerate(all_ticks):
-                if tick == max_freq_bin:
-                    self.ax.get_yticklabels()[i].set_color("orange")
-                    self.ax.get_yticklabels()[i].set_weight("bold")
-                    break
+            # Apply highlighting to the max frequency tick
+            self._highlight_specific_tick(filtered_ticks, max_freq_bin)
 
     @staticmethod
     def _get_mel_frequencies(n_mels: int, fmin: float, fmax: float) -> np.ndarray:
@@ -149,6 +150,94 @@ class FrequencyAxisManager:
         return librosa.mel_frequencies(n_mels=n_mels + 2, fmin=fmin, fmax=fmax)[
             1:-1
         ]  # Remove edge bins
+
+    def _filter_overlapping_ticks(
+        self, tick_positions: np.ndarray, n_mels: int
+    ) -> np.ndarray:
+        """Filter out tick positions that would cause label overlap.
+
+        Args:
+            tick_positions: Array of tick positions in mel bins
+            n_mels: Total number of mel bins
+
+        Returns:
+            Filtered array of tick positions
+        """
+        # Minimum separation in mel bins (roughly corresponds to label height)
+        min_separation = n_mels * self.MIN_TICK_SEPARATION_RATIO
+
+        filtered = [tick_positions[0]]  # Always keep first tick
+
+        # Check middle ticks
+        for i in range(1, len(tick_positions) - 1):
+            if tick_positions[i] - filtered[-1] >= min_separation:
+                filtered.append(tick_positions[i])
+
+        # Always keep last tick if it's far enough from the previous
+        if len(tick_positions) > 1:
+            if (
+                len(filtered) == 1
+                or tick_positions[-1] - filtered[-1] >= min_separation
+            ):
+                filtered.append(tick_positions[-1])
+            elif tick_positions[-1] != filtered[-1]:
+                # Replace the last filtered tick with the actual last tick
+                # to ensure we always show the maximum frequency
+                filtered[-1] = tick_positions[-1]
+
+        return np.array(filtered)
+
+    @staticmethod
+    def _filter_ticks_with_priority(
+        all_ticks: list, all_labels: list, priority_tick: float, n_mels: int
+    ) -> Tuple[list, list]:
+        """Filter overlapping ticks while ensuring a priority tick is always shown.
+
+        Args:
+            all_ticks: List of all tick positions
+            all_labels: List of all tick labels
+            priority_tick: Tick position that must be kept (e.g., max frequency)
+            n_mels: Total number of mel bins
+
+        Returns:
+            Tuple of (filtered_ticks, filtered_labels)
+        """
+        min_separation = n_mels * FrequencyAxisManager.MIN_TICK_SEPARATION_RATIO
+        filtered_ticks = []
+        filtered_labels = []
+
+        for i, tick in enumerate(all_ticks):
+            if tick == priority_tick:
+                # Always add the priority tick
+                filtered_ticks.append(tick)
+                filtered_labels.append(all_labels[i])
+            else:
+                # Check if this tick is far enough from priority tick and other filtered ticks
+                too_close = False
+
+                # Check distance from priority tick
+                if abs(tick - priority_tick) < min_separation:
+                    too_close = True
+
+                # Check distance from already filtered ticks
+                if not too_close:
+                    for filtered_tick in filtered_ticks:
+                        if abs(tick - filtered_tick) < min_separation:
+                            too_close = True
+                            break
+
+                if not too_close:
+                    filtered_ticks.append(tick)
+                    filtered_labels.append(all_labels[i])
+
+        # Sort ticks and labels together to maintain order
+        if filtered_ticks:
+            sorted_pairs = sorted(zip(filtered_ticks, filtered_labels))
+            filtered_ticks, filtered_labels = zip(*sorted_pairs)
+            filtered_ticks = list(filtered_ticks)
+            filtered_labels = list(filtered_labels)
+
+        return filtered_ticks, filtered_labels
 
     def _calculate_ticks_and_labels(
         self, mel_freqs: np.ndarray, fmax: float
@@ -168,6 +257,9 @@ class FrequencyAxisManager:
         log_indices = np.unique(np.concatenate([lower_indices, upper_indices]))
         log_indices[0] = 0
         log_indices[-1] = n_mels - 1
+
+        # Filter out overlapping ticks
+        log_indices = self._filter_overlapping_ticks(log_indices, n_mels)
 
         # Create labels
         labels = []
@@ -202,5 +294,26 @@ class FrequencyAxisManager:
     def _reset_label_styles(self) -> None:
         """Reset all labels to default color and weight."""
         for label in self.ax.get_yticklabels():
-            label.set_color(UIConstants.COLOR_TEXT_INACTIVE)
+            label.set_color(UIConstants.COLOR_TEXT_SECONDARY)
             label.set_weight("normal")
+
+    def _highlight_specific_tick(self, ticks: list, target_tick: float) -> None:
+        """Highlight a specific tick label with orange color and bold weight.
+
+        Args:
+            ticks: List of tick positions
+            target_tick: The tick position to highlight
+        """
+        # First reset all labels to default style
+        for label in self.ax.get_yticklabels():
+            label.set_color(UIConstants.COLOR_TEXT_SECONDARY)
+            label.set_weight("normal")
+
+        # Then highlight the target tick
+        for i, tick in enumerate(ticks):
+            if tick == target_tick:
+                labels = self.ax.get_yticklabels()
+                if i < len(labels):
+                    labels[i].set_color("orange")
+                    labels[i].set_weight("bold")
+                break

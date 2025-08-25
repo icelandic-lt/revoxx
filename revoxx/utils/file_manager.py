@@ -179,7 +179,7 @@ class RecordingFileManager:
             filenames = [
                 f.name for f in files if self._extract_take_number(f) is not None
             ]
-            takes[label] = sorted(filenames)  # Sort for consistent ordering
+            takes[label] = sorted(filenames)
         return takes
 
     @staticmethod

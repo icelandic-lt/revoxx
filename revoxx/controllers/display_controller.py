@@ -58,6 +58,8 @@ class DisplayController:
                 and self.app.window.mel_spectrogram
             ):
                 self.app.window.mel_spectrogram.clear()
+            # Update info panel even when no recording
+            self.update_info_panel()
             return
 
         # Load the recording
@@ -72,6 +74,9 @@ class DisplayController:
                     and self.app.window.mel_spectrogram
                 ):
                     self.app.window.mel_spectrogram.show_recording(audio_data, sr)
+
+                # Update info panel with recording info
+                self.update_info_panel()
             except (OSError, ValueError) as e:
                 # OSError for file operations, ValueError for invalid audio data
                 self.app.window.set_status(f"Error loading recording: {e}")
@@ -118,20 +123,14 @@ class DisplayController:
             # Display any existing recording
             self.show_saved_recording()
 
-    def toggle_info_overlay(self) -> None:
-        """Toggle the info overlay display."""
-        if self.app.window.info_overlay.visible:
-            self.app.window.info_overlay.hide()
-        else:
-            self.update_info_overlay()
-
-    def update_info_overlay(self) -> None:
-        """Update the info overlay with current recording information."""
+    def update_info_panel(self) -> None:
+        """Update the combined info panel with current recording information."""
         current_label = self.app.state.recording.current_label
         if not current_label:
-            # No current utterance
+            # No current utterance - show default parameters
             recording_params = self._get_recording_parameters()
-            self.app.window.info_overlay.show(recording_params)
+            if hasattr(self.app.window, "update_combined_info_panel"):
+                self.app.window.update_combined_info_panel(recording_params)
             return
 
         # Get recording parameters
@@ -139,10 +138,7 @@ class DisplayController:
 
         # Check if recording exists
         current_take = self.app.state.recording.get_current_take(current_label)
-        if current_take == 0:
-            # No recording exists
-            self.app.window.info_overlay.show(recording_params)
-        else:
+        if current_take > 0:
             # Recording exists, get file info
             filepath = self.app.file_manager.get_recording_path(
                 current_label, current_take
@@ -154,12 +150,13 @@ class DisplayController:
                 except (OSError, ValueError):
                     # Error reading file
                     pass
+        else:
+            # No recordings for this utterance
+            recording_params["no_recordings"] = True
 
-            self.app.window.info_overlay.show(
-                recording_params,
-                is_recording=self.app.state.recording.is_recording,
-                is_monitoring=self.app.audio_controller.is_monitoring,
-            )
+        # Update the info panel
+        if hasattr(self.app.window, "update_combined_info_panel"):
+            self.app.window.update_combined_info_panel(recording_params)
 
     def update_recording_timer(self, elapsed_time: float) -> None:
         """Update the recording timer display.
@@ -248,6 +245,6 @@ class DisplayController:
             info["duration"] = len(f) / f.samplerate
             info["actual_sample_rate"] = f.samplerate
             info["actual_channels"] = f.channels
-            info["file_size"] = filepath.stat().st_size
+            info["size"] = filepath.stat().st_size  # Changed from file_size to size
 
         return info

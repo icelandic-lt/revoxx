@@ -232,8 +232,8 @@ class Revoxx:
         self.app_callbacks["toggle_mel_spectrogram"] = (
             self.display_controller.toggle_mel_spectrogram
         )
-        self.app_callbacks["update_info_overlay"] = (
-            self.display_controller.update_info_overlay
+        self.app_callbacks["update_info_panel"] = (
+            self.display_controller.update_info_panel
         )
 
         # Audio callbacks
@@ -370,7 +370,7 @@ class Revoxx:
         )
         self.root.bind(
             f"<{KeyBindings.SHOW_INFO}>",
-            lambda e: self.display_controller.toggle_info_overlay(),
+            lambda e: self.window._toggle_info_panel_callback(),
         )
 
         # Session management with platform-specific modifiers

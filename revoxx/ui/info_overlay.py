@@ -1,6 +1,8 @@
 """Info overlay widget for displaying audio file information."""
 
 import tkinter as tk
+import tkinter.font as tkfont
+from ..constants import UIConstants
 
 
 class InfoOverlay:
@@ -22,14 +24,14 @@ class InfoOverlay:
         # Create overlay frame
         self.frame = tk.Frame(
             parent,
-            bg="black",
+            bg=UIConstants.COLOR_BACKGROUND_TERTIARY,
             highlightthickness=2,
-            highlightbackground="green",
-            highlightcolor="green",
+            highlightbackground=UIConstants.COLOR_ACCENT,
+            highlightcolor=UIConstants.COLOR_ACCENT,
             relief="solid",
             borderwidth=1,
         )
-        self.frame.configure(background="black")
+        self.frame.configure(background=UIConstants.COLOR_BACKGROUND_TERTIARY)
 
         # Create content labels
         self._create_labels()
@@ -37,16 +39,24 @@ class InfoOverlay:
     def _create_labels(self) -> None:
         """Create labels for displaying information."""
         # Info section
-        self.info_frame = tk.Frame(self.frame, bg="black")
+        self.info_frame = tk.Frame(self.frame, bg=UIConstants.COLOR_BACKGROUND_TERTIARY)
         self.info_frame.pack(pady=20, padx=25)
+
+        # Try to use modern font
+        font_family = UIConstants.FONT_FAMILY_MONO[0]
+        try:
+            if font_family not in tkfont.families():
+                font_family = "Courier"
+        except Exception:
+            font_family = "Courier"
 
         # Sample rate
         self.sample_rate_label = tk.Label(
             self.info_frame,
             text="",
-            fg="green",
-            bg="black",
-            font=("Helvetica", 14),
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            bg=UIConstants.COLOR_BACKGROUND_TERTIARY,
+            font=(font_family, 12),
             anchor="w",
         )
         self.sample_rate_label.pack(anchor="w", fill="x", pady=2)
@@ -55,9 +65,9 @@ class InfoOverlay:
         self.bit_depth_label = tk.Label(
             self.info_frame,
             text="",
-            fg="green",
-            bg="black",
-            font=("Helvetica", 14),
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            bg=UIConstants.COLOR_BACKGROUND_TERTIARY,
+            font=(font_family, 12),
             anchor="w",
         )
         self.bit_depth_label.pack(anchor="w", fill="x", pady=2)
@@ -66,9 +76,9 @@ class InfoOverlay:
         self.format_label = tk.Label(
             self.info_frame,
             text="",
-            fg="green",
-            bg="black",
-            font=("Helvetica", 14),
+            fg=UIConstants.COLOR_TEXT_NORMAL,
+            bg=UIConstants.COLOR_BACKGROUND_TERTIARY,
+            font=(font_family, 12),
             anchor="w",
         )
         self.format_label.pack(anchor="w", fill="x", pady=2)
@@ -77,9 +87,9 @@ class InfoOverlay:
         self.duration_label = tk.Label(
             self.info_frame,
             text="",
-            fg="green",
-            bg="black",
-            font=("Helvetica", 14),
+            fg=UIConstants.COLOR_ACCENT,
+            bg=UIConstants.COLOR_BACKGROUND_TERTIARY,
+            font=(font_family, 12, "bold"),
             anchor="w",
         )
         self.duration_label.pack(anchor="w", fill="x", pady=2)
@@ -88,9 +98,9 @@ class InfoOverlay:
         self.size_label = tk.Label(
             self.info_frame,
             text="",
-            fg="green",
-            bg="black",
-            font=("Helvetica", 14),
+            fg=UIConstants.COLOR_TEXT_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_TERTIARY,
+            font=(font_family, 12),
             anchor="w",
         )
         self.size_label.pack(anchor="w", fill="x", pady=2)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "revoxx"
 version = "1.0.0"
-description = "Professional speech recording application for creating high-quality speech datasets"
+description = "Speech recording application for creating high-quality speech datasets"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [

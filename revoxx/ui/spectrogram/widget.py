@@ -7,7 +7,9 @@ import queue
 
 from matplotlib.image import AxesImage
 
-from ...constants import AudioConstants, UIConstants
+from ...constants import AudioConstants
+from ...constants import UIConstants
+from ..themes import theme_manager
 from ...audio.processors import ClippingDetector
 from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor, MEL_CONFIG
 from ...utils.config import AudioConfig, DisplayConfig
@@ -311,6 +313,9 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         Args:
             sample_rate: Sample rate for the recording
         """
+        # Hide NO DATA message if visible
+        self._hide_no_data_message()
+
         # Clear the audio queue first
         self._clear_queue(self.audio_queue)
 
@@ -374,6 +379,8 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
                 if should_update:
                     if self.recording_handler.is_recording:
                         self._update_recording_display()
+                        # Force canvas update for real-time display
+                        self.draw_idle()
 
                     # Update time tracking
                     self.current_time = self.recording_handler.current_time
@@ -399,6 +406,9 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             duration: Playback duration in seconds
             sample_rate: Sample rate of the audio being played
         """
+        # Hide NO DATA message if visible
+        self._hide_no_data_message()
+
         recording_duration = self.recording_display.recording_duration
         if recording_duration <= 0:
             raise ValueError(
@@ -414,6 +424,9 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
     # Display methods
     def show_recording(self, audio_data: np.ndarray, sample_rate: int) -> None:
         """Display a complete recording."""
+        # Hide NO DATA message if visible
+        self._hide_no_data_message()
+
         # Process recording
         display_data, adaptive_n_mels, duration = (
             self.recording_display.process_recording(audio_data, sample_rate)
@@ -493,6 +506,9 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             np.ones((self.adaptive_n_mels, self.spec_frames)) * AudioConstants.DB_MIN
         )
         self.update_display_data(empty_data, self.adaptive_n_mels)
+
+        # Show "NO DATA" text in the center
+        self._show_no_data_message()
 
         # Reset y-axis to default range
         self.ax.set_ylim(0, self.adaptive_n_mels - 1)
@@ -684,7 +700,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             data,
             aspect="auto",
             origin="lower",
-            cmap="viridis",
+            cmap=theme_manager.colormap,
             interpolation="bilinear",
             vmin=AudioConstants.DB_MIN,
             vmax=AudioConstants.DB_MAX,
@@ -925,3 +941,29 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             self.recording_update_id = self.parent.after(
                 UIConstants.ANIMATION_UPDATE_MS, self._recording_update_loop
             )
+
+    def _show_no_data_message(self) -> None:
+        """Show 'NO DATA' message in the center of spectrogram."""
+        # Add text in the center of the axes
+        if hasattr(self, "no_data_text"):
+            self.no_data_text.set_visible(True)
+        else:
+            self.no_data_text = self.ax.text(
+                0.5,
+                0.5,
+                "NO DATA",
+                transform=self.ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=20,
+                fontweight="bold",
+                color=UIConstants.COLOR_TEXT_SECONDARY,
+                alpha=0.5,
+            )
+
+    def _hide_no_data_message(self) -> None:
+        """Hide 'NO DATA' message."""
+        if hasattr(self, "no_data_text"):
+            self.no_data_text.set_visible(False)
+            # Force redraw to ensure text is gone
+            self.draw_idle()

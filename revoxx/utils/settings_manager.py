@@ -29,8 +29,10 @@ class UserSettings:
     # Display settings
     show_spectrogram: bool = True
     show_info_overlay: bool = False
+    show_info_panel: bool = True  # Combined info panel visibility
     show_level_meter: bool = False
     fullscreen: bool = False
+    theme: str = "cyan"  # Theme preset
 
     # Window settings
     window_geometry: Optional[str] = None

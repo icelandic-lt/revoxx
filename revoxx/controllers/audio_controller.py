@@ -410,8 +410,8 @@ class AudioController:
                 self.app.config.audio.sample_rate
             )
 
-        # Update info overlay
-        self._update_info_overlay_for_capture(mode)
+        # Update info panel
+        self._update_info_panel_for_capture(mode)
 
         # Handle device notifications and verify availability
         self.app.notify_if_default_device("input")
@@ -428,19 +428,15 @@ class AudioController:
             if hasattr(self.app.window, "monitoring_var"):
                 self.app.window.monitoring_var.set(True)
 
-    def _update_info_overlay_for_capture(self, mode: str) -> None:
-        """Update info overlay for audio capture."""
-        if self.app.window.info_overlay.visible:
+    def _update_info_panel_for_capture(self, mode: str) -> None:
+        """Update info panel for audio capture."""
+        if self.app.window.info_panel_visible:
             recording_params = {
                 "sample_rate": self.app.config.audio.sample_rate,
                 "bit_depth": self.app.config.audio.bit_depth,
                 "channels": self.app.config.audio.channels,
             }
-            self.app.window.info_overlay.show(
-                recording_params,
-                is_recording=True,
-                is_monitoring=(mode == "monitoring"),
-            )
+            self.app.window.update_combined_info_panel(recording_params)
 
     def _stop_audio_capture(self, mode: str) -> None:
         """Stop audio capture in recording or monitoring mode.
@@ -488,10 +484,10 @@ class AudioController:
             )
 
         self.app.display_controller.update_display()
-        if self.app.window.info_overlay.visible:
+        if self.app.window.info_panel_visible:
             self.app.root.after(
                 UIConstants.POST_RECORDING_DELAY_MS,
-                self.app.display_controller.update_info_overlay,
+                self.app.display_controller.update_info_panel,
             )
 
     def _cleanup_monitoring_mode(self) -> None:
@@ -514,8 +510,8 @@ class AudioController:
             self.app.window.monitoring_var.set(False)
 
         self.app.display_controller.show_saved_recording()
-        if self.app.window.info_overlay.visible:
-            self.app.display_controller.update_info_overlay()
+        if self.app.window.info_panel_visible:
+            self.app.display_controller.update_info_panel()
 
     def _restore_ui_state_after_monitoring(self) -> None:
         """Restore UI state after monitoring mode."""
