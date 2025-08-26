@@ -139,19 +139,19 @@ THEMES = {
             COLOR_BACKGROUND_SECONDARY="#0A0F14",  # Slightly elevated for bottom panel
             COLOR_BACKGROUND_TERTIARY="#000000",  # Pure black
             # Text colors
-            COLOR_TEXT_NORMAL="green",
-            COLOR_TEXT_SECONDARY="green",
-            COLOR_TEXT_RECORDING="red",
-            COLOR_TEXT_INACTIVE="gray",
+            COLOR_TEXT_NORMAL="#40C040",  # Pleasant green
+            COLOR_TEXT_SECONDARY="#40C040",  # Pleasant green
+            COLOR_TEXT_RECORDING="#FF0000",  # Red
+            COLOR_TEXT_INACTIVE="#808080",  # Gray
             # Accent colors
-            COLOR_ACCENT="green",
-            COLOR_WARNING="yellow",
-            COLOR_SUCCESS="green",
-            COLOR_BORDER="gray",
+            COLOR_ACCENT="#40C040",  # Pleasant green
+            COLOR_WARNING="#FFFF00",  # Yellow
+            COLOR_SUCCESS="#40C040",  # Pleasant green
+            COLOR_BORDER="#808080",  # Gray
             # Specific UI elements
-            COLOR_CLIPPING="red",
-            COLOR_PLAYBACK_LINE="red",
-            COLOR_EDGE_INDICATOR="lime",
+            COLOR_CLIPPING="#FF0000",  # Red
+            COLOR_PLAYBACK_LINE="#FF0000",  # Red
+            COLOR_EDGE_INDICATOR="#00FF00",  # Lime green
             # Level meter colors
             LEVEL_COLOR_BACKGROUND="#000000",  # Pure black
             LEVEL_COLOR_LED_OFF="#2d2d2d",

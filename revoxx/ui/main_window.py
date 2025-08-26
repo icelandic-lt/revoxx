@@ -7,6 +7,8 @@ import platform
 
 from ..constants import KeyBindings, MsgType, MsgConfig
 from .font_manager import FontManager
+from .emotion_indicator import EmotionLevelIndicator
+from ..utils.text_utils import extract_emotion_level, get_max_emotion_level
 from .dialogs import SessionSettingsDialog
 from .dialogs.dataset_dialog import DatasetDialog
 from .icon import AppIcon
@@ -829,7 +831,7 @@ high-quality speech datasets"""
             pady=UIConstants.FRAME_SPACING,
         )
 
-        # Progress info
+        # Progress info (right side)
         self.progress_var = tk.StringVar()
         self.progress_label = tk.Label(
             self.info_frame,
@@ -843,6 +845,21 @@ high-quality speech datasets"""
             padx=UIConstants.MAIN_FRAME_PADDING,
             pady=UIConstants.FRAME_SPACING,
         )
+
+        # Emotion level indicator (center - positioned absolutely)
+        max_level = (
+            get_max_emotion_level(self.recording_state.utterances)
+            if self.recording_state.utterances
+            else 5
+        )
+        self.emotion_indicator = EmotionLevelIndicator(
+            self.info_frame,
+            font_manager=self.font_manager,
+            max_level=max_level,
+            bg_color=UIConstants.COLOR_BACKGROUND_SECONDARY,
+        )
+        # Use place() for absolute centering, independent of other widgets
+        self.emotion_indicator.place(relx=0.5, rely=0.5, anchor="center")
 
     def _create_utterance_display(self) -> None:
         """Create the middle area for utterance text display.
@@ -998,13 +1015,8 @@ high-quality speech datasets"""
 
         self.info_panel.pack_propagate(False)
 
-        # Get mono font
-        mono_font = UIConstants.FONT_FAMILY_MONO[0]
-        try:
-            if mono_font not in tkfont.families():
-                mono_font = "Courier"
-        except Exception:
-            mono_font = "Courier"
+        # Get mono font from FontManager - ensures consistency with top panel
+        mono_font = self.font_manager.get_mono_font()
 
         # Font size matching top panel style
         font_size = 24
@@ -1153,18 +1165,56 @@ high-quality speech datasets"""
             display_position: Display position for progress counter (1-based)
         """
         if 0 <= index < len(self.recording_state.utterances):
-            text = self.recording_state.utterances[index]
-            self.text_var.set(text)
+            # Update utterance text and emotion indicator
+            self._update_utterance_display(index)
 
-            # Adjust font size to fit text
-            self.adjust_text_font_size(text)
+            # Update progress counter
+            self._update_progress_display(display_position)
 
-            # Show progress
-            self.progress_var.set(
-                f"{display_position}/{len(self.recording_state.utterances)}"
-            )
+        # Update recording state indicators
+        self._update_recording_indicators(is_recording)
 
-        # Update recording indicator
+    def _update_utterance_display(self, index: int) -> None:
+        """Update the utterance text display and emotion indicator.
+
+        Extracts emotion level from utterance text and displays
+        clean text without emotion label.
+
+        Args:
+            index: Index of current utterance
+        """
+        full_text = self.recording_state.utterances[index]
+
+        # Extract emotion level and clean text
+        emotion_level, clean_text = extract_emotion_level(full_text)
+
+        # Display only the clean text (without emotion label)
+        self.text_var.set(clean_text)
+
+        # Update emotion indicator
+        if emotion_level is not None:
+            self.emotion_indicator.set_level(emotion_level)
+        else:
+            self.emotion_indicator.set_level(0)  # No emotion level
+
+        # Adjust font size to fit text
+        self.adjust_text_font_size(clean_text)
+
+    def _update_progress_display(self, display_position: int) -> None:
+        """Update the progress counter display.
+
+        Args:
+            display_position: Current position (1-based) for user display
+        """
+        total = len(self.recording_state.utterances)
+        self.progress_var.set(f"{display_position}/{total}")
+
+    def _update_recording_indicators(self, is_recording: bool) -> None:
+        """Update recording state indicators (colors and status).
+
+        Args:
+            is_recording: Whether currently recording
+        """
         if is_recording:
             self.text_display.config(fg=UIConstants.COLOR_TEXT_RECORDING)
             self.rec_indicator.config(fg=UIConstants.COLOR_TEXT_RECORDING)
@@ -1533,9 +1583,7 @@ high-quality speech datasets"""
         # The available space for text changes when meters are shown/hidden
         if hasattr(self, "text_var") and self.text_var.get():
             # Let the layout settle first
-            self.root.after(
-                50, lambda: self.adjust_text_font_size(self.text_var.get())
-            )
+            self.root.after(50, lambda: self.adjust_text_font_size(self.text_var.get()))
 
     def focus_window(self) -> None:
         """Bring window to front and focus.
@@ -1685,6 +1733,10 @@ high-quality speech datasets"""
             # Level meter needs refresh for new theme colors
             if hasattr(self, "embedded_level_meter") and self.embedded_level_meter:
                 self.embedded_level_meter.refresh()
+
+        # Update emotion indicator with new theme colors
+        if hasattr(self, "emotion_indicator"):
+            self.emotion_indicator.refresh_colors()
 
     def _force_redraw(self) -> None:
         """Force redraw of all components."""
