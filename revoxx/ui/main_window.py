@@ -6,6 +6,7 @@ import tkinter.font as tkfont
 import platform
 
 from ..constants import KeyBindings, MsgType, MsgConfig
+from .font_manager import FontManager
 from .dialogs import SessionSettingsDialog
 from .dialogs.dataset_dialog import DatasetDialog
 from .icon import AppIcon
@@ -99,6 +100,9 @@ class MainWindow:
 
         # Create menu bar
         self._create_menu()
+
+        # Initialize font manager
+        self.font_manager = FontManager(self.ui_state, self.config)
 
         # Create UI elements
         self._create_ui()
@@ -1090,16 +1094,11 @@ high-quality speech datasets"""
     def _calculate_font_sizes(self) -> None:
         """Calculate dynamic font sizes based on window dimensions.
 
-        Scales fonts proportionally to window size to maintain
-        readability at different resolutions. Uses a base font size
-        from configuration and applies scaling factors.
+        Delegates to FontManager for actual calculations.
         """
-        # Scale factor based on window size
-        scale_factor = min(
-            self.ui_state.window_width / 1200, self.ui_state.window_height / 900
+        self.font_manager.calculate_base_sizes(
+            self.ui_state.window_width, self.ui_state.window_height
         )
-
-        self.ui_state.calculate_font_sizes(self.config.ui.base_font_size, scale_factor)
 
     def _apply_fonts(self) -> None:
         """Apply calculated fonts to widgets.
@@ -1107,28 +1106,9 @@ high-quality speech datasets"""
         Updates all UI elements with appropriately scaled fonts.
         Also adjusts text wrapping width based on window size.
         """
-        # Try to use modern fonts with fallbacks
-        mono_font = None
-        sans_font = None
-        for font in UIConstants.FONT_FAMILY_MONO:
-            try:
-                if font in tkfont.families():
-                    mono_font = font
-                    break
-            except Exception:
-                pass
-        if not mono_font:
-            mono_font = "Courier"
-
-        for font in UIConstants.FONT_FAMILY_SANS:
-            try:
-                if font in tkfont.families():
-                    sans_font = font
-                    break
-            except Exception:
-                pass
-        if not sans_font:
-            sans_font = "Helvetica"
+        # Get font families from manager
+        mono_font = self.font_manager.get_mono_font()
+        sans_font = self.font_manager.get_sans_font()
 
         # Large font for main text
         self.text_display.config(
@@ -1173,7 +1153,12 @@ high-quality speech datasets"""
             display_position: Display position for progress counter (1-based)
         """
         if 0 <= index < len(self.recording_state.utterances):
-            self.text_var.set(self.recording_state.utterances[index])
+            text = self.recording_state.utterances[index]
+            self.text_var.set(text)
+
+            # Adjust font size to fit text
+            self.adjust_text_font_size(text)
+
             # Show progress
             self.progress_var.set(
                 f"{display_position}/{len(self.recording_state.utterances)}"
@@ -1544,6 +1529,14 @@ high-quality speech datasets"""
         if update_external_state:
             update_external_state()
 
+        # Recalculate font size when meters visibility changes
+        # The available space for text changes when meters are shown/hidden
+        if hasattr(self, "text_var") and self.text_var.get():
+            # Let the layout settle first
+            self.root.after(
+                50, lambda: self.adjust_text_font_size(self.text_var.get())
+            )
+
     def focus_window(self) -> None:
         """Bring window to front and focus.
 
@@ -1695,6 +1688,9 @@ high-quality speech datasets"""
 
     def _force_redraw(self) -> None:
         """Force redraw of all components."""
+        # Clear font cache when redrawing
+        self.font_manager.clear_font_cache()
+
         # Update spectrogram if visible
         if hasattr(self, "mel_spectrogram") and self.mel_spectrogram:
             # Update matplotlib figure colors
@@ -1827,3 +1823,43 @@ high-quality speech datasets"""
             self.root.title(f"Revoxx - {session_name}")
         else:
             self.root.title("Revoxx")
+
+    def adjust_text_font_size(self, text: str) -> None:
+        """Adjust font size only if text doesn't fit with current size.
+
+        Only reduces font size when necessary to fit long text.
+        Always tries to use the maximum possible font size.
+
+        Args:
+            text: The text to display
+        """
+        if not text:
+            return
+
+        # Get available space
+        self.utterance_frame.update_idletasks()
+        available_width = self.utterance_frame.winfo_width() - (
+            2 * UIConstants.MAIN_FRAME_PADDING
+        )
+        available_height = self.utterance_frame.winfo_height() - (
+            2 * UIConstants.MAIN_FRAME_PADDING
+        )
+
+        # Skip if frame hasn't been sized yet
+        if available_width <= 0 or available_height <= 0:
+            return
+
+        # Use FontManager to calculate optimal size
+        optimal_size, wrap_length = self.font_manager.calculate_adaptive_font_size(
+            text,
+            available_width,
+            available_height,
+            max_font_size=self.ui_state.font_size_large,
+            min_font_size=14,
+        )
+
+        # Apply the calculated font size
+        sans_font = self.font_manager.get_sans_font()
+        self.text_display.config(
+            font=(sans_font, optimal_size, "normal"), wraplength=wrap_length
+        )

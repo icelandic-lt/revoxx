@@ -192,6 +192,7 @@ class TestDisplayController(unittest.TestCase):
     def test_show_saved_recording_load_error(self):
         """Test showing saved recording with load error."""
         from revoxx.constants import MsgType
+
         self.mock_app.file_manager.load_audio.side_effect = OSError("File error")
 
         self.controller.show_saved_recording()

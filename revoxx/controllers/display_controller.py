@@ -90,6 +90,19 @@ class DisplayController:
         # Update audio queue state - needed if either spectrogram or level meter is visible
         self.app.audio_controller.update_audio_queue_state()
 
+        # Recalculate text font size after meters visibility change
+        # The available space changes when meters are shown/hidden
+        # Force update with small delay for layout
+        self.app.root.update_idletasks()
+
+        if hasattr(self.app.window, "text_var") and self.app.window.text_var.get():
+            self.app.root.after(
+                10,
+                lambda: self.app.window.adjust_text_font_size(
+                    self.app.window.text_var.get()
+                ),
+            )
+
         # Show current recording if available - but only if not currently recording/monitoring
         if self.app.state.ui.meters_visible:
             if (

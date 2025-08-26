@@ -115,7 +115,8 @@ class AudioController:
         # Stop playback exactly like Left/Right keys do
         sd.stop()  # Immediate stop in main process
         self.stop_synchronized_playback()
-        self.app.window.mel_spectrogram.stop_playback()
+        if self.app.window.mel_spectrogram:
+            self.app.window.mel_spectrogram.stop_playback()
 
         # Reset meter via shared state before starting a new playback
         try:
@@ -178,7 +179,8 @@ class AudioController:
         audio_buffer.close()
 
         # Start animations
-        self.app.window.mel_spectrogram.start_playback(duration, sr)
+        if self.app.window.mel_spectrogram:
+            self.app.window.mel_spectrogram.start_playback(duration, sr)
 
         # Note: Level meter updates during playback happen automatically
         # via shared memory from the playback process (AudioPlayer._update_level_meter)
@@ -379,10 +381,11 @@ class AudioController:
         4. Updating status message in UI
         """
         # Clear and start spectrogram
-        self.app.window.mel_spectrogram.clear()
-        self.app.window.mel_spectrogram.start_recording(
-            self.app.config.audio.sample_rate
-        )
+        if self.app.window.mel_spectrogram:
+            self.app.window.mel_spectrogram.clear()
+            self.app.window.mel_spectrogram.start_recording(
+                self.app.config.audio.sample_rate
+            )
 
         # Update info panel
         self._update_info_panel_for_capture(mode)
@@ -435,7 +438,8 @@ class AudioController:
     def _do_stop_audio_capture(self) -> None:
         """Execute the actual audio capture stop."""
         self.app.queue_manager.stop_recording()
-        self.app.window.mel_spectrogram.stop_recording()
+        if self.app.window.mel_spectrogram:
+            self.app.window.mel_spectrogram.stop_recording()
 
     def _cleanup_recording_mode(self) -> None:
         """Clean up after recording mode ends.
