@@ -5,6 +5,34 @@ organized into logical groups for audio processing, user interface,
 file handling, and keyboard bindings.
 """
 
+from enum import Enum
+
+
+class MsgType(Enum):
+    """Message types for the status display.
+
+    Defines different categories of status messages with different
+    behaviors for display duration and persistence.
+    """
+
+    DEFAULT = "default"  # Shows current utterance/take info (static state)
+    TEMPORARY = "temporary"  # Auto-clears after timeout (3 seconds)
+    ACTIVE = "active"  # Shows ongoing operation (recording, monitoring)
+    ERROR = "error"  # Permanent until resolved or manually cleared
+
+
+class MsgConfig:
+    """Configuration for status message behavior."""
+
+    DEFAULT_TEMPORARY_DURATION_MS = 3000  # 3 seconds for temporary messages
+    # Priority levels (higher number = higher priority)
+    PRIORITY = {
+        MsgType.DEFAULT: 0,
+        MsgType.TEMPORARY: 1,
+        MsgType.ACTIVE: 2,
+        MsgType.ERROR: 3,
+    }
+
 
 class AudioConstants:
     """Audio processing related constants.

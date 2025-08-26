@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 import sounddevice as sd
 
-from ..constants import UIConstants
+from ..constants import UIConstants, MsgType
 from ..utils.device_manager import get_device_manager
 from ..audio.audio_queue_processor import AudioQueueProcessor
 
@@ -83,7 +83,7 @@ class AudioController:
         available = [d["index"] for d in device_manager.get_output_devices()]
         if self.app.config.audio.output_device not in available:
             self.app.window.set_status(
-                "Selected output device not found. Using system default."
+                "Selected output device not found. Using system default.", MsgType.ERROR
             )
             self.app.queue_manager.set_output_device(None)
 
@@ -99,7 +99,7 @@ class AudioController:
         available = [d["index"] for d in device_manager.get_input_devices()]
         if self.app.config.audio.input_device not in available:
             self.app.window.set_status(
-                "Selected input device not found. Using system default."
+                "Selected input device not found. Using system default.", MsgType.ERROR
             )
             self.app.queue_manager.set_input_device(None)
 
@@ -186,7 +186,7 @@ class AudioController:
     def play_current(self) -> None:
         """Play current recording."""
         if not self.app.state.is_ready_to_play():
-            self.app.window.show_message("No recording available")
+            self.app.window.set_status("No recording available", MsgType.TEMPORARY)
             return
 
         # Stop all current playback/monitoring
@@ -398,7 +398,7 @@ class AudioController:
         if mode == "recording":
             self.app.display_controller.update_display()
         else:
-            self.app.window.set_status("Monitoring input levels...")
+            self.app.window.set_status("Monitoring input levels...", MsgType.ACTIVE)
             if hasattr(self.app.window, "monitoring_var"):
                 self.app.window.monitoring_var.set(True)
 
@@ -477,7 +477,7 @@ class AudioController:
         self.saved_meters_state = None
 
         # Update UI
-        self.app.window.set_status("Ready")
+        self.app.window.set_status("", MsgType.DEFAULT)
         if hasattr(self.app.window, "monitoring_var"):
             self.app.window.monitoring_var.set(False)
 

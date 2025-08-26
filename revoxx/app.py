@@ -524,8 +524,9 @@ class Revoxx:
             # If default output device is in effect and not yet notified, inform user once
             if self._default_output_in_effect and not self._notified_default_output:
                 try:
-                    self.window.show_message(
-                        "Using system default output device (no saved/available selection)"
+                    self.window.set_status(
+                        "Using system default output device (no saved/available selection)",
+                        MsgType.TEMPORARY,
                     )
                 except AttributeError:
                     pass
@@ -542,8 +543,9 @@ class Revoxx:
             # If default input device is in effect and not yet notified, inform user once
             if self._default_input_in_effect and not self._notified_default_input:
                 try:
-                    self.window.show_message(
-                        "Using system default input device (no saved/available selection)"
+                    self.window.set_status(
+                        "Using system default input device (no saved/available selection)",
+                        MsgType.TEMPORARY,
                     )
                 except AttributeError:
                     pass

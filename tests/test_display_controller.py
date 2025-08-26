@@ -191,12 +191,13 @@ class TestDisplayController(unittest.TestCase):
 
     def test_show_saved_recording_load_error(self):
         """Test showing saved recording with load error."""
+        from revoxx.constants import MsgType
         self.mock_app.file_manager.load_audio.side_effect = OSError("File error")
 
         self.controller.show_saved_recording()
 
         self.mock_app.window.set_status.assert_called_once_with(
-            "Error loading recording: File error"
+            "Error loading recording: File error", MsgType.ERROR
         )
 
     def test_toggle_meters_show(self):
@@ -317,18 +318,6 @@ class TestDisplayController(unittest.TestCase):
         self.controller.reset_level_meter()
 
         self.mock_app.window.embedded_level_meter.reset.assert_called_once()
-
-    def test_show_message(self):
-        """Test showing a message."""
-        self.controller.show_message("Test message", 3000)
-
-        self.mock_app.window.show_message.assert_called_once_with("Test message", 3000)
-
-    def test_show_message_with_custom_duration(self):
-        """Test showing a message with custom duration."""
-        self.controller.show_message("Test message", 5000)
-
-        self.mock_app.window.show_message.assert_called_once_with("Test message", 5000)
 
     def test_set_status(self):
         """Test setting the status."""

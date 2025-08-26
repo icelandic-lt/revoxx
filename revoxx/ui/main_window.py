@@ -5,7 +5,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 import platform
 
-from ..constants import KeyBindings
+from ..constants import KeyBindings, MsgType, MsgConfig
 from .dialogs import SessionSettingsDialog
 from .dialogs.dataset_dialog import DatasetDialog
 from .icon import AppIcon
@@ -1183,19 +1183,101 @@ high-quality speech datasets"""
         if is_recording:
             self.text_display.config(fg=UIConstants.COLOR_TEXT_RECORDING)
             self.rec_indicator.config(fg=UIConstants.COLOR_TEXT_RECORDING)
-            self.status_var.set("RECORDING...")
+            self.set_status("RECORDING...", MsgType.ACTIVE)
         else:
             self.text_display.config(fg=UIConstants.COLOR_TEXT_NORMAL)
             self.rec_indicator.config(fg=UIConstants.COLOR_TEXT_INACTIVE)
-            self.status_var.set("")  # Clear status when not recording
+            self.set_status("", MsgType.DEFAULT)
 
-    def set_status(self, message: str) -> None:
-        """Set status message.
+    def set_status(
+        self,
+        message: str,
+        msg_type: MsgType = MsgType.TEMPORARY,
+        duration_ms: int = None,
+    ) -> None:
+        """Set status message with automatic clearing behavior based on message type.
+
+        Message types determine the lifecycle:
+
+        DEFAULT (static info):
+            - Shows current utterance label and take count
+            - Example: "utterance_001 - Take 2/3"
+            - This is what's always shown when nothing else is happening
+
+        TEMPORARY (brief notifications):
+            - Auto-clears after 3 seconds (or custom duration)
+            - Then automatically returns to DEFAULT status
+            - Example: "Recording saved", "Meters hidden"
+
+        ACTIVE (ongoing operations):
+            - Stays visible as long as the operation is running
+            - Must be manually cleared when operation ends
+            - Example: "RECORDING...", "Monitoring input levels..."
+
+        ERROR (persistent problems):
+            - Stays until manually cleared or successful action occurs
+            - Example: "Error loading session: file not found"
 
         Args:
             message: Status text to display in the info bar
+            msg_type: Type of message determining auto-clear behavior
+            duration_ms: Optional custom duration for TEMPORARY messages (default: 3000ms)
         """
+        # Cancel any existing timer
+        if hasattr(self, "_status_timer") and self._status_timer is not None:
+            try:
+                self.root.after_cancel(self._status_timer)
+            except ValueError:
+                # Timer ID was invalid, ignore - might happen at init time
+                pass
+            self._status_timer = None
+
+        # Store current message type
+        self._current_msg_type = msg_type
+
+        # Set the message
         self.status_var.set(message)
+
+        # Schedule auto-clear for temporary messages
+        if msg_type == MsgType.TEMPORARY:
+            duration = duration_ms or MsgConfig.DEFAULT_TEMPORARY_DURATION_MS
+            self._status_timer = self.root.after(duration, self._clear_status)
+        elif msg_type == MsgType.DEFAULT:
+            # For DEFAULT type, show current utterance immediately
+            self._update_default_status()
+
+    def _clear_status(self) -> None:
+        """Clear status and return to default (utterance info)."""
+        self._status_timer = None
+        self._current_msg_type = MsgType.DEFAULT
+        self._update_default_status()
+
+    def _update_default_status(self) -> None:
+        """Update status with default utterance/take information."""
+        # Get current utterance label
+        current_label = getattr(self.recording_state, "current_label", None)
+        if not current_label:
+            self.status_var.set("")
+            return
+
+        # Check if we have takes
+        current_take = (
+            self.recording_state.get_current_take(current_label)
+            if hasattr(self.recording_state, "get_current_take")
+            else 0
+        )
+        total_takes = (
+            self.recording_state.get_take_count(current_label)
+            if hasattr(self.recording_state, "get_take_count")
+            else 0
+        )
+
+        if total_takes > 0 and current_take > 0:
+            # Show label with take info
+            self.status_var.set(f"{current_label} - Take {current_take}/{total_takes}")
+        else:
+            # Just show label
+            self.status_var.set(current_label)
 
     def update_label_with_filename(self, label: str, filename: str = None) -> None:
         """Update the label display with optional filename.
@@ -1461,31 +1543,6 @@ high-quality speech datasets"""
         # Call external state update if provided
         if update_external_state:
             update_external_state()
-
-    def show_message(self, message: str, duration: int = 2000) -> None:
-        """Show a temporary message.
-
-        Displays a message in the main text area temporarily,
-        then restores the normal display.
-
-        Args:
-            message: Message text to display
-            duration: Display duration in milliseconds (default: 2000)
-        """
-        self.text_var.set(message)
-        self.root.after(duration, self._restore_display)
-
-    def _restore_display(self) -> None:
-        """Restore normal display after temporary message.
-
-        Called automatically after show_message() timeout to restore
-        the current utterance display.
-        """
-        self.update_display(
-            self.recording_state.current_index,
-            self.recording_state.is_recording,
-            self.recording_state.display_position,
-        )
 
     def focus_window(self) -> None:
         """Bring window to front and focus.

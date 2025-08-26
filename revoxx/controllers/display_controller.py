@@ -4,6 +4,8 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 from pathlib import Path
 import soundfile as sf
 
+from ..constants import MsgType
+
 if TYPE_CHECKING:
     from ..app import Revoxx
 
@@ -73,7 +75,9 @@ class DisplayController:
                 self.update_info_panel()
             except (OSError, ValueError) as e:
                 # OSError for file operations, ValueError for invalid audio data
-                self.app.window.set_status(f"Error loading recording: {e}")
+                self.app.window.set_status(
+                    f"Error loading recording: {e}", MsgType.ERROR
+                )
 
     def toggle_meters(self) -> None:
         """Toggle both mel spectrogram and level meter visualization."""
@@ -108,10 +112,6 @@ class DisplayController:
         self.app.settings_manager.update_setting(
             "show_meters", self.app.state.ui.meters_visible
         )
-
-        # Show status message
-        status = "shown" if self.app.state.ui.meters_visible else "hidden"
-        self.app.window.set_status(f"Meters {status}")
 
     def update_info_panel(self) -> None:
         """Update the combined info panel with current recording information."""
@@ -173,15 +173,6 @@ class DisplayController:
         """Reset the level meter display."""
         # Widget must exist when keyboard bindings are active
         self.app.window.embedded_level_meter.reset()
-
-    def show_message(self, message: str, duration: int) -> None:
-        """Show a message to the user.
-
-        Args:
-            message: Message text to display
-            duration: Display duration in milliseconds
-        """
-        self.app.window.show_message(message, duration)
 
     def set_status(self, status: str) -> None:
         """Set the status bar text.

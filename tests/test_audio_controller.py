@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from pathlib import Path
 
 from revoxx.controllers.audio_controller import AudioController
+from revoxx.constants import MsgType
 
 
 class TestAudioController(unittest.TestCase):
@@ -121,8 +122,8 @@ class TestAudioController(unittest.TestCase):
 
         self.controller.play_current()
 
-        self.mock_app.window.show_message.assert_called_once_with(
-            "No recording available"
+        self.mock_app.window.set_status.assert_called_once_with(
+            "No recording available", MsgType.TEMPORARY
         )
         mock_sd.stop.assert_not_called()
 
@@ -231,7 +232,9 @@ class TestAudioController(unittest.TestCase):
         self.assertEqual(self.controller.saved_meters_state, True)
         self.assertFalse(self.mock_app.state.recording.is_recording)
         self.mock_app.queue_manager.start_recording.assert_called_once()
-        self.mock_app.window.set_status.assert_called_with("Monitoring input levels...")
+        self.mock_app.window.set_status.assert_called_with(
+            "Monitoring input levels...", MsgType.ACTIVE
+        )
 
     def test_start_audio_capture_invalid_mode(self):
         """Test _start_audio_capture with invalid mode raises ValueError."""
@@ -266,7 +269,7 @@ class TestAudioController(unittest.TestCase):
         self.assertFalse(self.controller.is_monitoring)
         self.mock_app.queue_manager.stop_recording.assert_called_once()
         self.mock_app.window.mel_spectrogram.stop_recording.assert_called_once()
-        self.mock_app.window.set_status.assert_called_with("Ready")
+        self.mock_app.window.set_status.assert_called_with("", MsgType.DEFAULT)
         self.mock_app.display_controller.show_saved_recording.assert_called_once()
 
     def test_stop_audio_capture_invalid_mode(self):

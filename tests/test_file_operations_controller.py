@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from revoxx.controllers.file_operations_controller import FileOperationsController
+from revoxx.constants import MsgType
 
 
 class TestFileOperationsController(unittest.TestCase):
@@ -92,8 +93,8 @@ class TestFileOperationsController(unittest.TestCase):
         self.mock_app.navigation_controller.update_take_status.assert_called_once()
 
         # Verify success message
-        self.mock_app.window.show_message.assert_called_with(
-            "Recording moved to trash: take_002", 2000
+        self.mock_app.window.set_status.assert_called_with(
+            "Recording moved to trash: take_002", MsgType.TEMPORARY
         )
 
     def test_delete_current_recording_no_label(self):
@@ -111,8 +112,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.delete_current_recording()
 
-        self.mock_app.window.show_message.assert_called_once_with(
-            "No recording to delete", 2000
+        self.mock_app.window.set_status.assert_called_once_with(
+            "No recording to delete", MsgType.TEMPORARY
         )
         self.mock_app.file_manager.move_to_trash.assert_not_called()
 
@@ -137,8 +138,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.delete_current_recording()
 
-        self.mock_app.window.show_message.assert_called_with(
-            "Failed to delete recording", 2000
+        self.mock_app.window.set_status.assert_called_with(
+            "Failed to delete recording", MsgType.ERROR
         )
 
     def test_restore_deleted_recording_success(self):
@@ -163,8 +164,8 @@ class TestFileOperationsController(unittest.TestCase):
         self.mock_app.navigation_controller.update_take_status.assert_called_once()
 
         # Verify success message
-        self.mock_app.window.show_message.assert_called_with(
-            "Recording restored: take_003", 2000
+        self.mock_app.window.set_status.assert_called_with(
+            "Recording restored: take_003", MsgType.TEMPORARY
         )
 
     def test_restore_deleted_recording_no_label(self):
@@ -182,8 +183,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.restore_deleted_recording()
 
-        self.mock_app.window.show_message.assert_called_once_with(
-            "No deleted recordings to restore", 2000
+        self.mock_app.window.set_status.assert_called_once_with(
+            "No deleted recordings to restore", MsgType.TEMPORARY
         )
         self.mock_app.file_manager.restore_from_trash.assert_not_called()
 
@@ -193,8 +194,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.restore_deleted_recording()
 
-        self.mock_app.window.show_message.assert_called_with(
-            "Failed to restore recording", 2000
+        self.mock_app.window.set_status.assert_called_with(
+            "Failed to restore recording", MsgType.ERROR
         )
 
     @patch("shutil.copy2")
@@ -224,8 +225,8 @@ class TestFileOperationsController(unittest.TestCase):
         mock_open.assert_called()
 
         # Verify success message
-        self.mock_app.window.show_message.assert_called()
-        message = self.mock_app.window.show_message.call_args[0][0]
+        self.mock_app.window.set_status.assert_called()
+        message = self.mock_app.window.set_status.call_args[0][0]
         self.assertIn("Session exported", message)
 
     def test_export_session_error(self):
@@ -235,8 +236,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.export_session(export_path)
 
-        self.mock_app.window.show_message.assert_called()
-        message = self.mock_app.window.show_message.call_args[0][0]
+        self.mock_app.window.set_status.assert_called()
+        message = self.mock_app.window.set_status.call_args[0][0]
         self.assertIn("Export failed", message)
 
     @patch("shutil.copy2")
@@ -251,8 +252,8 @@ class TestFileOperationsController(unittest.TestCase):
         mock_copy2.assert_called_once()
 
         # Verify success message
-        self.mock_app.window.show_message.assert_called_with(
-            "Recording exported to exported.wav", 3000
+        self.mock_app.window.set_status.assert_called_with(
+            "Recording exported to exported.wav", MsgType.TEMPORARY
         )
 
     def test_export_current_recording_no_label(self):
@@ -262,8 +263,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.export_current_recording(export_path)
 
-        self.mock_app.window.show_message.assert_called_once_with(
-            "No recording to export", 2000
+        self.mock_app.window.set_status.assert_called_once_with(
+            "No recording to export", MsgType.TEMPORARY
         )
 
     def test_export_current_recording_no_take(self):
@@ -273,8 +274,8 @@ class TestFileOperationsController(unittest.TestCase):
 
         self.controller.export_current_recording(export_path)
 
-        self.mock_app.window.show_message.assert_called_once_with(
-            "No recording to export", 2000
+        self.mock_app.window.set_status.assert_called_once_with(
+            "No recording to export", MsgType.TEMPORARY
         )
 
     def test_check_recording_exists_true(self):

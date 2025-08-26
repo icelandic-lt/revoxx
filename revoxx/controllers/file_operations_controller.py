@@ -7,6 +7,8 @@ import numpy as np
 import soundfile as sf
 from tkinter import messagebox
 
+from ..constants import MsgType
+
 if TYPE_CHECKING:
     from ..app import Revoxx
 
@@ -37,7 +39,7 @@ class FileOperationsController:
 
         current_take = self.app.state.recording.get_current_take(current_label)
         if current_take == 0:
-            self.app.window.show_message("No recording to delete", 2000)
+            self.app.window.set_status("No recording to delete", MsgType.TEMPORARY)
             return
 
         # Ask for confirmation
@@ -92,11 +94,11 @@ class FileOperationsController:
             if self.app.window.info_panel_visible:
                 self.app.display_controller.update_info_panel()
 
-            self.app.window.show_message(
-                f"Recording moved to trash: take_{current_take:03d}", 2000
+            self.app.window.set_status(
+                f"Recording moved to trash: take_{current_take:03d}", MsgType.TEMPORARY
             )
         else:
-            self.app.window.show_message("Failed to delete recording", 2000)
+            self.app.window.set_status("Failed to delete recording", MsgType.ERROR)
 
     def restore_deleted_recording(self) -> None:
         """Restore the last deleted recording from trash."""
@@ -108,7 +110,9 @@ class FileOperationsController:
         deleted_takes = self.app.file_manager.get_deleted_takes(current_label)
 
         if not deleted_takes:
-            self.app.window.show_message("No deleted recordings to restore", 2000)
+            self.app.window.set_status(
+                "No deleted recordings to restore", MsgType.TEMPORARY
+            )
             return
 
         # Restore the most recent deletion (highest take number)
@@ -139,11 +143,11 @@ class FileOperationsController:
             if self.app.window.info_panel_visible:
                 self.app.display_controller.update_info_panel()
 
-            self.app.window.show_message(
-                f"Recording restored: take_{take_to_restore:03d}", 2000
+            self.app.window.set_status(
+                f"Recording restored: take_{take_to_restore:03d}", MsgType.TEMPORARY
             )
         else:
-            self.app.window.show_message("Failed to restore recording", 2000)
+            self.app.window.set_status("Failed to restore recording", MsgType.ERROR)
 
     def export_session(self, export_path: Path) -> None:
         """Export the entire session to a directory.
@@ -184,12 +188,12 @@ class FileOperationsController:
                             shutil.copy2(source, dest)
                             exported_count += 1
 
-            self.app.window.show_message(
-                f"Session exported: {exported_count} recordings", 3000
+            self.app.window.set_status(
+                f"Session exported: {exported_count} recordings", MsgType.TEMPORARY
             )
 
         except (OSError, IOError) as e:
-            self.app.window.show_message(f"Export failed: {e}", 3000)
+            self.app.window.set_status(f"Export failed: {e}", MsgType.ERROR)
 
     def export_current_recording(self, export_path: Path) -> None:
         """Export the current recording to a file.
@@ -199,12 +203,12 @@ class FileOperationsController:
         """
         current_label = self.app.state.recording.current_label
         if not current_label:
-            self.app.window.show_message("No recording to export", 2000)
+            self.app.window.set_status("No recording to export", MsgType.TEMPORARY)
             return
 
         current_take = self.app.state.recording.get_current_take(current_label)
         if current_take == 0:
-            self.app.window.show_message("No recording to export", 2000)
+            self.app.window.set_status("No recording to export", MsgType.TEMPORARY)
             return
 
         try:
@@ -213,13 +217,13 @@ class FileOperationsController:
             )
             if source.exists():
                 shutil.copy2(source, export_path)
-                self.app.window.show_message(
-                    f"Recording exported to {export_path.name}", 3000
+                self.app.window.set_status(
+                    f"Recording exported to {export_path.name}", MsgType.TEMPORARY
                 )
             else:
-                self.app.window.show_message("Recording file not found", 2000)
+                self.app.window.set_status("Recording file not found", MsgType.ERROR)
         except (OSError, IOError) as e:
-            self.app.window.show_message(f"Export failed: {e}", 3000)
+            self.app.window.set_status(f"Export failed: {e}", MsgType.ERROR)
 
     def check_recording_exists(self, label: str, take: int) -> bool:
         """Check if a recording exists.
