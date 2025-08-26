@@ -75,9 +75,9 @@ class NavigationController:
         # Update take status
         self.update_take_status()
 
-        # Update info overlay if visible
-        if self.app.window.info_overlay.visible:
-            self.app.display_controller.update_info_overlay()
+        # Update info panel if visible
+        if self.app.window.info_panel_visible:
+            self.app.display_controller.update_info_panel()
 
     def browse_takes(self, direction: int) -> None:
         """Browse through different takes.
@@ -129,8 +129,8 @@ class NavigationController:
             self.update_take_status()
 
             # Update info overlay if visible
-            if self.app.window.info_overlay.visible:
-                self.app.display_controller.update_info_overlay()
+            if self.app.window.info_panel_visible:
+                self.app.display_controller.update_info_panel()
         else:
             # No more takes in that direction
             direction_text = "forward" if direction > 0 else "backward"
@@ -147,10 +147,8 @@ class NavigationController:
             self.app.audio_controller.stop_recording()
 
         self.app.audio_controller.stop_synchronized_playback()
-        if (
-            hasattr(self.app.window, "mel_spectrogram")
-            and self.app.window.mel_spectrogram
-        ):
+        # Mel spectrogram widget might not exist for the first 100ms ...
+        if self.app.window.mel_spectrogram:
             self.app.window.mel_spectrogram.stop_playback()
 
         # Reset level meter via shared state
@@ -182,8 +180,8 @@ class NavigationController:
             self.update_take_status()
 
             # Update info overlay if visible
-            if self.app.window.info_overlay.visible:
-                self.app.display_controller.update_info_overlay()
+            if self.app.window.info_panel_visible:
+                self.app.display_controller.update_info_panel()
 
     def resume_at_last_recording(self) -> None:
         """Resume at the last recorded utterance if available in session."""
@@ -264,11 +262,12 @@ class NavigationController:
             # Find position in the list
             position = existing_takes.index(current_take) + 1
             total = len(existing_takes)
-            self.app.window.set_status(f"Take {position}/{total}")
+            self.app.window.set_status(f"{current_label} - Take {position}/{total}")
         elif not existing_takes:
-            self.app.window.set_status("No recordings")
+            # Show label even without recordings
+            self.app.window.set_status(f"{current_label}")
         else:
-            self.app.window.set_status("Ready")
+            self.app.window.set_status(f"{current_label}")
 
     def after_recording_saved(self, label: str) -> None:
         """Called after a recording has been saved to disk.
@@ -307,6 +306,6 @@ class NavigationController:
         # Update take status display
         self.update_take_status()
 
-        # Update info overlay if visible
-        if self.app.window.info_overlay.visible:
-            self.app.display_controller.update_info_overlay()
+        # Update info panel if visible
+        if self.app.window.info_panel_visible:
+            self.app.display_controller.update_info_panel()

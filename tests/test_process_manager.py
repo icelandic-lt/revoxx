@@ -24,7 +24,7 @@ class TestProcessManager(unittest.TestCase):
 
         self.controller.manager = Mock()
         self.controller.shutdown_event = Mock()
-        self.controller.manager_dict = {"audio_queue_active": False, "save_path": None}
+        self.controller.manager_dict = {"save_path": None}
         self.controller.audio_queue = Mock()
         self.controller.record_queue = Mock()
         self.controller.playback_queue = Mock()
@@ -112,7 +112,7 @@ class TestProcessManager(unittest.TestCase):
         self.controller.start_audio_queue_processing()
 
         # Verify state updated
-        self.assertTrue(self.controller.manager_dict["audio_queue_active"])
+        self.assertTrue(self.controller.is_audio_queue_active())
 
         # Verify thread created and started
         mock_thread_class.assert_called_once()
@@ -133,10 +133,10 @@ class TestProcessManager(unittest.TestCase):
         self.controller.stop_audio_queue_processing()
 
         # Verify state updated
-        self.assertFalse(self.controller.manager_dict["audio_queue_active"])
+        self.assertFalse(self.controller.is_audio_queue_active())
 
         # Verify thread join called
-        mock_thread.join.assert_called_once_with(timeout=1.0)
+        mock_thread.join.assert_called_once_with(timeout=0.2)
 
     def test_stop_audio_queue_processing_no_thread(self):
         """Test stopping audio queue processing when no thread."""
@@ -144,27 +144,27 @@ class TestProcessManager(unittest.TestCase):
         self.controller.stop_audio_queue_processing()
 
         # Verify state updated
-        self.assertFalse(self.controller.manager_dict["audio_queue_active"])
+        self.assertFalse(self.controller.is_audio_queue_active())
 
-    def test_update_audio_queue_state(self):
-        """Test updating audio queue state."""
+    def test_set_audio_queue_active(self):
+        """Test setting audio queue active state."""
         # Test setting to True
-        self.controller.update_audio_queue_state(True)
-        self.assertTrue(self.controller.manager_dict["audio_queue_active"])
+        self.controller.set_audio_queue_active(True)
+        self.assertTrue(self.controller.is_audio_queue_active())
 
         # Test setting to False
-        self.controller.update_audio_queue_state(False)
-        self.assertFalse(self.controller.manager_dict["audio_queue_active"])
+        self.controller.set_audio_queue_active(False)
+        self.assertFalse(self.controller.is_audio_queue_active())
 
     def test_set_save_path(self):
         """Test setting save path."""
         # Test with path
         self.controller.set_save_path("/test/path.wav")
-        self.assertEqual(self.controller.manager_dict["save_path"], "/test/path.wav")
+        self.assertEqual(self.controller.get_save_path(), "/test/path.wav")
 
         # Test with None
         self.controller.set_save_path(None)
-        self.assertIsNone(self.controller.manager_dict["save_path"])
+        self.assertIsNone(self.controller.get_save_path())
 
     def test_shutdown_process_not_responding(self):
         """Test shutdown when process doesn't respond to terminate."""
@@ -196,7 +196,7 @@ class TestProcessManager(unittest.TestCase):
 
     def test_is_audio_queue_active_true(self):
         """Test checking if audio queue is active - true."""
-        self.controller.manager_dict["audio_queue_active"] = True
+        self.controller.set_audio_queue_active(True)
 
         result = self.controller.is_audio_queue_active()
 
@@ -204,7 +204,7 @@ class TestProcessManager(unittest.TestCase):
 
     def test_is_audio_queue_active_false(self):
         """Test checking if audio queue is active - false."""
-        self.controller.manager_dict["audio_queue_active"] = False
+        self.controller.set_audio_queue_active(False)
 
         result = self.controller.is_audio_queue_active()
 

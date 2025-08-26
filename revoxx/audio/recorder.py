@@ -345,10 +345,10 @@ class AudioRecorder:
             audio_data = self.stop_recording()
 
             # Save if path provided (compatibility with current architecture)
-            save_path = self.manager_dict.get("save_path")
+            save_path = self._get_save_path()
             if save_path and len(audio_data) > 0:
                 self.save_recording(audio_data, Path(save_path))
-                self.manager_dict["save_path"] = None
+                self._clear_save_path()
             return audio_data
 
         elif action == "set_input_device":
@@ -382,6 +382,47 @@ class AudioRecorder:
                 self._input_channel_mapping = None
         except (ValueError, TypeError):
             self._input_channel_mapping = None
+
+    def _is_audio_queue_active(self) -> bool:
+        """Check if audio queue should receive data.
+        Same functionality as in ProcessManager, that we cannot access from
+        this OS process ctx.
+
+        Returns:
+            True if audio queue is active, False otherwise
+        """
+        if not self.manager_dict:
+            return False
+        try:
+            return self.manager_dict.get("audio_queue_active", False)
+        except (AttributeError, KeyError):
+            return False
+
+    def _get_save_path(self) -> Optional[str]:
+        """Get the current save path for recording.
+        Same functionality as ProcessManager.get_save_path(), which we cannot
+        access from this separate OS process.
+
+        Returns:
+            Path to save recording or None
+        """
+        if not self.manager_dict:
+            return None
+        try:
+            return self.manager_dict.get("save_path")
+        except (AttributeError, KeyError):
+            return None
+
+    def _clear_save_path(self) -> None:
+        """Clear the save path after recording is saved.
+        Same functionality as ProcessManager.set_save_path(None), which we cannot
+        access from this separate OS process.
+        """
+        if self.manager_dict:
+            try:
+                self.manager_dict["save_path"] = None
+            except (AttributeError, KeyError):
+                pass
 
     def _audio_callback(
         self, indata: np.ndarray, frames: int, time_info, status
@@ -428,11 +469,7 @@ class AudioRecorder:
             )
 
             # Send to visualization queue if active
-            audio_queue_active = False
-            if self.manager_dict:
-                audio_queue_active = self.manager_dict.get("audio_queue_active", False)
-
-            if audio_queue_active:
+            if self._is_audio_queue_active():
                 self.queue_manager.put_audio_data(indata.copy())
 
             # Update position
@@ -465,6 +502,12 @@ def record_process(
         manager_dict: Shared manager dict (for save_path compatibility)
         shutdown_event: Signal for shutting down process
     """
+    # Setup signal handling for child process
+    from ..utils.process_cleanup import ProcessCleanupManager
+
+    cleanup = ProcessCleanupManager(cleanup_callback=None, debug=False)
+    cleanup.ignore_signals_in_child()
+
     # Create AudioQueueManager with existing queues
     queue_manager = AudioQueueManager(
         record_queue=control_queue,
@@ -477,6 +520,9 @@ def record_process(
     try:
         recorder = AudioRecorder(config, shared_state_name, queue_manager, manager_dict)
 
+        # Get parent PID from manager_dict
+        parent_pid = manager_dict.get("parent_pid") if manager_dict else None
+
         while True:
             # Get next command
             try:
@@ -488,6 +534,13 @@ def record_process(
             if command is None:
                 if shutdown_event.is_set():
                     break
+
+                # Check if parent process is still alive
+                if parent_pid and not cleanup.setup_parent_monitoring(
+                    parent_pid, "Record Process"
+                ):
+                    break
+
                 continue
 
             # Handle quit command directly

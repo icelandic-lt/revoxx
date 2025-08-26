@@ -5,6 +5,34 @@ organized into logical groups for audio processing, user interface,
 file handling, and keyboard bindings.
 """
 
+from enum import Enum
+
+
+class MsgType(Enum):
+    """Message types for the status display.
+
+    Defines different categories of status messages with different
+    behaviors for display duration and persistence.
+    """
+
+    DEFAULT = "default"  # Shows current utterance/take info (static state)
+    TEMPORARY = "temporary"  # Auto-clears after timeout (3 seconds)
+    ACTIVE = "active"  # Shows ongoing operation (recording, monitoring)
+    ERROR = "error"  # Permanent until resolved or manually cleared
+
+
+class MsgConfig:
+    """Configuration for status message behavior."""
+
+    DEFAULT_TEMPORARY_DURATION_MS = 3000  # 3 seconds for temporary messages
+    # Priority levels (higher number = higher priority)
+    PRIORITY = {
+        MsgType.DEFAULT: 0,
+        MsgType.TEMPORARY: 1,
+        MsgType.ACTIVE: 2,
+        MsgType.ERROR: 3,
+    }
+
 
 class AudioConstants:
     """Audio processing related constants.
@@ -63,16 +91,62 @@ class UIConstants:
 
     Defines visual appearance settings, timing parameters, layout ratios,
     and display configuration for the graphical user interface.
+
+    Color values are dynamically loaded from the theme system.
+    Access colors directly as UIConstants.COLOR_* attributes.
     """
 
-    # Colors
-    COLOR_BACKGROUND = "black"
-    COLOR_TEXT_NORMAL = "green"
-    COLOR_TEXT_RECORDING = "red"
-    COLOR_TEXT_INACTIVE = "gray"
-    COLOR_CLIPPING = "red"
-    COLOR_PLAYBACK_LINE = "red"
-    COLOR_EDGE_INDICATOR = "lime"
+    # Lazy import to avoid circular dependencies
+    _theme_manager = None
+    _colors_initialized = False
+
+    @classmethod
+    def _init_colors(cls):
+        """Initialize color attributes from theme manager."""
+        if not cls._colors_initialized:
+            # Lazy import here to avoid circular dependencies
+            # This breaks the "all imports at top" rule but is necessary because:
+            # 1. UIConstants needs theme_manager to get colors
+            # 2. Other UI modules import UIConstants
+            # 3. If we import theme_manager at module level, it creates circular imports
+            from .ui.themes import theme_manager
+
+            cls._theme_manager = theme_manager
+            cls._update_colors()
+            cls._colors_initialized = True
+
+    @classmethod
+    def _update_colors(cls):
+        """Update color attributes from current theme."""
+        if cls._theme_manager:
+            colors = cls._theme_manager.colors
+            cls.COLOR_BACKGROUND = colors.COLOR_BACKGROUND
+            cls.COLOR_BACKGROUND_SECONDARY = colors.COLOR_BACKGROUND_SECONDARY
+            cls.COLOR_BACKGROUND_TERTIARY = colors.COLOR_BACKGROUND_TERTIARY
+            cls.COLOR_TEXT_NORMAL = colors.COLOR_TEXT_NORMAL
+            cls.COLOR_TEXT_SECONDARY = colors.COLOR_TEXT_SECONDARY
+            cls.COLOR_TEXT_RECORDING = colors.COLOR_TEXT_RECORDING
+            cls.COLOR_TEXT_INACTIVE = colors.COLOR_TEXT_INACTIVE
+            cls.COLOR_ACCENT = colors.COLOR_ACCENT
+            cls.COLOR_WARNING = colors.COLOR_WARNING
+            cls.COLOR_SUCCESS = colors.COLOR_SUCCESS
+            cls.COLOR_BORDER = colors.COLOR_BORDER
+            cls.COLOR_CLIPPING = colors.COLOR_CLIPPING
+            cls.COLOR_PLAYBACK_LINE = colors.COLOR_PLAYBACK_LINE
+            cls.COLOR_EDGE_INDICATOR = colors.COLOR_EDGE_INDICATOR
+
+    @classmethod
+    def refresh(cls):
+        """Refresh colors from current theme (call after theme change)."""
+        cls._init_colors()
+        cls._update_colors()
+
+    def __class_getattr__(cls, name):
+        """Get color attributes dynamically."""
+        if name.startswith("COLOR_"):
+            cls._init_colors()
+            return getattr(cls, name)
+        raise AttributeError(f"'{cls.__name__}' has no attribute '{name}'")
 
     # Clipping display
     CLIPPING_LINE_WIDTH = 3
@@ -112,8 +186,8 @@ class UIConstants:
     PLAYBACK_STOP_DELAY = 0.05  # Same as PLAYBACK_STOP_DELAY_MS but in seconds
 
     # Window layout ratios
-    INFO_FRAME_HEIGHT_RATIO = 0.05
-    CONTROL_FRAME_HEIGHT_RATIO = 0.20
+    INFO_FRAME_HEIGHT_RATIO = 0.06
+    CONTROL_FRAME_HEIGHT_RATIO = 0.12
     TEXT_WRAP_RATIO = 0.9
     DEFAULT_WINDOW_SIZE_RATIO = 0.8
 
@@ -128,9 +202,13 @@ class UIConstants:
     MIN_FONT_SIZE_MEDIUM = 28
     MIN_FONT_SIZE_SMALL = 14
 
+    # Font families (fallback to system fonts)
+    FONT_FAMILY_MONO = ("SF Mono", "Monaco", "Consolas", "Courier New")
+    FONT_FAMILY_SANS = ("SF Pro Display", "Helvetica Neue", "Arial")
+
     # Spectrogram display
     SPECTROGRAM_WIDTH_INCHES = 8
-    SPECTROGRAM_HEIGHT_INCHES = 2
+    SPECTROGRAM_HEIGHT_INCHES = 1.5  # Reduced from 2 to make it more compact
     SPECTROGRAM_DPI = 100
     SPECTROGRAM_DISPLAY_SECONDS = 3.0
 
@@ -151,7 +229,7 @@ class UIConstants:
     AXIS_LABEL_FONTSIZE = 8
     AXIS_TICK_FONTSIZE = 6
     N_TIME_TICKS = 7
-    N_FREQUENCY_TICKS = 8  # More ticks for better logarithmic display
+    N_FREQUENCY_TICKS = 8
     # Fraction of frequency ticks allocated to the lower third of the spectrum
     FREQ_TICKS_LOWER_FRACTION = 0.6
 

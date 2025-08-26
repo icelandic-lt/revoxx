@@ -27,10 +27,11 @@ class UserSettings:
     audio_sync_response_time_ms: float = 10.0
 
     # Display settings
-    show_spectrogram: bool = True
+    show_meters: bool = True  # Combined spectrogram & level meter visibility
     show_info_overlay: bool = False
-    show_level_meter: bool = False
+    show_info_panel: bool = True  # Combined info panel visibility
     fullscreen: bool = False
+    theme: str = "cyan"  # Theme preset
 
     # Window settings
     window_geometry: Optional[str] = None
@@ -47,6 +48,9 @@ class UserSettings:
     last_export_dir: Optional[str] = None
     export_format: str = "flac"
     export_include_intensity: bool = True
+
+    # Session settings
+    last_session_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert settings to dictionary."""

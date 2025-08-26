@@ -114,15 +114,21 @@ class ClippingVisualizer:
         # New data appears on the right, old data scrolls off the left
         # We need to position markers based on how many frames ago they occurred
 
+        # Calculate how many audio frames the display can show
+        display_seconds = UIConstants.SPECTROGRAM_DISPLAY_SECONDS
+        frames_in_display = int(frames_per_second * display_seconds)
+
         for clip_pos in self.clipping_markers:
             # Calculate how many frames ago this clipping occurred
             frames_ago = frame_count - clip_pos
 
-            if 0 <= frames_ago < spec_frames:
-                # The marker should appear at position from the right
-                # spec_frames - 1 is the rightmost (newest) position
-                # 0 is the leftmost (oldest) position
-                display_pos = spec_frames - 1 - frames_ago
+            # Check if this marker is within the visible time window
+            if 0 <= frames_ago < frames_in_display:
+                # Map the frame position to display position
+                # frames_ago=0 means just happened (rightmost position)
+                # frames_ago=frames_in_display means oldest visible (leftmost position)
+                relative_position = 1.0 - (frames_ago / frames_in_display)
+                display_pos = int(relative_position * spec_frames)
 
                 if 0 <= display_pos < spec_frames:
                     self.add_marker_line(display_pos)

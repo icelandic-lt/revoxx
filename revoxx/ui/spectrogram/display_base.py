@@ -10,7 +10,8 @@ from matplotlib.axes import Axes
 from matplotlib.image import AxesImage
 from scipy import interpolate
 
-from ...constants import AudioConstants, UIConstants
+from ...constants import AudioConstants
+from ...constants import UIConstants
 from ...ui.frequency_axis import FrequencyAxisManager
 from ...utils.config import AudioConfig, DisplayConfig
 
@@ -110,12 +111,8 @@ class SpectrogramDisplayBase:
         # Embed in tkinter
         self.canvas = FigureCanvasTkAgg(self.fig, self.parent)
         self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.pack(fill=tk.BOTH, expand=True)
-        self.canvas_widget.config(
-            bg=UIConstants.COLOR_BACKGROUND,
-            highlightthickness=1,
-            highlightbackground=UIConstants.COLOR_TEXT_INACTIVE,
-        )
+        self.canvas_widget.pack(fill=tk.BOTH, expand=False)  # No expansion!
+        self.canvas_widget.config(bg=UIConstants.COLOR_BACKGROUND, highlightthickness=0)
 
         # Initial draw with adaptive layout
         self._apply_adaptive_layout()
@@ -129,19 +126,19 @@ class SpectrogramDisplayBase:
         # Not setting x-axis label to save vertical space
         self.ax.set_ylabel(
             "Frequency (Hz)",
-            color=UIConstants.COLOR_TEXT_INACTIVE,
+            color=UIConstants.COLOR_TEXT_SECONDARY,
             fontsize=UIConstants.AXIS_LABEL_FONTSIZE,
         )
         self.ax.tick_params(
-            colors=UIConstants.COLOR_TEXT_INACTIVE,
+            colors=UIConstants.COLOR_TEXT_SECONDARY,
             labelsize=UIConstants.AXIS_TICK_FONTSIZE,
         )
 
         # Remove top and right spines
         self.ax.spines["top"].set_visible(False)
         self.ax.spines["right"].set_visible(False)
-        self.ax.spines["bottom"].set_color(UIConstants.COLOR_TEXT_INACTIVE)
-        self.ax.spines["left"].set_color(UIConstants.COLOR_TEXT_INACTIVE)
+        self.ax.spines["bottom"].set_color(UIConstants.COLOR_BORDER)
+        self.ax.spines["left"].set_color(UIConstants.COLOR_BORDER)
 
     def _calculate_figure_dimensions(
         self, width_pixels: int, height_pixels: int
@@ -214,8 +211,8 @@ class SpectrogramDisplayBase:
             event.width > self.MIN_CANVAS_WIDTH
             and event.height > self.MIN_CANVAS_HEIGHT
         ):  # Ignore tiny sizes
-            # Force the canvas widget to use the full available size
-            self.canvas_widget.configure(width=event.width, height=event.height)
+            # Remove the configure call - it causes resize loops
+            # The canvas will naturally use the available size
 
             # Force matplotlib to resize its internal canvas
             self.canvas.resize(event)
@@ -241,7 +238,7 @@ class SpectrogramDisplayBase:
                 self._on_figure_size_changed()
 
     def _apply_adaptive_layout(self) -> None:
-        """Apply simple, consistent layout."""
+        """Apply a simple, adaptive layout."""
         # Calculate adaptive left margin based on figure width
         # For narrow windows, we need more space for the y-axis labels
         fig_width_inches = self.fig.get_figwidth()

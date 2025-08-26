@@ -139,13 +139,23 @@ class TestDisplayController(unittest.TestCase):
             1,  # display_position
         )
 
-    def test_show_saved_recording_exists(self):
+    @patch("soundfile.SoundFile")
+    def test_show_saved_recording_exists(self, mock_soundfile):
         """Test showing a saved recording that exists."""
+        # Setup soundfile mock for info panel update
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value = mock_file
+        mock_file.__exit__.return_value = None
+        mock_file.samplerate = 48000
+        mock_file.channels = 1
+        mock_file.__len__.return_value = 48000
+        mock_soundfile.return_value = mock_file
+
         self.controller.show_saved_recording()
 
-        self.mock_app.file_manager.get_recording_path.assert_called_once_with(
-            "test_label", 1
-        )
+        # get_recording_path is called twice: once for loading, once for info panel
+        self.assertEqual(self.mock_app.file_manager.get_recording_path.call_count, 2)
+        self.mock_app.file_manager.get_recording_path.assert_any_call("test_label", 1)
         self.mock_app.file_manager.load_audio.assert_called_once()
         self.mock_app.window.mel_spectrogram.show_recording.assert_called_once_with(
             [0.1, 0.2, 0.3], 48000
@@ -181,75 +191,61 @@ class TestDisplayController(unittest.TestCase):
 
     def test_show_saved_recording_load_error(self):
         """Test showing saved recording with load error."""
+        from revoxx.constants import MsgType
+
         self.mock_app.file_manager.load_audio.side_effect = OSError("File error")
 
         self.controller.show_saved_recording()
 
         self.mock_app.window.set_status.assert_called_once_with(
-            "Error loading recording: File error"
+            "Error loading recording: File error", MsgType.ERROR
         )
 
-    def test_toggle_mel_spectrogram_show(self):
-        """Test toggling mel spectrogram to show."""
-        self.mock_app.state.ui.spectrogram_visible = False
-        self.mock_app.window.toggle_spectrogram = Mock()
+    def test_toggle_meters_show(self):
+        """Test toggling meters to show."""
+        self.mock_app.state.ui.meters_visible = False
+        self.mock_app.window.set_meters_visibility = Mock()
         self.mock_app.audio_controller = Mock()
         self.mock_app.root = Mock()
 
-        # Mock so that toggle_spectrogram sets visible to True
-        def toggle_spec():
-            self.mock_app.state.ui.spectrogram_visible = True
+        self.controller.toggle_meters()
 
-        self.mock_app.window.toggle_spectrogram.side_effect = toggle_spec
-
-        self.controller.toggle_mel_spectrogram()
-
-        self.mock_app.window.toggle_spectrogram.assert_called_once()
-        self.assertTrue(self.mock_app.state.ui.spectrogram_visible)
+        self.assertTrue(self.mock_app.state.ui.meters_visible)
+        self.mock_app.window.set_meters_visibility.assert_called_once_with(True)
+        self.mock_app.audio_controller.update_audio_queue_state.assert_called_once()
         self.mock_app.settings_manager.update_setting.assert_called_once_with(
-            "show_spectrogram", True
+            "show_meters", True
         )
 
-    def test_toggle_mel_spectrogram_hide(self):
-        """Test toggling mel spectrogram to hide."""
-        self.mock_app.state.ui.spectrogram_visible = True
-        self.mock_app.window.toggle_spectrogram = Mock()
+    def test_toggle_meters_hide(self):
+        """Test toggling meters to hide."""
+        self.mock_app.state.ui.meters_visible = True
+        self.mock_app.window.set_meters_visibility = Mock()
         self.mock_app.audio_controller = Mock()
         self.mock_app.root = Mock()
 
-        # Mock so that toggle_spectrogram sets visible to False
-        def toggle_spec():
-            self.mock_app.state.ui.spectrogram_visible = False
+        self.controller.toggle_meters()
 
-        self.mock_app.window.toggle_spectrogram.side_effect = toggle_spec
-
-        self.controller.toggle_mel_spectrogram()
-
-        self.mock_app.window.toggle_spectrogram.assert_called_once()
-        self.assertFalse(self.mock_app.state.ui.spectrogram_visible)
+        self.assertFalse(self.mock_app.state.ui.meters_visible)
+        self.mock_app.window.set_meters_visibility.assert_called_once_with(False)
+        self.mock_app.audio_controller.update_audio_queue_state.assert_called_once()
         self.mock_app.settings_manager.update_setting.assert_called_once_with(
-            "show_spectrogram", False
+            "show_meters", False
         )
 
-    def test_toggle_info_overlay_show(self):
-        """Test toggling info overlay to show."""
-        self.mock_app.window.info_overlay.visible = False
+    def test_toggle_info_panel_show(self):
+        """Test toggling info panel (method removed from DisplayController)."""
+        # Method no longer exists - info panel toggling moved to window
+        pass
 
-        with patch.object(self.controller, "update_info_overlay") as mock_update:
-            self.controller.toggle_info_overlay()
-            mock_update.assert_called_once()
-
-    def test_toggle_info_overlay_hide(self):
-        """Test toggling info overlay to hide."""
-        self.mock_app.window.info_overlay.visible = True
-
-        self.controller.toggle_info_overlay()
-
-        self.mock_app.window.info_overlay.hide.assert_called_once()
+    def test_toggle_info_panel_hide(self):
+        """Test toggling info panel (method removed from DisplayController)."""
+        # Method no longer exists - info panel toggling moved to window
+        pass
 
     @patch("soundfile.SoundFile")
-    def test_update_info_overlay_with_recording(self, mock_soundfile):
-        """Test updating info overlay with a recording."""
+    def test_update_info_panel_with_recording(self, mock_soundfile):
+        """Test updating info panel with a recording."""
         # Setup soundfile mock
         mock_file = MagicMock()
         mock_file.__enter__.return_value = mock_file
@@ -259,44 +255,44 @@ class TestDisplayController(unittest.TestCase):
         mock_file.__len__.return_value = 48000  # 1 second of audio
         mock_soundfile.return_value = mock_file
 
-        self.controller.update_info_overlay()
+        self.controller.update_info_panel()
 
         # Verify file info was retrieved
         self.mock_app.file_manager.get_recording_path.assert_called_once_with(
             "test_label", 1
         )
 
-        # Verify info overlay was shown with parameters
-        self.mock_app.window.info_overlay.show.assert_called_once()
-        call_args = self.mock_app.window.info_overlay.show.call_args
+        # Verify info panel was updated with parameters
+        self.mock_app.window.update_info_panel.assert_called_once()
+        call_args = self.mock_app.window.update_info_panel.call_args
         params = call_args[0][0]
         self.assertEqual(params["sample_rate"], 48000)
         self.assertEqual(params["bit_depth"], 24)
         self.assertEqual(params["channels"], 1)
         self.assertIn("duration", params)
-        self.assertIn("file_size", params)
+        self.assertIn("size", params)
 
-    def test_update_info_overlay_no_label(self):
-        """Test updating info overlay with no current label."""
+    def test_update_info_panel_no_label(self):
+        """Test updating info panel with no current label."""
         self.mock_app.state.recording.current_label = None
 
-        self.controller.update_info_overlay()
+        self.controller.update_info_panel()
 
-        self.mock_app.window.info_overlay.show.assert_called_once()
-        call_args = self.mock_app.window.info_overlay.show.call_args
+        self.mock_app.window.update_info_panel.assert_called_once()
+        call_args = self.mock_app.window.update_info_panel.call_args
         params = call_args[0][0]
         self.assertEqual(params["sample_rate"], 48000)
         self.assertEqual(params["bit_depth"], 24)
         self.assertEqual(params["channels"], 1)
 
-    def test_update_info_overlay_no_recording(self):
-        """Test updating info overlay when no recording exists."""
+    def test_update_info_panel_no_recording(self):
+        """Test updating info panel when no recording exists."""
         self.mock_app.state.recording.get_current_take.return_value = 0
 
-        self.controller.update_info_overlay()
+        self.controller.update_info_panel()
 
         self.mock_app.file_manager.get_recording_path.assert_not_called()
-        self.mock_app.window.info_overlay.show.assert_called_once()
+        self.mock_app.window.update_info_panel.assert_called_once()
 
     def test_update_recording_timer(self):
         """Test updating the recording timer."""
@@ -323,18 +319,6 @@ class TestDisplayController(unittest.TestCase):
         self.controller.reset_level_meter()
 
         self.mock_app.window.embedded_level_meter.reset.assert_called_once()
-
-    def test_show_message(self):
-        """Test showing a message."""
-        self.controller.show_message("Test message", 3000)
-
-        self.mock_app.window.show_message.assert_called_once_with("Test message", 3000)
-
-    def test_show_message_with_custom_duration(self):
-        """Test showing a message with custom duration."""
-        self.controller.show_message("Test message", 5000)
-
-        self.mock_app.window.show_message.assert_called_once_with("Test message", 5000)
 
     def test_set_status(self):
         """Test setting the status."""

@@ -6,7 +6,6 @@ works correctly without mocking.
 
 import unittest
 import multiprocessing as mp
-import queue
 import numpy as np
 
 from revoxx.audio.queue_manager import AudioQueueManager

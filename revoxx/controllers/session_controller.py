@@ -195,9 +195,9 @@ class SessionController:
                 format_type=format_type,
             )
 
-            # Update info overlay if it's visible
-            if self.app.window.info_overlay.visible:
-                self.app.display_controller.update_info_overlay()
+            # Update info panel if it's visible
+            if self.app.window.info_panel_visible:
+                self.app.display_controller.update_info_panel()
 
             # Reinitialize audio if needed
             if hasattr(self.app, "recorder"):

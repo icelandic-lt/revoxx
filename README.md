@@ -22,7 +22,7 @@ This repository provides **Revoxx**, a graphical recording application for recor
 - **Origins:** [Icelandic EmoSpeech scripts](https://github.com/icelandic-lt/emospeech-scripts)
 
 ## Status
-![Beta](https://img.shields.io/badge/Beta-darkviolet)
+![Production](https://img.shields.io/badge/Production-darkgreen)
 
 ## System Requirements
 - **Operating System:** Linux/OS-X, should work on Windows
@@ -32,10 +32,12 @@ This repository provides **Revoxx**, a graphical recording application for recor
 
 **Revoxx** is a graphical speech recorder specialized in recording TTS datasets quickly and reliably.<br>
 You can use this project to create emotional / non-emotional voice recordings on a Workstation / Laptop with suitable audio equipment.
-It has integrated support to easily transform raw recordings into datasets for training TTS voice models.
+It has integrated support to easily transform raw recordings into datasets for training TTS voice models.<br>
+**Revoxx** has been inspired by [Icelandic EmoSpeech scripts](https://github.com/icelandic-lt/emospeech-scripts), but has been vastly improved and is rewritten from scratch.<br>
 
-**Revoxx** is a vastly improved version of the [Icelandic EmoSpeech scripts](https://github.com/icelandic-lt/emospeech-scripts),
-written from scratch.<br>
+**Screenshot:**
+
+<img src="doc/screenshot1.png" alt="screenshot1" width="50%"/>
 
 We have condensed our experience from when we recorded [Talrómur 3](https://repository.clarin.is/repository/xmlui/handle/20.500.12537/344),
 the Icelandic emotional speech dataset, and created this tool to minimize hassle, valuable recording & post-processing time.

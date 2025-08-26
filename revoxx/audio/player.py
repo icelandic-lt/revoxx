@@ -17,6 +17,7 @@ from .level_calculator import LevelCalculator
 from .queue_manager import AudioQueueManager
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
+from ..utils.process_cleanup import ProcessCleanupManager
 from ..constants import UIConstants
 
 
@@ -385,6 +386,7 @@ def playback_process(
     config: AudioConfig,
     control_queue: mp.Queue,
     shared_state_name: str,
+    manager_dict: dict,
     shutdown_event: mp.Event,
 ) -> None:
     """Process function for audio playback with hardware synchronization.
@@ -393,8 +395,13 @@ def playback_process(
         config: Audio configuration
         control_queue: Queue for control commands
         shared_state_name: Name of shared memory block
+        manager_dict: Shared manager dict for parent PID monitoring
         shutdown_event: End Playback process ?
     """
+    # Setup signal handling for child process
+    cleanup = ProcessCleanupManager(cleanup_callback=None, debug=False)
+    cleanup.ignore_signals_in_child()
+
     # Create AudioQueueManager with existing queues
     queue_manager = AudioQueueManager(
         record_queue=None,  # Not used in playback process
@@ -409,12 +416,13 @@ def playback_process(
         # Create player with shared state
         player = AudioPlayer(config, shared_state_name)
 
+        # Get parent PID from manager_dict
+        parent_pid = manager_dict.get("parent_pid") if manager_dict else None
+
         while True:
             try:
-                # Get next command
-                command = queue_manager.get_playback_command(
-                    timeout=UIConstants.PROCESS_JOIN_TIMEOUT
-                )
+                # Get next command with short timeout for parent monitoring
+                command = queue_manager.get_playback_command(timeout=0.1)
             except TypeError as e:
                 print(f"Playback process received invalid command: {e}")
                 continue
@@ -422,6 +430,13 @@ def playback_process(
             if command is None:
                 if shutdown_event.is_set():
                     break
+
+                # Check if parent process is still alive
+                if parent_pid and not cleanup.setup_parent_monitoring(
+                    parent_pid, "Playback Process"
+                ):
+                    break
+
                 continue
 
             if command.get("action") == "quit":
