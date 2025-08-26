@@ -196,6 +196,13 @@ class MainWindow:
             self._create_embedded_level_meter()
 
         if visible:
+            # First ensure frame is properly configured with background
+            self.level_meter_frame.configure(bg=UIConstants.COLOR_BACKGROUND_SECONDARY)
+
+            # Update the frame to ensure proper sizing
+            self.level_meter_frame.update_idletasks()
+
+            # Now grid it
             self.level_meter_frame.grid(
                 row=0,
                 column=1,
@@ -205,7 +212,7 @@ class MainWindow:
             )
             self.level_meter_frame.grid_propagate(False)
             if self.embedded_level_meter:
-                self.root.after(10, self.embedded_level_meter.refresh)
+                self.embedded_level_meter.refresh()
         else:
             self.level_meter_frame.grid_forget()
 
