@@ -12,12 +12,13 @@ from pathlib import Path
 from typing import Optional
 import traceback
 
-from .constants import KeyBindings, FileConstants
+from .constants import KeyBindings, FileConstants, MsgType
 from .utils.config import RecorderConfig, load_config
 from .utils.state import AppState
 from .utils.file_manager import RecordingFileManager, ScriptFileManager
 from .utils.active_recordings import ActiveRecordings
 from .utils.settings_manager import SettingsManager
+from .utils.process_cleanup import ProcessCleanupManager
 from .ui.main_window import MainWindow
 from .utils.device_manager import get_device_manager
 from .audio.buffer_manager import BufferManager
@@ -83,6 +84,12 @@ class Revoxx:
 
         # Initialize file managers
         self.script_manager = ScriptFileManager()
+
+        # Setup process cleanup manager
+        self.cleanup_manager = ProcessCleanupManager(
+            cleanup_callback=self._perform_cleanup, debug=self.debug
+        )
+        self.cleanup_manager.setup_signal_handlers()
 
         if self.current_session:
             self.script_file = self.current_session.get_script_path()
@@ -399,8 +406,11 @@ class Revoxx:
                 "<Command-U>",
                 lambda e: self.dialog_controller.show_utterance_order_dialog(),
             )
-            self.root.bind("<Command-q>", lambda e: self._quit())
-            self.root.bind("<Command-Q>", lambda e: self._quit())
+            # Override macOS Cmd+Q behavior
+            self.root.bind("<Command-q>", lambda e: self._handle_cmd_q())
+            self.root.bind("<Command-Q>", lambda e: self._handle_cmd_q())
+            # Also try to catch it with createcommand
+            self.root.createcommand("::tk::mac::Quit", self._handle_cmd_q)
 
         # Session keys
         self.root.bind("<Control-n>", lambda e: self._new_session())
@@ -470,9 +480,43 @@ class Revoxx:
             except Exception as e:
                 self.window.set_status(f"Error loading session: {e}")
 
+    def _handle_cmd_q(self):
+        """Handle Cmd+Q on macOS specifically."""
+        if self.debug:
+            print("[App] Cmd+Q intercepted - calling _quit()")
+        self._quit()
+        return "break"  # Prevent default handling
+
+    def _perform_cleanup(self):
+        """Perform cleanup when signals are received or on emergency exit."""
+        # Only do critical cleanup - no UI interactions
+        if hasattr(self, "process_manager"):
+            if self.debug:
+                print("[App] Shutting down process manager...")
+            self.process_manager.shutdown()
+
+        # Clean up buffer manager
+        if hasattr(self, "buffer_manager"):
+            if self.debug:
+                print("[App] Cleaning up buffer manager...")
+            # No wait needed - processes already terminated
+            self.buffer_manager.cleanup_all(wait_time=0)
+
+        # Clean up shared state
+        if hasattr(self, "shared_state"):
+            if self.debug:
+                print("[App] Cleaning up shared state...")
+            self.shared_state.close()
+            self.shared_state.unlink()
+
     def _quit(self):
         """Quit the application."""
+        if self.debug:
+            print("[App] _quit() called")
+
         if not self.dialog_controller.confirm_quit():
+            if self.debug:
+                print("[App] Quit cancelled by user")
             return
 
         # Stop any ongoing recording
@@ -491,6 +535,23 @@ class Revoxx:
         # Cleanup
         self.process_manager.shutdown()
         self.dialog_controller.cleanup()
+
+        # Clean up buffer manager
+        if hasattr(self, "buffer_manager"):
+            if self.debug:
+                print("[App] Cleaning up buffer manager...")
+            # No wait needed - processes already terminated
+            self.buffer_manager.cleanup_all(wait_time=0)
+
+        # Clean up shared state
+        if hasattr(self, "shared_state"):
+            if self.debug:
+                print("[App] Cleaning up shared state...")
+            self.shared_state.close()
+            self.shared_state.unlink()
+
+        # Mark cleanup as done in cleanup manager
+        self.cleanup_manager.cleanup_complete()
 
         # Close UI
         try:
@@ -553,6 +614,10 @@ class Revoxx:
 
     def run(self):
         """Run the application."""
+        # Re-register signal handlers right before mainloop
+        # Tkinter might have changed them during setup
+        self.cleanup_manager.refresh_signal_handlers()
+
         self.window.focus_window()
         self.root.mainloop()
 

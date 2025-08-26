@@ -2,7 +2,6 @@
 
 from typing import Optional, Callable
 import tkinter as tk
-import tkinter.font as tkfont
 import platform
 
 from ..constants import KeyBindings, MsgType, MsgConfig

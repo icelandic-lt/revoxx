@@ -49,6 +49,9 @@ class UserSettings:
     export_format: str = "flac"
     export_include_intensity: bool = True
 
+    # Session settings
+    last_session_path: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert settings to dictionary."""
         return asdict(self)

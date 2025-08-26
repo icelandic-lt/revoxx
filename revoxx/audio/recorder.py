@@ -502,6 +502,12 @@ def record_process(
         manager_dict: Shared manager dict (for save_path compatibility)
         shutdown_event: Signal for shutting down process
     """
+    # Setup signal handling for child process
+    from ..utils.process_cleanup import ProcessCleanupManager
+
+    cleanup = ProcessCleanupManager(cleanup_callback=None, debug=False)
+    cleanup.ignore_signals_in_child()
+
     # Create AudioQueueManager with existing queues
     queue_manager = AudioQueueManager(
         record_queue=control_queue,
@@ -514,6 +520,9 @@ def record_process(
     try:
         recorder = AudioRecorder(config, shared_state_name, queue_manager, manager_dict)
 
+        # Get parent PID from manager_dict
+        parent_pid = manager_dict.get("parent_pid") if manager_dict else None
+
         while True:
             # Get next command
             try:
@@ -525,6 +534,13 @@ def record_process(
             if command is None:
                 if shutdown_event.is_set():
                     break
+
+                # Check if parent process is still alive
+                if parent_pid and not cleanup.setup_parent_monitoring(
+                    parent_pid, "Record Process"
+                ):
+                    break
+
                 continue
 
             # Handle quit command directly

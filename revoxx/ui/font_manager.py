@@ -1,7 +1,6 @@
 """Font management for UI components."""
 
 from typing import Tuple, Optional, List
-import tkinter as tk
 import tkinter.font as tkfont
 
 from ..constants import UIConstants

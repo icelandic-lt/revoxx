@@ -136,7 +136,7 @@ class TestProcessManager(unittest.TestCase):
         self.assertFalse(self.controller.is_audio_queue_active())
 
         # Verify thread join called
-        mock_thread.join.assert_called_once_with(timeout=1.0)
+        mock_thread.join.assert_called_once_with(timeout=0.2)
 
     def test_stop_audio_queue_processing_no_thread(self):
         """Test stopping audio queue processing when no thread."""
