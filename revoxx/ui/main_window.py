@@ -126,8 +126,28 @@ class MainWindow:
         Args:
             visible: True to show both meters, False to hide both
         """
-        self._set_spectrogram_visibility(visible)
-        self._set_level_meter_visibility(visible)
+        # Hide/show the entire container
+        if visible:
+            # Show container
+            self.spec_container.grid(
+                row=2, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
+            )
+            # Ensure it doesn't change size based on content
+            self.spec_container.grid_propagate(False)
+            # Now show the child frames
+            self._set_spectrogram_visibility(visible)
+            self._set_level_meter_visibility(visible)
+        else:
+            # Hide the entire container so the text area can expand
+            self.spec_container.grid_forget()
+            # Also hide child frames (in case they're referenced elsewhere)
+            if hasattr(self, "spec_frame"):
+                self.spec_frame.grid_forget()
+            if hasattr(self, "level_meter_frame"):
+                self.level_meter_frame.grid_forget()
+
+        # Update state
+        self.ui_state.meters_visible = visible
 
         # Update menu checkbox
         if hasattr(self, "meters_var"):
