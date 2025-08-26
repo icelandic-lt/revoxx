@@ -27,10 +27,9 @@ class UserSettings:
     audio_sync_response_time_ms: float = 10.0
 
     # Display settings
-    show_spectrogram: bool = True
+    show_meters: bool = True  # Combined spectrogram & level meter visibility
     show_info_overlay: bool = False
     show_info_panel: bool = True  # Combined info panel visibility
-    show_level_meter: bool = False
     fullscreen: bool = False
     theme: str = "cyan"  # Theme preset
 

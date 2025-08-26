@@ -58,8 +58,6 @@ class ProcessManager:
         # Create shared resources
         self.shutdown_event = mp.Event()
         self.manager_dict = self.manager.dict()
-        self.manager_dict["audio_queue_active"] = False
-        self.manager_dict["save_path"] = None
 
         # Create queue manager (which creates and owns the queues)
         self.queue_manager = AudioQueueManager()
@@ -73,6 +71,10 @@ class ProcessManager:
         self.app.shutdown_event = self.shutdown_event
         self.app.manager_dict = self.manager_dict
         self.app.queue_manager = self.queue_manager
+
+        # Initialize shared state
+        self.set_audio_queue_active(False)
+        self.set_save_path(None)
 
     def start_processes(self) -> None:
         """Start background recording and playback processes."""
@@ -104,7 +106,7 @@ class ProcessManager:
 
     def start_audio_queue_processing(self) -> None:
         """Start processing audio queue for real-time display."""
-        self.manager_dict["audio_queue_active"] = True
+        self.set_audio_queue_active(True)
 
         # Start transfer thread
         self.transfer_thread = threading.Thread(target=self._audio_transfer_worker)
@@ -122,10 +124,7 @@ class ProcessManager:
 
     def _is_audio_transfer_active(self) -> bool:
         """Check if audio transfer should continue."""
-        try:
-            return self.manager_dict.get("audio_queue_active", False)
-        except (AttributeError, KeyError):
-            return False
+        return self.is_audio_queue_active()
 
     def _process_single_audio_item(self) -> None:
         """Process one item from audio queue and update UI."""
@@ -157,21 +156,24 @@ class ProcessManager:
 
     def stop_audio_queue_processing(self) -> None:
         """Stop audio queue processing."""
-        if self.manager_dict:
-            self.manager_dict["audio_queue_active"] = False
+        self.set_audio_queue_active(False)
 
         # Wait for transfer thread to finish
         if self.transfer_thread and self.transfer_thread.is_alive():
             self.transfer_thread.join(timeout=1.0)
 
-    def update_audio_queue_state(self, active: bool) -> None:
-        """Update audio queue state.
+    def get_save_path(self) -> Optional[str]:
+        """Get the current save path for recording.
 
-        Args:
-            active: Whether audio queue processing should be active
+        Returns:
+            Path to save recording or None
         """
         if self.manager_dict:
-            self.manager_dict["audio_queue_active"] = active
+            try:
+                return self.manager_dict.get("save_path")
+            except (AttributeError, KeyError):
+                return None
+        return None
 
     def set_save_path(self, path: Optional[str]) -> None:
         """Set the save path for recording.
@@ -260,6 +262,15 @@ class ProcessManager:
             except (AttributeError, KeyError):
                 return False
         return False
+
+    def set_audio_queue_active(self, active: bool) -> None:
+        """Set audio queue processing state.
+
+        Args:
+            active: Whether audio queue should be active
+        """
+        if self.manager_dict:
+            self.manager_dict["audio_queue_active"] = active
 
     def are_processes_running(self) -> bool:
         """Check if background processes are running.

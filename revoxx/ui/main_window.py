@@ -106,33 +106,76 @@ class MainWindow:
         # Initialize embedded level meter (will be created in _create_control_area)
         self.embedded_level_meter = None
 
-        if getattr(self.settings_manager.settings, "show_level_meter", False):
-            # Show embedded level meter
-            self.show_level_meter()
-            # Update checkbox
-            if hasattr(self, "level_meter_var"):
-                self.level_meter_var.set(True)
-            # Force refresh shortly after showing to prevent blank canvas
-            if hasattr(self, "embedded_level_meter") and self.embedded_level_meter:
-                self.root.after(20, self.embedded_level_meter.refresh)
-
         # Bind resize events
         self.root.bind("<Configure>", self._on_window_resize)
 
         # Force initial resize event after window is mapped
         self.root.after(50, self._trigger_initial_resize)
 
-    def show_level_meter(self):
-        """Show level meter"""
-        # Create embedded level meter if it doesn't exist yet
-        if (
-            not hasattr(self, "embedded_level_meter")
-            or self.embedded_level_meter is None
-        ):
+        # Initialize meter visibility after window is ready
+        self.root.after(100, self._initialize_meter_visibility)
+
+    def _initialize_meter_visibility(self) -> None:
+        """Initialize meter visibility based on settings."""
+        show = getattr(self.settings_manager.settings, "show_meters", True)
+        self.set_meters_visibility(show)
+
+    def set_meters_visibility(self, visible: bool) -> None:
+        """Set visibility for both mel spectrogram and level meter together.
+
+        Args:
+            visible: True to show both meters, False to hide both
+        """
+        self._set_spectrogram_visibility(visible)
+        self._set_level_meter_visibility(visible)
+
+        # Update menu checkbox
+        if hasattr(self, "meters_var"):
+            self.meters_var.set(visible)
+
+    def _set_spectrogram_visibility(self, visible: bool) -> None:
+        """Set spectrogram visibility.
+
+        Args:
+            visible: True to show, False to hide
+        """
+        if visible:
+            self.spec_frame.grid(
+                row=0,
+                column=0,
+                sticky="nsew",
+                padx=(UIConstants.FRAME_SPACING, UIConstants.FRAME_SPACING // 2),
+                pady=UIConstants.FRAME_SPACING,
+            )
+            # Create widget if not yet created (happens when meters were hidden at startup)
+            if self.mel_spectrogram is None:
+                self.root.update_idletasks()  # Ensure frame has size after grid
+                # Create directly here since frame is now visible
+                self.mel_spectrogram = MelSpectrogramWidget(
+                    self.spec_frame,
+                    self.config.audio,
+                    self.config.display,
+                    self.manager_dict,
+                    self.shared_audio_state,
+                )
+            else:
+                self.root.update_idletasks()
+                self.mel_spectrogram.canvas.draw_idle()
+        else:
+            self.spec_frame.grid_forget()
+        self.ui_state.meters_visible = visible
+
+    def _set_level_meter_visibility(self, visible: bool) -> None:
+        """Set level meter visibility.
+
+        Args:
+            visible: True to show, False to hide
+        """
+        # Ensure level meter exists if showing for the first time
+        if visible and self.embedded_level_meter is None:
             self._create_embedded_level_meter()
 
-        if hasattr(self, "level_meter_frame") and self.level_meter_frame:
-            self.level_meter_frame.grid_forget()
+        if visible:
             self.level_meter_frame.grid(
                 row=0,
                 column=1,
@@ -141,6 +184,10 @@ class MainWindow:
                 pady=UIConstants.FRAME_SPACING,
             )
             self.level_meter_frame.grid_propagate(False)
+            if self.embedded_level_meter:
+                self.root.after(10, self.embedded_level_meter.refresh)
+        else:
+            self.level_meter_frame.grid_forget()
 
     def _setup_screen_geometry(self) -> None:
         """Get screen dimensions and calculate window size.
@@ -372,26 +419,19 @@ class MainWindow:
 
         view_menu.add_separator()
 
-        # Mel Spectrogram checkbutton
-        self.mel_spectrogram_var = tk.BooleanVar(
-            value=self.config.display.show_spectrogram
+        # Mel Spectrogram & Level Meter checkbutton (combined)
+        self.meters_var = tk.BooleanVar(
+            value=(
+                getattr(self.settings_manager.settings, "show_meters", True)
+                if self.settings_manager
+                else True
+            )
         )
         view_menu.add_checkbutton(
-            label="Show Mel Spectrogram",
-            variable=self.mel_spectrogram_var,
-            command=self._toggle_mel_spectrogram_callback,
+            label="Show Mel Spectrogram & Level Meter",
+            variable=self.meters_var,
+            command=self._toggle_meters_callback,
             accelerator="M",
-        )
-
-        # Level Meter checkbutton
-        self.level_meter_var = tk.BooleanVar(
-            value=getattr(self.settings_manager.settings, "show_level_meter", False)
-        )
-        view_menu.add_checkbutton(
-            label="Show Level Meter",
-            variable=self.level_meter_var,
-            command=self.toggle_level_meter_callback,
-            accelerator="L",
         )
 
         # Info Panel checkbutton
@@ -586,49 +626,35 @@ high-quality speech datasets"""
 
         about_window.focus_set()
 
-    def _toggle_mel_spectrogram_callback(self) -> None:
-        """Callback for menu toggle mel spectrogram."""
-        # Use app callback if available, otherwise just toggle locally
-        if "toggle_mel_spectrogram" in self.app_callbacks:
-            self.app_callbacks["toggle_mel_spectrogram"]()
-        else:
-            self.toggle_spectrogram()
+    def _toggle_meters_callback(self) -> None:
+        """Callback for menu toggle mel spectrogram and level meter together."""
+        show_meters = self.meters_var.get()
 
-    def toggle_level_meter_callback(self) -> None:
-        """Callback for menu toggle level meter."""
-        # Toggle embedded level meter
-        show_meter = self.level_meter_var.get()
-        if show_meter:
-            self.show_level_meter()
-            # Force a redraw to avoid white area on re-show
-            if hasattr(self, "embedded_level_meter") and self.embedded_level_meter:
-                self.root.after(10, self.embedded_level_meter.refresh)
-        else:
-            # Hide embedded level meter
-            if hasattr(self, "level_meter_frame") and self.level_meter_frame:
-                self.level_meter_frame.grid_forget()
+        # Toggle both meters
+        self.set_meters_visibility(show_meters)
+
+        # Call app callback if available for external state update
+        if "toggle_meters" in self.app_callbacks:
+            self.app_callbacks["toggle_meters"]()
 
         # Update settings
-        self.settings_manager.update_setting(
-            "show_level_meter", self.level_meter_var.get()
-        )
+        self.settings_manager.update_setting("show_meters", show_meters)
 
     def _toggle_info_panel_callback(self) -> None:
         """Toggle the combined info panel visibility."""
-        if hasattr(self, "info_panel"):
-            # Toggle visibility
-            if self.info_panel.winfo_viewable():
-                self.info_panel.grid_forget()
-                self.info_panel_visible = False
-            else:
-                # Grid info panel in row 3 (bottom position)
-                self.info_panel.grid(
-                    row=3, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
-                )
-                self.info_panel_visible = True
-                # Update content if callback available
-                if "update_info_panel" in self.app_callbacks:
-                    self.root.after(10, self.app_callbacks["update_info_panel"])
+        # Toggle visibility
+        if self.info_panel.winfo_viewable():
+            self.info_panel.grid_forget()
+            self.info_panel_visible = False
+        else:
+            # Grid info panel in row 3 (bottom position)
+            self.info_panel.grid(
+                row=3, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
+            )
+            self.info_panel_visible = True
+            # Update content if callback available
+            if "update_info_panel" in self.app_callbacks:
+                self.root.after(10, self.app_callbacks["update_info_panel"])
 
             # Update settings
             self.settings_manager.update_setting(
@@ -854,9 +880,12 @@ high-quality speech datasets"""
         self._create_embedded_level_meter()
 
         # Hide if not enabled in settings
-        if not self.config.display.show_spectrogram:
+        if not getattr(self.settings_manager.settings, "show_meters", True):
             self.spec_frame.grid_forget()
-            self.ui_state.spectrogram_visible = False
+            self.ui_state.meters_visible = False
+        else:
+            # Ensure meters are visible
+            self.ui_state.meters_visible = True
 
     def _create_spectrogram_widget(self) -> None:
         """Create the mel spectrogram widget.
@@ -883,7 +912,7 @@ high-quality speech datasets"""
         self.mel_spectrogram = None
         self.root.after(100, self._create_mel_spectrogram_widget_deferred)
 
-        self.ui_state.spectrogram_visible = True
+        self.ui_state.meters_visible = True
 
     def _create_mel_spectrogram_widget_deferred(self) -> None:
         """Create the mel spectrogram widget after window is properly sized."""
@@ -893,8 +922,9 @@ high-quality speech datasets"""
         # Ensure frame has proper size
         self.root.update_idletasks()
 
-        # Only create if not already created and frame has size
+        # Only create if not already created
         if self.mel_spectrogram is None:
+            # Check if frame is visible and has size
             if (
                 self.spec_frame.winfo_width() > 10
                 and self.spec_frame.winfo_height() > 10
@@ -906,6 +936,10 @@ high-quality speech datasets"""
                     self.manager_dict,
                     self.shared_audio_state,
                 )
+            else:
+                # Frame not visible yet - retry later when it becomes visible
+                # This happens when meters are hidden at startup
+                pass
 
     def _create_combined_info_panel(self) -> None:
         """Create the combined info panel as a separate panel.
@@ -1355,7 +1389,7 @@ high-quality speech datasets"""
             if self.spec_frame.winfo_viewable():
                 # Hide spectrogram
                 self.spec_frame.grid_forget()
-                self.ui_state.spectrogram_visible = False
+                self.ui_state.meters_visible = False
             else:
                 # Show spectrogram with proper padding
                 self.spec_frame.grid(
@@ -1365,7 +1399,7 @@ high-quality speech datasets"""
                     padx=(UIConstants.FRAME_SPACING, UIConstants.FRAME_SPACING // 2),
                     pady=UIConstants.FRAME_SPACING,
                 )
-                self.ui_state.spectrogram_visible = True
+                self.ui_state.meters_visible = True
 
                 # Create mel_spectrogram widget if it doesn't exist yet
                 if self.mel_spectrogram is None and hasattr(
@@ -1394,8 +1428,8 @@ high-quality speech datasets"""
                     self.mel_spectrogram.canvas.draw_idle()
 
         # Update menu checkbutton
-        if hasattr(self, "mel_spectrogram_var"):
-            self.mel_spectrogram_var.set(self.ui_state.spectrogram_visible)
+        if hasattr(self, "meters_var"):
+            self.meters_var.set(self.ui_state.meters_visible)
 
         # Call external state update if provided
         if update_external_state:

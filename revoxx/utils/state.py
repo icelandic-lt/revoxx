@@ -115,32 +115,6 @@ class RecordingState:
 
 
 @dataclass
-class AudioState:
-    """Manages audio processing state.
-
-    Tracks audio device configuration and processing flags.
-
-    Attributes:
-        input_device_index: Selected input device index
-        output_device_index: Selected output device index
-        current_playback_take: Take number being played
-        stop_playback_signal: Signal to stop playback
-        audio_queue_active: Whether audio queue processing is active
-    """
-
-    # Audio device indices
-    input_device_index: Optional[int] = None
-    output_device_index: Optional[int] = None
-
-    # Playback state
-    current_playback_take: int = 0
-    stop_playback_signal: bool = False
-
-    # Recording state
-    audio_queue_active: bool = False
-
-
-@dataclass
 class UIState:
     """Manages UI state.
 
@@ -152,7 +126,7 @@ class UIState:
         window_height: Current window height in pixels
         screen_width: Screen width in pixels
         screen_height: Screen height in pixels
-        spectrogram_visible: Whether mel spectrogram is shown
+        meters_visible: Whether meters (spectrogram & level meter) are shown
         font_size_large: Large font size for main text
         font_size_medium: Medium font size for labels
         font_size_small: Small font size for status
@@ -165,8 +139,8 @@ class UIState:
     screen_width: int = 0
     screen_height: int = 0
 
-    # Spectrogram visibility
-    spectrogram_visible: bool = True
+    # Meters visibility
+    meters_visible: bool = True
 
     # Font sizes (calculated dynamically)
     font_size_large: int = 60
@@ -203,16 +177,14 @@ class AppState:
     """Main application state container.
 
     Central state management for the entire application, aggregating
-    recording, audio, and UI state.
+    recording and UI state.
 
     Attributes:
         recording: Recording session state
-        audio: Audio processing state
         ui: User interface state
     """
 
     recording: RecordingState = field(default_factory=RecordingState)
-    audio: AudioState = field(default_factory=AudioState)
     ui: UIState = field(default_factory=UIState)
 
     def is_ready_to_play(self) -> bool:

@@ -147,10 +147,8 @@ class NavigationController:
             self.app.audio_controller.stop_recording()
 
         self.app.audio_controller.stop_synchronized_playback()
-        if (
-            hasattr(self.app.window, "mel_spectrogram")
-            and self.app.window.mel_spectrogram
-        ):
+        # Mel spectrogram widget might not exist for the first 100ms ...
+        if self.app.window.mel_spectrogram:
             self.app.window.mel_spectrogram.stop_playback()
 
         # Reset level meter via shared state

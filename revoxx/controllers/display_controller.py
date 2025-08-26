@@ -53,10 +53,7 @@ class DisplayController:
         current_take = self.app.state.recording.get_current_take(current_label)
         if current_take == 0:
             # No recording exists, clear display
-            if (
-                hasattr(self.app.window, "mel_spectrogram")
-                and self.app.window.mel_spectrogram
-            ):
+            if self.app.window.mel_spectrogram:
                 self.app.window.mel_spectrogram.clear()
             # Update info panel even when no recording
             self.update_info_panel()
@@ -69,10 +66,7 @@ class DisplayController:
                 audio_data, sr = self.app.file_manager.load_audio(filepath)
 
                 # Display in mel spectrogram
-                if (
-                    hasattr(self.app.window, "mel_spectrogram")
-                    and self.app.window.mel_spectrogram
-                ):
+                if self.app.window.mel_spectrogram:
                     self.app.window.mel_spectrogram.show_recording(audio_data, sr)
 
                 # Update info panel with recording info
@@ -81,47 +75,43 @@ class DisplayController:
                 # OSError for file operations, ValueError for invalid audio data
                 self.app.window.set_status(f"Error loading recording: {e}")
 
-    def toggle_mel_spectrogram(self) -> None:
-        """Toggle the mel spectrogram visualization."""
-        # Use window's toggle_spectrogram method
-        self.app.window.toggle_spectrogram()
+    def toggle_meters(self) -> None:
+        """Toggle both mel spectrogram and level meter visualization."""
+        # Toggle visibility state
+        self.app.state.ui.meters_visible = not self.app.state.ui.meters_visible
+
+        # Update both meters in window
+        self.app.window.set_meters_visibility(self.app.state.ui.meters_visible)
 
         # Update audio queue state - needed if either spectrogram or level meter is visible
         self.app.audio_controller.update_audio_queue_state()
 
-        # Restart queue processing if needed
-        if self.app.state.ui.spectrogram_visible:
-            self.app.audio_controller.start_audio_queue_processing()
-            # Show current recording if available
-            self.app.root.after(50, self.app.display_controller.show_saved_recording)
+        # Show current recording if available - but only if not currently recording/monitoring
+        if self.app.state.ui.meters_visible:
+            if (
+                not self.app.state.recording.is_recording
+                and not self.app.audio_controller.is_monitoring
+            ):
+                self.app.root.after(50, self.show_saved_recording)
+            elif self.app.state.recording.is_recording:
+                # If we're currently recording and meters were just turned on,
+                # ensure the mel spectrogram knows it's in recording mode
+                if self.app.window.mel_spectrogram:
+                    if (
+                        not self.app.window.mel_spectrogram.recording_handler.is_recording
+                    ):
+                        # Start recording mode with current sample rate
+                        sample_rate = self.app.config.audio.sample_rate
+                        self.app.window.mel_spectrogram.start_recording(sample_rate)
 
         # Update settings
         self.app.settings_manager.update_setting(
-            "show_spectrogram", self.app.state.ui.spectrogram_visible
+            "show_meters", self.app.state.ui.meters_visible
         )
 
         # Show status message
-        status = "shown" if self.app.state.ui.spectrogram_visible else "hidden"
-        self.app.window.set_status(f"Mel spectrogram {status}")
-
-    def toggle_level_meter(self) -> None:
-        """Toggle level meter visibility."""
-        # Use the window's level meter toggle callback
-        if hasattr(self.app.window, "_toggle_level_meter_callback"):
-            self.app.window.toggle_level_meter_callback()
-        else:
-            # Fallback: directly toggle the level meter
-            if hasattr(self.app.window, "level_meter_var"):
-                current = self.app.window.level_meter_var.get()
-                self.app.window.level_meter_var.set(not current)
-                if not current:
-                    self.app.window.show_level_meter()
-                else:
-                    if hasattr(self.app.window, "level_meter_frame"):
-                        self.app.window.level_meter_frame.grid_forget()
-
-            # Display any existing recording
-            self.show_saved_recording()
+        status = "shown" if self.app.state.ui.meters_visible else "hidden"
+        self.app.window.set_status(f"Meters {status}")
 
     def update_info_panel(self) -> None:
         """Update the combined info panel with current recording information."""
@@ -129,8 +119,7 @@ class DisplayController:
         if not current_label:
             # No current utterance - show default parameters
             recording_params = self._get_recording_parameters()
-            if hasattr(self.app.window, "update_info_panel"):
-                self.app.window.update_info_panel(recording_params)
+            self.app.window.update_info_panel(recording_params)
             return
 
         # Get recording parameters
@@ -155,8 +144,7 @@ class DisplayController:
             recording_params["no_recordings"] = True
 
         # Update the info panel
-        if hasattr(self.app.window, "update_info_panel"):
-            self.app.window.update_info_panel(recording_params)
+        self.app.window.update_info_panel(recording_params)
 
     def update_recording_timer(self, elapsed_time: float) -> None:
         """Update the recording timer display.
@@ -164,13 +152,13 @@ class DisplayController:
         Args:
             elapsed_time: Elapsed recording time in seconds
         """
-        if hasattr(self.app.window, "recording_timer"):
-            self.app.window.recording_timer.update(elapsed_time)
+        # recording_timer should exist if used
+        self.app.window.recording_timer.update(elapsed_time)
 
     def reset_recording_timer(self) -> None:
         """Reset the recording timer display."""
-        if hasattr(self.app.window, "recording_timer"):
-            self.app.window.recording_timer.reset()
+        # recording_timer should exist if used
+        self.app.window.recording_timer.reset()
 
     def update_level_meter(self, level: float) -> None:
         """Update the level meter display.
@@ -178,13 +166,13 @@ class DisplayController:
         Args:
             level: Audio level value (0.0 to 1.0)
         """
-        if hasattr(self.app.window, "embedded_level_meter"):
-            self.app.window.embedded_level_meter.update_level(level)
+        # Widget must exist when keyboard bindings are active
+        self.app.window.embedded_level_meter.update_level(level)
 
     def reset_level_meter(self) -> None:
         """Reset the level meter display."""
-        if hasattr(self.app.window, "embedded_level_meter"):
-            self.app.window.embedded_level_meter.reset()
+        # Widget must exist when keyboard bindings are active
+        self.app.window.embedded_level_meter.reset()
 
     def show_message(self, message: str, duration: int) -> None:
         """Show a message to the user.

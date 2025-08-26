@@ -71,10 +71,12 @@ class Revoxx:
         self.config = config
         self.debug = debug
 
+        # Initialize settings manager first (needed for process initialization)
+        self.settings_manager = SettingsManager()
+
         # Initialize core components
         self.session_manager = SessionManager()
         self.current_session = session
-        self.settings_manager = SettingsManager()
 
         # Initialize state
         self.state = AppState()
@@ -132,8 +134,10 @@ class Revoxx:
         # Initialize manager_dict state
         self.manager_dict["recording"] = False
         self.manager_dict["playing"] = False
-        self.manager_dict["audio_queue_active"] = self.config.display.show_spectrogram
-        self.manager_dict["save_path"] = None
+        self.process_manager.set_audio_queue_active(
+            self.settings_manager.settings.show_meters
+        )
+        self.process_manager.set_save_path(None)
         self.manager_dict["debug"] = self.debug
 
         # Start background processes BEFORE UI initialization (like in original)
@@ -177,9 +181,6 @@ class Revoxx:
         if self.current_session:
             self.session_controller.load_session(self.current_session)
 
-        # Bind keyboard shortcuts
-        self._bind_keys()
-
         # Show window
         self.root.deiconify()
 
@@ -203,6 +204,11 @@ class Revoxx:
         # to the UI widgets when they are available. It polls every 100ms.
         # The thread will discard data if no widget is available to display it.
         self.audio_controller.start_audio_queue_processing()
+
+        # Bind keyboard shortcuts AFTER everything is initialized
+        # Wait for widgets to be created (mel_spectrogram and embedded_level_meter are created after 100ms)
+        # Add a bit more delay to be safe
+        self.root.after(150, self._bind_keys)
 
     def _init_controllers(self):
         """Initialize all controllers."""
@@ -229,9 +235,7 @@ class Revoxx:
         )
 
         # Display callbacks
-        self.app_callbacks["toggle_mel_spectrogram"] = (
-            self.display_controller.toggle_mel_spectrogram
-        )
+        self.app_callbacks["toggle_meters"] = self.display_controller.toggle_meters
         self.app_callbacks["update_info_panel"] = (
             self.display_controller.update_info_panel
         )
@@ -270,7 +274,7 @@ class Revoxx:
         self.device_controller.apply_saved_settings()
 
         # Display settings
-        self.config.display.show_spectrogram = settings.show_spectrogram
+        self.config.display.show_spectrogram = settings.show_meters
         self.config.ui.fullscreen = settings.fullscreen
 
         # Store window geometry for later use
@@ -318,11 +322,7 @@ class Revoxx:
         # Toggle displays
         for key in KeyBindings.TOGGLE_SPECTROGRAM:
             self.root.bind(
-                f"<{key}>", lambda e: self.display_controller.toggle_mel_spectrogram()
-            )
-        for key in KeyBindings.TOGGLE_LEVEL_METER:
-            self.root.bind(
-                f"<{key}>", lambda e: self.display_controller.toggle_level_meter()
+                f"<{key}>", lambda e: self.display_controller.toggle_meters()
             )
 
         # Dialog keys

@@ -250,7 +250,7 @@ class TestNavigationController(unittest.TestCase):
 
         # Verify status update
         self.mock_app.window.update_label_with_filename.assert_called_once()
-        self.mock_app.window.set_status.assert_called_once_with("Take 2/3")
+        self.mock_app.window.set_status.assert_called_once_with("test_label - Take 2/3")
 
     def test_update_take_status_no_recordings(self):
         """Test updating take status when no recordings exist."""
@@ -259,7 +259,7 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.update_take_status()
 
-        self.mock_app.window.set_status.assert_called_once_with("No recordings")
+        self.mock_app.window.set_status.assert_called_once_with("test_label")
 
     def test_update_take_status_no_label(self):
         """Test updating take status when no current label."""

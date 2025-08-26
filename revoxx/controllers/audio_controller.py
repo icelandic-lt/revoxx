@@ -36,8 +36,7 @@ class AudioController:
     Attributes:
         app: Reference to the main application
         is_monitoring: Whether monitoring mode is active
-        saved_spectrogram_state: Preserved spectrogram visibility state
-        saved_level_meter_state: Preserved level meter visibility state
+        saved_meters_state: Preserved meters visibility state
         audio_queue_processor: Handles audio data queue processing
     """
 
@@ -49,8 +48,7 @@ class AudioController:
         """
         self.app = app
         self.is_monitoring = False
-        self.saved_spectrogram_state = None
-        self.saved_level_meter_state = None
+        self.saved_meters_state = None
         self.audio_queue_processor = AudioQueueProcessor(app)
 
     @staticmethod
@@ -117,8 +115,7 @@ class AudioController:
         # Stop playback exactly like Left/Right keys do
         sd.stop()  # Immediate stop in main process
         self.stop_synchronized_playback()
-        if hasattr(self.app.window, "mel_spectrogram"):
-            self.app.window.mel_spectrogram.stop_playback()
+        self.app.window.mel_spectrogram.stop_playback()
 
         # Reset meter via shared state before starting a new playback
         try:
@@ -163,10 +160,7 @@ class AudioController:
         duration = len(audio_data) / sr
 
         # Reset meter when starting playback of a file
-        if (
-            hasattr(self.app.window, "embedded_level_meter")
-            and self.app.window.embedded_level_meter
-        ):
+        if self.app.window.embedded_level_meter:
             try:
                 self.app.window.embedded_level_meter.reset()
             except AttributeError:
@@ -184,8 +178,7 @@ class AudioController:
         audio_buffer.close()
 
         # Start animations
-        if hasattr(self.app.window, "mel_spectrogram"):
-            self.app.window.mel_spectrogram.start_playback(duration, sr)
+        self.app.window.mel_spectrogram.start_playback(duration, sr)
 
         # Note: Level meter updates during playback happen automatically
         # via shared memory from the playback process (AudioPlayer._update_level_meter)
@@ -228,10 +221,7 @@ class AudioController:
         """
         self.app.queue_manager.stop_playback()
         # Also reset level meter when playback stops
-        if (
-            hasattr(self.app.window, "embedded_level_meter")
-            and self.app.window.embedded_level_meter
-        ):
+        if self.app.window.embedded_level_meter:
             try:
                 self.app.window.embedded_level_meter.reset()
             except AttributeError:
@@ -326,7 +316,7 @@ class AudioController:
         # Get next available take number and set save path
         take_num = self.app.file_manager.get_next_take_number(current_label)
         save_path = self.app.file_manager.get_recording_path(current_label, take_num)
-        self.app.manager_dict["save_path"] = str(save_path)
+        self.app.process_manager.set_save_path(str(save_path))
         return True
 
     def _setup_monitoring_mode(self) -> None:
@@ -360,34 +350,19 @@ class AudioController:
         state so the UI can be restored to user preferences when monitoring
         ends.
         """
-        self.saved_spectrogram_state = self.app.state.ui.spectrogram_visible
-        self.saved_level_meter_state = (
-            self.app.window.level_meter_var.get()
-            if hasattr(self.app.window, "level_meter_var")
-            else False
-        )
+        # Save current meters state to restore later
+        self.saved_meters_state = self.app.state.ui.meters_visible
 
     def _show_monitoring_visualizations(self) -> None:
         """Enable visualizations for monitoring mode."""
-        # Show spectrogram if not visible
-        if not self.app.state.ui.spectrogram_visible:
-            self.app.display_controller.toggle_mel_spectrogram()
-
-        # Show level meter if not visible
-        if (
-            hasattr(self.app.window, "level_meter_var")
-            and not self.app.window.level_meter_var.get()
-        ):
-            self.app.window.toggle_level_meter_callback()
-            self.app.settings_manager.update_setting("show_level_meter", True)
+        # Show both meters if not visible (they are controlled together)
+        if not self.app.state.ui.meters_visible:
+            self.app.display_controller.toggle_meters()
             self.app.root.update_idletasks()
 
     def _reset_level_meter(self) -> None:
         """Reset level meter when entering monitoring mode."""
-        if (
-            hasattr(self.app.window, "embedded_level_meter")
-            and self.app.window.embedded_level_meter
-        ):
+        if self.app.window.embedded_level_meter:
             try:
                 self.app.window.embedded_level_meter.reset()
             except AttributeError:
@@ -404,11 +379,10 @@ class AudioController:
         4. Updating status message in UI
         """
         # Clear and start spectrogram
-        if hasattr(self.app.window, "mel_spectrogram"):
-            self.app.window.mel_spectrogram.clear()
-            self.app.window.mel_spectrogram.start_recording(
-                self.app.config.audio.sample_rate
-            )
+        self.app.window.mel_spectrogram.clear()
+        self.app.window.mel_spectrogram.start_recording(
+            self.app.config.audio.sample_rate
+        )
 
         # Update info panel
         self._update_info_panel_for_capture(mode)
@@ -461,8 +435,7 @@ class AudioController:
     def _do_stop_audio_capture(self) -> None:
         """Execute the actual audio capture stop."""
         self.app.queue_manager.stop_recording()
-        if hasattr(self.app.window, "mel_spectrogram"):
-            self.app.window.mel_spectrogram.stop_recording()
+        self.app.window.mel_spectrogram.stop_recording()
 
     def _cleanup_recording_mode(self) -> None:
         """Clean up after recording mode ends.
@@ -501,8 +474,7 @@ class AudioController:
         self._restore_ui_state_after_monitoring()
 
         # Clear saved states
-        self.saved_spectrogram_state = None
-        self.saved_level_meter_state = None
+        self.saved_meters_state = None
 
         # Update UI
         self.app.window.set_status("Ready")
@@ -515,21 +487,12 @@ class AudioController:
 
     def _restore_ui_state_after_monitoring(self) -> None:
         """Restore UI state after monitoring mode."""
-        # Restore spectrogram state
+        # Restore meters state (both are controlled together)
         if (
-            self.saved_spectrogram_state is not None
-            and self.saved_spectrogram_state != self.app.state.ui.spectrogram_visible
+            self.saved_meters_state is not None
+            and self.saved_meters_state != self.app.state.ui.meters_visible
         ):
-            self.app.display_controller.toggle_mel_spectrogram()
-
-        # Restore level meter state
-        if (
-            hasattr(self.app.window, "level_meter_var")
-            and self.saved_level_meter_state is not None
-        ):
-            current_state = self.app.window.level_meter_var.get()
-            if self.saved_level_meter_state != current_state:
-                self.app.window.toggle_level_meter_callback()
+            self.app.display_controller.toggle_meters()
 
     def _save_last_recording_position(self, take_number: int) -> None:
         """Save the current recording position to the session.

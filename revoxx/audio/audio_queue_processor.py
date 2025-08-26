@@ -6,6 +6,7 @@ in a thread-safe manner.
 
 import threading
 import queue
+import time
 from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -37,7 +38,7 @@ class AudioQueueProcessor:
             return
 
         self._running = True
-        self.app.manager_dict["audio_queue_active"] = True
+        self.app.process_manager.set_audio_queue_active(True)
 
         self.transfer_thread = threading.Thread(target=self._worker_loop)
         self.transfer_thread.daemon = True
@@ -47,7 +48,7 @@ class AudioQueueProcessor:
         """Stop the audio queue processing thread."""
         self._running = False
         if self.app.manager_dict:
-            self.app.manager_dict["audio_queue_active"] = False
+            self.app.process_manager.set_audio_queue_active(False)
 
         if self.transfer_thread and self.transfer_thread.is_alive():
             self.transfer_thread.join(timeout=1.0)
@@ -55,14 +56,11 @@ class AudioQueueProcessor:
 
     def update_state(self) -> None:
         """Update processing state based on UI visibility."""
-        level_meter_visible = (
-            hasattr(self.app.window, "level_meter_var")
-            and self.app.window.level_meter_var.get()
-        )
-        needs_audio = self.app.state.ui.spectrogram_visible or level_meter_visible
+        # Both meters are controlled together via meters_visible
+        needs_audio = self.app.state.ui.meters_visible
 
         if self.app.manager_dict:
-            self.app.manager_dict["audio_queue_active"] = needs_audio
+            self.app.process_manager.set_audio_queue_active(needs_audio)
 
     def _worker_loop(self) -> None:
         """Main worker loop for processing audio queue."""
@@ -79,19 +77,31 @@ class AudioQueueProcessor:
         Returns:
             True if processing should continue, False otherwise
         """
+        # Only check _running - thread should keep running even when meters are off
         if not self._running:
             return False
 
-        try:
-            return self.app.manager_dict.get("audio_queue_active", False)
-        except (AttributeError, KeyError):
-            return False
+        # Thread keeps running regardless of audio_queue_active
+        return True
 
     def _process_queue_item(self) -> None:
         """Process a single item from the audio queue."""
+        # Check if we should process audio data
+        if not self.app.process_manager.is_audio_queue_active():
+            # Meters are off - just sleep a bit to avoid busy waiting
+            time.sleep(0.1)
+            return
+
+        # Meters are on - process normally
         try:
             audio_data = self.app.queue_manager.get_audio_data(timeout=0.1)
-            self._route_audio_data(audio_data)
+
+            # Process audio data based on its type
+            if isinstance(audio_data, dict):
+                self._handle_dict_format(audio_data)
+            else:
+                # Raw numpy array format
+                self._handle_raw_format(audio_data)
         except queue.Empty:
             pass  # Timeout is normal
         except queue.Full:
@@ -104,19 +114,6 @@ class AudioQueueProcessor:
                 print(f"Error processing audio queue: {e}")
             self._running = False
             raise
-
-    def _route_audio_data(self, audio_data: Any) -> None:
-        """Route audio data based on its type.
-
-        Args:
-            audio_data: The audio data to process (dict, tuple, or raw array)
-        """
-        if isinstance(audio_data, dict):
-            self._handle_dict_format(audio_data)
-        elif isinstance(audio_data, tuple) and len(audio_data) == 2:
-            self._handle_legacy_tuple_format(audio_data)
-        else:
-            self._handle_raw_format(audio_data)
 
     def _handle_dict_format(self, data: dict) -> None:
         """Handle dictionary-formatted audio data.
@@ -134,15 +131,6 @@ class AudioQueueProcessor:
             level = data.get("level", 0.0)
             self._update_level_meter(level)
 
-    def _handle_legacy_tuple_format(self, data: tuple) -> None:
-        """Handle legacy (audio_array, sample_rate) format.
-
-        Args:
-            data: Tuple of (audio_array, sample_rate)
-        """
-        audio_array, _ = data  # sample_rate not used currently
-        self._update_spectrogram(audio_array)
-
     def _handle_raw_format(self, audio_data: Any) -> None:
         """Handle raw numpy array format.
 
@@ -157,9 +145,8 @@ class AudioQueueProcessor:
         Args:
             audio_array: Audio data to display in spectrogram
         """
-        if not self._has_spectrogram():
+        if self.app.window.mel_spectrogram is None:
             return
-
         # Use after() to update in main thread
         self.app.root.after(
             0,
@@ -172,19 +159,6 @@ class AudioQueueProcessor:
         Args:
             level: Audio level value
         """
-        if not hasattr(self.app.window, "embedded_level_meter"):
-            return
-
         # Use after() to update in main thread
+        # Widget must exist when keyboard bindings are active
         self.app.root.after(0, self.app.window.embedded_level_meter.update_level, level)
-
-    def _has_spectrogram(self) -> bool:
-        """Check if mel spectrogram is available.
-
-        Returns:
-            True if spectrogram exists and is initialized
-        """
-        return (
-            hasattr(self.app.window, "mel_spectrogram")
-            and self.app.window.mel_spectrogram is not None
-        )

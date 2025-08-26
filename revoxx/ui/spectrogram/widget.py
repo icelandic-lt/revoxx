@@ -354,10 +354,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
 
     def update_audio(self, audio_chunk: np.ndarray) -> None:
         """Update with new audio data during recording."""
-        # Only process if we're actually recording
-        if not self.recording_handler.is_recording:
-            return
-
+        # Let recording_handler decide - allows updates when meters toggled
         try:
             self.audio_queue.put_nowait(audio_chunk)
         except queue.Full:
