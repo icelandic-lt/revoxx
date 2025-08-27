@@ -6,7 +6,6 @@ import queue
 import threading
 from typing import Optional, TYPE_CHECKING
 from multiprocessing.managers import SyncManager
-from multiprocessing.sharedctypes import Synchronized
 
 from ..audio.recorder import record_process
 from ..audio.player import playback_process
@@ -43,7 +42,7 @@ class ProcessManager:
         # Manager and shared resources
         self.manager: Optional[SyncManager] = None
         self.manager_pid: Optional[int] = None
-        self.shutdown_event: Optional[Synchronized] = None
+        self.shutdown_event: Optional[mp.Event] = None
         self.manager_dict: Optional[dict] = None
         self.audio_queue: Optional[mp.Queue] = None
         self.record_queue: Optional[mp.Queue] = None
@@ -53,28 +52,15 @@ class ProcessManager:
         # Initialize resources
         self._initialize_resources()
 
-        # Start a watchdog thread to kill manager if parent dies
-        # This is needed because manager processes don't die with parent
-        self._start_manager_watchdog()
-
     def _initialize_resources(self) -> None:
         """Initialize multiprocessing resources."""
-        # Create multiprocessing manager
         if self.app.debug:
             print("[ProcessManager] Creating mp.Manager()...")
 
-        # Use context manager approach which ensures cleanup
-        # But we need to keep reference for later use
+        # Create manager directly and manually call shutdown() in cleanup
         self.manager = mp.Manager()
 
-        # Note: The manager creates its own process that we cannot easily control
-        # It won't die automatically when parent dies
-        if hasattr(self.manager, "_process") and self.manager._process:
-            self.manager_pid = self.manager._process.pid
-            if self.app.debug:
-                print(f"[ProcessManager] Manager process PID: {self.manager_pid}")
-
-        # Create shared resources
+        # Shared resources
         self.shutdown_event = mp.Event()
         self.manager_dict = self.manager.dict()
 
@@ -83,10 +69,8 @@ class ProcessManager:
         if self.app.debug:
             print(f"[ProcessManager] Parent PID: {os.getpid()}")
 
-        # Create queue manager (which creates and owns the queues)
+        # Create queue manager and queues
         self.queue_manager = AudioQueueManager()
-
-        # Get queue references for process initialization
         self.audio_queue = self.queue_manager.audio_queue
         self.record_queue = self.queue_manager.record_queue
         self.playback_queue = self.queue_manager.playback_queue
@@ -96,22 +80,9 @@ class ProcessManager:
         self.app.manager_dict = self.manager_dict
         self.app.queue_manager = self.queue_manager
 
-        # Initialize shared state
+        # Initialize shared state in self.manager_dict
         self.set_audio_queue_active(False)
         self.set_save_path(None)
-
-    def _start_manager_watchdog(self) -> None:
-        """Note: A watchdog thread won't work because it dies with the parent.
-
-        The mp.Manager() creates non-daemon processes that don't die automatically.
-        This is a known limitation. Solutions:
-        1. Use normal mp.Queue instead of Manager-based queues
-        2. Accept that manager processes may remain after hard kill
-        3. Clean up orphaned manager processes on next start
-        """
-        # For now, we accept this limitation and rely on proper cleanup
-        # when the program exits normally
-        pass
 
     def start_processes(self) -> None:
         """Start background recording and playback processes."""
@@ -131,8 +102,6 @@ class ProcessManager:
             ),
         )
         self.record_process.daemon = True  # Ensure process terminates with parent
-        # Note: We could use preexec_fn=os.setpgrp on Unix to put in new process group
-        # but that's not portable and mp.Process doesn't support it
         self.record_process.start()
         if self.app.debug:
             print(
@@ -150,7 +119,8 @@ class ProcessManager:
                 self.shutdown_event,
             ),
         )
-        self.playback_process.daemon = True  # Ensure process terminates with parent
+        # Ensure process terminates with parent
+        self.playback_process.daemon = True
         self.playback_process.start()
         if self.app.debug:
             print(
@@ -169,15 +139,11 @@ class ProcessManager:
     def _audio_transfer_worker(self) -> None:
         """Worker thread for processing audio queue data."""
         try:
-            while self._is_audio_transfer_active():
+            while self.is_audio_queue_active():
                 self._process_single_audio_item()
         except (BrokenPipeError, OSError, EOFError):
             # IPC endpoints closed during shutdown - this is expected
             pass
-
-    def _is_audio_transfer_active(self) -> bool:
-        """Check if audio transfer should continue."""
-        return self.is_audio_queue_active()
 
     def _process_single_audio_item(self) -> None:
         """Process one item from audio queue and update UI."""
@@ -189,7 +155,7 @@ class ProcessManager:
                 hasattr(self.app.window, "mel_spectrogram")
                 and self.app.window.ui_state.spectrogram_visible
             ):
-                # Use after() to update in main thread
+                # Update in main thread
                 self.app.root.after(
                     0,
                     lambda data=audio_data: self.app.window.mel_spectrogram.update_audio(
@@ -209,9 +175,10 @@ class ProcessManager:
 
     def stop_audio_queue_processing(self) -> None:
         """Stop audio queue processing."""
-        self.set_audio_queue_active(False)
+        if self.app.debug:
+            print("[ProcessManager] Stopping audio queue processing...")
 
-        # Wait for transfer thread to finish
+        self.set_audio_queue_active(False)
         if self.transfer_thread and self.transfer_thread.is_alive():
             self.transfer_thread.join(timeout=0.2)
 
@@ -248,30 +215,18 @@ class ProcessManager:
                 print("[ProcessManager] Setting shutdown event...")
             self.shutdown_event.set()
 
-        # Stop audio queue processing thread
-        if self.app.debug:
-            print("[ProcessManager] Stopping audio queue processing...")
         self.stop_audio_queue_processing()
-
-        # Terminate all processes
-        if self.app.debug:
-            print("[ProcessManager] Terminating all processes...")
         self._terminate_all_processes()
-
-        # Cleanup IPC resources (queues and manager)
-        if self.app.debug:
-            print("[ProcessManager] Cleaning up IPC resources...")
         self._cleanup_ipc_resources()
-
-        # Clear all references
-        if self.app.debug:
-            print("[ProcessManager] Clearing all references...")
         self._clear_all_references()
+
         if self.app.debug:
             print("[ProcessManager] Shutdown complete.")
 
     def _terminate_all_processes(self) -> None:
         """Terminate recording and playback processes gracefully."""
+        if self.app.debug:
+            print("[ProcessManager] Terminating all processes...")
         for process_name, process in [
             ("record", self.record_process),
             ("playback", self.playback_process),
@@ -316,6 +271,10 @@ class ProcessManager:
 
     def _cleanup_ipc_resources(self) -> None:
         """Close queues and shutdown multiprocessing manager."""
+
+        if self.app.debug:
+            print("[ProcessManager] Cleaning up IPC resources...")
+
         # Close all queues
         for queue_name, queue_obj in [
             ("audio", self.audio_queue),
@@ -337,33 +296,18 @@ class ProcessManager:
             try:
                 if self.app.debug:
                     print("[ProcessManager] Shutting down multiprocessing manager...")
-                # Try graceful shutdown
                 self.manager.shutdown()
                 if self.app.debug:
                     print("[ProcessManager] Manager shutdown complete.")
 
-                # Check if the manager process is still alive
-                if hasattr(self.manager, "_process") and self.manager._process:
-                    if self.manager._process.is_alive():
-                        if self.app.debug:
-                            print(
-                                f"[ProcessManager] WARNING: Manager process {self.manager._process.pid} still alive after shutdown!"
-                            )
-                        # Force terminate the manager process
-                        self.manager._process.terminate()
-                        self.manager._process.join(timeout=0.2)
-                        if self.manager._process.is_alive():
-                            if self.app.debug:
-                                print(
-                                    "[ProcessManager] Force killing manager process..."
-                                )
-                            self.manager._process.kill()
             except (BrokenPipeError, OSError) as e:
                 if self.app.debug:
                     print(f"[ProcessManager] Error shutting down manager: {e}")
 
     def _clear_all_references(self) -> None:
         """Clear all object references to allow garbage collection."""
+        if self.app.debug:
+            print("[ProcessManager] Clearing all references...")
         self.record_process = None
         self.playback_process = None
         self.transfer_thread = None

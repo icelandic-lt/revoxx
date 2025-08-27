@@ -42,7 +42,7 @@ class ProcessCleanupManager:
 
         # Store and replace signal handlers
         signals = {
-            signal.SIGINT: "SIGINT",  # Ctrl+C
+            signal.SIGINT: "SIGINT",  # Ctrl+C, PyCharm "Stop"
             signal.SIGTERM: "SIGTERM",  # Terminate
             signal.SIGQUIT: "SIGQUIT",  # Quit
             signal.SIGHUP: "SIGHUP",  # Hangup
@@ -68,7 +68,8 @@ class ProcessCleanupManager:
         if self.debug and current != self._signal_handler:
             print(f"[ProcessCleanup] SIGINT handler was changed to: {current}")
 
-    def ignore_signals_in_child(self) -> None:
+    @staticmethod
+    def ignore_signals_in_child() -> None:
         """Configure child process to ignore signals.
 
         Should be called at the start of child processes to prevent
@@ -106,6 +107,7 @@ class ProcessCleanupManager:
             signum: Signal number
             frame: Current stack frame
         """
+        _ = frame
         signal_names = {
             signal.SIGHUP: "SIGHUP",
             signal.SIGINT: "SIGINT",
