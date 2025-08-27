@@ -10,6 +10,7 @@ import sounddevice as sd
 from pathlib import Path
 from typing import Optional, Any
 import multiprocessing as mp
+from multiprocessing.synchronize import Event
 import traceback
 import soundfile as sf
 
@@ -18,6 +19,7 @@ from .level_calculator import LevelCalculator
 from .queue_manager import AudioQueueManager
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
+from ..utils.process_cleanup import ProcessCleanupManager
 
 
 class AudioRecorder:
@@ -490,7 +492,7 @@ def record_process(
     shared_state_name: str,
     control_queue: mp.Queue,
     manager_dict: dict,
-    shutdown_event: mp.Event,
+    shutdown_event: Event,
 ) -> None:
     """Process function for audio recording with hardware synchronization.
 
@@ -503,8 +505,6 @@ def record_process(
         shutdown_event: Signal for shutting down process
     """
     # Setup signal handling for child process
-    from ..utils.process_cleanup import ProcessCleanupManager
-
     cleanup = ProcessCleanupManager(cleanup_callback=None, debug=False)
     cleanup.ignore_signals_in_child()
 
@@ -520,9 +520,6 @@ def record_process(
     try:
         recorder = AudioRecorder(config, shared_state_name, queue_manager, manager_dict)
 
-        # Get parent PID from manager_dict
-        parent_pid = manager_dict.get("parent_pid") if manager_dict else None
-
         while True:
             # Get next command
             try:
@@ -532,15 +529,9 @@ def record_process(
                 continue
 
             if command is None:
+                # Check shutdown event
                 if shutdown_event.is_set():
                     break
-
-                # Check if parent process is still alive
-                if parent_pid and not cleanup.setup_parent_monitoring(
-                    parent_pid, "Record Process"
-                ):
-                    break
-
                 continue
 
             # Handle quit command directly

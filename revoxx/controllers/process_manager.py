@@ -64,11 +64,6 @@ class ProcessManager:
         self.shutdown_event = mp.Event()
         self.manager_dict = self.manager.dict()
 
-        # Store parent PID for child processes to monitor
-        self.manager_dict["parent_pid"] = os.getpid()
-        if self.app.debug:
-            print(f"[ProcessManager] Parent PID: {os.getpid()}")
-
         # Create queue manager and queues
         self.queue_manager = AudioQueueManager()
         self.audio_queue = self.queue_manager.audio_queue
@@ -115,7 +110,7 @@ class ProcessManager:
                 self.app.config.audio,
                 self.playback_queue,
                 self.app.shared_state.name,
-                self.manager_dict,  # Add manager_dict for parent PID monitoring
+                self.manager_dict,
                 self.shutdown_event,
             ),
         )
