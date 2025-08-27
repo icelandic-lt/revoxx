@@ -42,7 +42,7 @@ class ProcessCleanupManager:
 
         # Store and replace signal handlers
         signals = {
-            signal.SIGINT: "SIGINT",  # Ctrl+C
+            signal.SIGINT: "SIGINT",  # Ctrl+C, PyCharm "Stop"
             signal.SIGTERM: "SIGTERM",  # Terminate
             signal.SIGQUIT: "SIGQUIT",  # Quit
             signal.SIGHUP: "SIGHUP",  # Hangup
@@ -54,21 +54,20 @@ class ProcessCleanupManager:
             if self.debug:
                 print(f"[ProcessCleanup] Registered {name} handler (was: {original})")
 
-    def refresh_signal_handlers(self) -> None:
-        """Re-register signal handlers (useful before Tkinter mainloop).
+    def refresh_sigint_handler(self) -> None:
+        """Re-register SIGINT handler (before Tkinter mainloop).
 
-        Tkinter can sometimes interfere with signal handlers, so this
-        ensures they are properly set before entering the main event loop.
+        Tkinter interferes with SIGINT (Ctrl+C). This ensures it's properly set before entering the main event loop.
         """
         if self.debug:
-            print("[ProcessCleanup] Refreshing signal handlers before mainloop...")
+            print("[ProcessCleanup] Refreshing SIGINT handler before mainloop...")
 
-        # Re-register SIGINT specifically (most important for Ctrl+C)
         current = signal.signal(signal.SIGINT, self._signal_handler)
         if self.debug and current != self._signal_handler:
             print(f"[ProcessCleanup] SIGINT handler was changed to: {current}")
 
-    def ignore_signals_in_child(self) -> None:
+    @staticmethod
+    def ignore_signals_in_child() -> None:
         """Configure child process to ignore signals.
 
         Should be called at the start of child processes to prevent
@@ -77,28 +76,6 @@ class ProcessCleanupManager:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         # Could add more signals if needed
 
-    def setup_parent_monitoring(self, parent_pid: int, process_name: str) -> bool:
-        """Check if parent process is still alive.
-
-        Args:
-            parent_pid: PID of parent process to monitor
-            process_name: Name for debug output
-
-        Returns:
-            False if parent is dead (process should exit), True otherwise
-        """
-        try:
-            # Check if parent exists (signal 0 doesn't actually send a signal)
-            os.kill(parent_pid, 0)
-            return True
-        except (OSError, ProcessLookupError):
-            if self.debug:
-                print(
-                    f"[{process_name}] Parent process {parent_pid} died - exiting",
-                    flush=True,
-                )
-            return False
-
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle system signals for graceful shutdown.
 
@@ -106,6 +83,7 @@ class ProcessCleanupManager:
             signum: Signal number
             frame: Current stack frame
         """
+        _ = frame
         signal_names = {
             signal.SIGHUP: "SIGHUP",
             signal.SIGINT: "SIGINT",
@@ -123,7 +101,7 @@ class ProcessCleanupManager:
         # Special handling for SIGINT
         if signum == signal.SIGINT and self.debug:
             print(
-                "[ProcessCleanup] SIGINT detected - child processes should ignore it",
+                "[ProcessCleanup] SIGINT ",
                 flush=True,
             )
 

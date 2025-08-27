@@ -614,9 +614,9 @@ class Revoxx:
 
     def run(self):
         """Run the application."""
-        # Re-register signal handlers right before mainloop
-        # Tkinter might have changed them during setup
-        self.cleanup_manager.refresh_signal_handlers()
+        # Re-register SIGINT handler right before mainloop
+        # Tkinter might have changed it during setup
+        self.cleanup_manager.refresh_sigint_handler()
 
         self.window.focus_window()
         self.root.mainloop()

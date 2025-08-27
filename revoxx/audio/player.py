@@ -9,6 +9,7 @@ import numpy as np
 import sounddevice as sd
 from typing import Optional, Any
 import multiprocessing as mp
+from multiprocessing.synchronize import Event
 import traceback
 
 from .audio_buffer import AudioBuffer
@@ -387,7 +388,7 @@ def playback_process(
     control_queue: mp.Queue,
     shared_state_name: str,
     manager_dict: dict,
-    shutdown_event: mp.Event,
+    shutdown_event: Event,
 ) -> None:
     """Process function for audio playback with hardware synchronization.
 
@@ -395,8 +396,8 @@ def playback_process(
         config: Audio configuration
         control_queue: Queue for control commands
         shared_state_name: Name of shared memory block
-        manager_dict: Shared manager dict for parent PID monitoring
-        shutdown_event: End Playback process ?
+        manager_dict: Shared manager dict
+        shutdown_event: End process ?
     """
     # Setup signal handling for child process
     cleanup = ProcessCleanupManager(cleanup_callback=None, debug=False)
@@ -416,27 +417,18 @@ def playback_process(
         # Create player with shared state
         player = AudioPlayer(config, shared_state_name)
 
-        # Get parent PID from manager_dict
-        parent_pid = manager_dict.get("parent_pid") if manager_dict else None
-
         while True:
             try:
-                # Get next command with short timeout for parent monitoring
+                # Get next command with timeout
                 command = queue_manager.get_playback_command(timeout=0.1)
             except TypeError as e:
                 print(f"Playback process received invalid command: {e}")
                 continue
 
             if command is None:
+                # Check shutdown event
                 if shutdown_event.is_set():
                     break
-
-                # Check if parent process is still alive
-                if parent_pid and not cleanup.setup_parent_monitoring(
-                    parent_pid, "Playback Process"
-                ):
-                    break
-
                 continue
 
             if command.get("action") == "quit":

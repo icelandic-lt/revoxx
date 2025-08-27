@@ -1119,18 +1119,16 @@ high-quality speech datasets"""
         """
         # Get font families from manager
         mono_font = self.font_manager.get_mono_font()
-        sans_font = self.font_manager.get_sans_font()
-
-        # Large font for main text
-        self.text_display.config(
-            font=(sans_font, self.ui_state.font_size_large, "normal"),
-            wraplength=int(self.ui_state.window_width * UIConstants.TEXT_WRAP_RATIO),
-        )
 
         # Fixed font sizes for top panel
         self.status_label.config(font=(mono_font, 24))
         self.rec_indicator.config(font=(mono_font, 24, "bold"))
         self.progress_label.config(font=(mono_font, 24, "bold"))
+
+        # Update text layout with adaptive font sizing if we have text
+        current_text = self.text_var.get()
+        if current_text:
+            self.adjust_text_font_size(current_text)
 
     def _on_window_resize(self, event: tk.Event) -> None:
         """Handle window resize events.
@@ -1907,6 +1905,7 @@ high-quality speech datasets"""
             available_height,
             max_font_size=self.ui_state.font_size_large,
             min_font_size=14,
+            use_mono_font=True,
         )
 
         # Apply the calculated font size

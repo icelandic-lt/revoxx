@@ -46,9 +46,8 @@ class EmotionLevelIndicator(tk.Frame):
         self.active_size = 32  # Larger size for active block
         self.active_width = 40  # Wider width for active block to accommodate number
 
-        # Get proper mono font from FontManager
+        # Get mono font from FontManager
         self.mono_font = self.font_manager.get_mono_font()
-        self.sans_font = self.font_manager.get_sans_font()
 
         # Create label with same font as other elements in info bar
         self.label = tk.Label(
@@ -106,9 +105,8 @@ class EmotionLevelIndicator(tk.Frame):
             self.blocks.append(block_frame)
             self.block_labels.append(label)
 
-    def _parse_hex_color(
-        self, hex_color: str, fallback: tuple = (0, 188, 212)
-    ) -> tuple:
+    @staticmethod
+    def _parse_hex_color(hex_color: str, fallback: tuple = (0, 188, 212)) -> tuple:
         """Parse hex color string to RGB tuple.
 
         Args:
@@ -130,13 +128,12 @@ class EmotionLevelIndicator(tk.Frame):
             r = int(hex_str[0:2], 16)
             g = int(hex_str[2:4], 16)
             b = int(hex_str[4:6], 16)
-            return (r, g, b)
+            return r, g, b
         except (ValueError, IndexError):
             return fallback
 
-    def _blend_with_opacity(
-        self, fg_color: tuple, bg_color: tuple, opacity: float
-    ) -> str:
+    @staticmethod
+    def _blend_with_opacity(fg_color: tuple, bg_color: tuple, opacity: float) -> str:
         """Blend foreground and background colors with given opacity.
 
         Args:
