@@ -45,8 +45,9 @@ class FontManager:
         # Update UI state with calculated sizes
         self.ui_state.calculate_font_sizes(self.config.ui.base_font_size, scale_factor)
 
+    @staticmethod
     def get_font_with_fallback(
-        self, font_family: Tuple[str, ...], preferred_type: str = "mono"
+        font_family: Tuple[str, ...], preferred_type: str = "mono"
     ) -> str:
         """Get an available font from family list with fallback.
 
@@ -91,6 +92,7 @@ class FontManager:
         available_height: int,
         max_font_size: Optional[int] = None,
         min_font_size: int = 14,
+        use_mono_font: bool = False,
     ) -> Tuple[int, int]:
         """Calculate optimal font size for text to fit in available space.
 
@@ -103,6 +105,7 @@ class FontManager:
             available_height: Available height in pixels
             max_font_size: Maximum font size to try (default: ui_state.font_size_large)
             min_font_size: Minimum readable font size (default: 14)
+            use_mono_font: Whether to use mono font instead of sans font
 
         Returns:
             Tuple of (optimal_font_size, wraplength)
@@ -114,8 +117,8 @@ class FontManager:
         if max_font_size is None:
             max_font_size = self.ui_state.font_size_large
 
-        # Get font family
-        font_family = self.get_sans_font()
+        # Get font family based on parameter
+        font_family = self.get_mono_font() if use_mono_font else self.get_sans_font()
 
         # Calculate wrap width (90% of available for safety margin)
         wrap_width = int(available_width * 0.9)
@@ -190,7 +193,8 @@ class FontManager:
 
         return total_height <= available_height and max_line_width <= available_width
 
-    def wrap_text(self, text: str, font: tkfont.Font, wrap_width: int) -> List[str]:
+    @staticmethod
+    def wrap_text(text: str, font: tkfont.Font, wrap_width: int) -> List[str]:
         """Wrap text to fit within given width.
 
         Breaks text into lines that fit within the specified width,
