@@ -46,7 +46,7 @@ class FileOperationsController:
         result = messagebox.askyesno(
             "Delete Recording",
             "Delete recording ?",
-            parent=self.app.root,
+            parent=self.app.window.window,
         )
 
         if not result:

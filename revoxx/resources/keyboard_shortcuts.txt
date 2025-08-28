@@ -14,6 +14,11 @@ DISPLAY
   I            Toggle info overlay
   F10          Toggle fullscreen
 
+SECOND WINDOW (Shift + Key)
+  Shift+M      Toggle meters in second window
+  Shift+I      Toggle info panel in second window
+  Shift+F10    Toggle fullscreen in second window
+
 FILE OPERATIONS
   Ctrl+D       Delete current recording
 

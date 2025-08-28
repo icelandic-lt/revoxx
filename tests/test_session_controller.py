@@ -69,7 +69,6 @@ class TestSessionController(unittest.TestCase):
 
         # Mock update methods
         self.mock_app._update_info_overlay = Mock()
-        self.mock_app._update_audio_settings = Mock()
 
         self.controller = SessionController(self.mock_app)
 
@@ -178,7 +177,6 @@ class TestSessionController(unittest.TestCase):
             self.mock_app.window.update_session_title.assert_called_once_with(
                 "test_session"
             )
-            self.mock_app.window._update_recent_sessions_menu.assert_called_once()
             self.mock_app.window.set_status.assert_called_with(
                 "Loaded session: test_session"
             )

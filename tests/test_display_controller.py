@@ -322,29 +322,38 @@ class TestDisplayController(unittest.TestCase):
 
     def test_set_status(self):
         """Test setting the status."""
+        from revoxx.constants import MsgType
+
         self.controller.set_status("Ready")
 
-        self.mock_app.window.set_status.assert_called_once_with("Ready")
+        self.mock_app.window.set_status.assert_called_once_with(
+            "Ready", MsgType.TEMPORARY
+        )
 
     def test_update_window_title_custom(self):
         """Test updating window title with custom text."""
+        self.mock_app.window.window = Mock()
         self.controller.update_window_title("Custom Title")
 
-        self.mock_app.root.title.assert_called_once_with("Custom Title")
+        self.mock_app.window.window.title.assert_called_once_with("Custom Title")
 
     def test_update_window_title_default_with_session(self):
         """Test updating window title to default with session."""
+        self.mock_app.window.window = Mock()
         self.controller.update_window_title()
 
-        self.mock_app.root.title.assert_called_once_with("Revoxx - Test Session")
+        self.mock_app.window.window.title.assert_called_once_with(
+            "Revoxx - Test Session"
+        )
 
     def test_update_window_title_default_no_session(self):
         """Test updating window title to default without session."""
+        self.mock_app.window.window = Mock()
         self.mock_app.current_session = None
 
         self.controller.update_window_title()
 
-        self.mock_app.root.title.assert_called_once_with("Revoxx")
+        self.mock_app.window.window.title.assert_called_once_with("Revoxx")
 
 
 if __name__ == "__main__":

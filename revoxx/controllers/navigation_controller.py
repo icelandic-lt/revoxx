@@ -79,6 +79,9 @@ class NavigationController:
         if self.app.window.info_panel_visible:
             self.app.display_controller.update_info_panel()
 
+        # Recalculate font size after navigation
+        self.app.display_controller.recalculate_window_font("main")
+
     def browse_takes(self, direction: int) -> None:
         """Browse through different takes.
 
@@ -134,7 +137,7 @@ class NavigationController:
         else:
             # No more takes in that direction
             direction_text = "forward" if direction > 0 else "backward"
-            self.app.window.set_status(f"No more takes {direction_text}")
+            self.app.display_controller.set_status(f"No more takes {direction_text}")
 
     def find_utterance(self, index: int) -> None:
         """Navigate directly to a specific utterance by index.
@@ -150,6 +153,12 @@ class NavigationController:
         # Mel spectrogram widget might not exist for the first 100ms ...
         if self.app.window.mel_spectrogram:
             self.app.window.mel_spectrogram.stop_playback()
+
+        # Stop second window spectrogram playback if active
+        if self.app.has_active_second_window:
+            second = self.app.window_manager.get_window("second")
+            if second and second.mel_spectrogram:
+                second.mel_spectrogram.stop_playback()
 
         # Reset level meter via shared state
         try:
@@ -219,7 +228,7 @@ class NavigationController:
                         self.app.display_controller.show_saved_recording()
                         self.update_take_status()
 
-                self.app.window.set_status(
+                self.app.display_controller.set_status(
                     f"Resumed at last recording: {current_label}"
                 )
 
@@ -255,19 +264,31 @@ class NavigationController:
         if current_take > 0:
             filename = f"take_{current_take:03d}{FileConstants.AUDIO_FILE_EXTENSION}"
             self.app.window.update_label_with_filename(current_label, filename)
+            # Update second window if active
+            if self.app.has_active_second_window:
+                second = self.app.window_manager.get_window("second")
+                if second:
+                    second.update_label_with_filename(current_label, filename)
         else:
             self.app.window.update_label_with_filename(current_label)
+            # Update second window if active
+            if self.app.has_active_second_window:
+                second = self.app.window_manager.get_window("second")
+                if second:
+                    second.update_label_with_filename(current_label)
 
         if existing_takes and current_take in existing_takes:
             # Find position in the list
             position = existing_takes.index(current_take) + 1
             total = len(existing_takes)
-            self.app.window.set_status(f"{current_label} - Take {position}/{total}")
+            self.app.display_controller.set_status(
+                f"{current_label} - Take {position}/{total}"
+            )
         elif not existing_takes:
             # Show label even without recordings
-            self.app.window.set_status(f"{current_label}")
+            self.app.display_controller.set_status(f"{current_label}")
         else:
-            self.app.window.set_status(f"{current_label}")
+            self.app.display_controller.set_status(f"{current_label}")
 
     def after_recording_saved(self, label: str) -> None:
         """Called after a recording has been saved to disk.

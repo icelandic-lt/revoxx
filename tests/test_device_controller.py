@@ -38,7 +38,6 @@ class TestDeviceController(unittest.TestCase):
         self.mock_app.queue_manager.set_output_device = Mock(return_value=True)
         self.mock_app.queue_manager.set_input_channel_mapping = Mock(return_value=True)
         self.mock_app.queue_manager.set_output_channel_mapping = Mock(return_value=True)
-        self.mock_app.queue_manager.update_audio_settings = Mock()
 
         # Mock shared state
         self.mock_app.shared_state = Mock()
@@ -213,25 +212,6 @@ class TestDeviceController(unittest.TestCase):
         )
         self.mock_app.window.set_status.assert_called_with(
             "Output channel mapping: [1, 0]"
-        )
-
-    @patch("revoxx.controllers.device_controller.FileConstants")
-    def test_update_audio_settings(self, mock_constants):
-        """Test updating audio settings across processes."""
-        # Setup
-        mock_constants.AUDIO_FILE_EXTENSION = ".flac"
-
-        # Execute
-        self.controller.update_audio_settings()
-
-        # Verify shared state update
-        self.mock_app.shared_state.update_audio_settings.assert_called_once_with(
-            sample_rate=48000, bit_depth=24, channels=1, format_type=1
-        )
-
-        # Verify update_audio_settings call
-        self.mock_app.queue_manager.update_audio_settings.assert_called_with(
-            sample_rate=48000, bit_depth=24, channels=1
         )
 
     @patch("revoxx.controllers.device_controller.get_device_manager")

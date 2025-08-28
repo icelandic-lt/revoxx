@@ -34,7 +34,14 @@ class UserSettings:
     theme: str = "cyan"  # Theme preset
 
     # Window settings
-    window_geometry: Optional[str] = None
+    main_geometry: Optional[str] = None  # Main window geometry
+
+    # Second window settings
+    second_window_enabled: bool = False
+    second_window_show_meters: bool = True
+    second_window_show_info_panel: bool = True
+    second_geometry: Optional[str] = None  # Second window geometry
+    second_fullscreen: bool = False  # Second window fullscreen state
 
     # Level meter settings
     level_meter_preset: str = "broadcast_ebu"

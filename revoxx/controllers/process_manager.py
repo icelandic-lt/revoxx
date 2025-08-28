@@ -1,7 +1,6 @@
 """Process manager for handling background processes and inter-process communication."""
 
 import multiprocessing as mp
-import os
 import queue
 import threading
 from typing import Optional, TYPE_CHECKING
@@ -151,7 +150,7 @@ class ProcessManager:
                 and self.app.window.ui_state.spectrogram_visible
             ):
                 # Update in main thread
-                self.app.root.after(
+                self.app.window.window.after(
                     0,
                     lambda data=audio_data: self.app.window.mel_spectrogram.update_audio(
                         data

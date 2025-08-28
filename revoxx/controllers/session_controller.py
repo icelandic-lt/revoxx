@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ..session import SessionManager, Session, SessionConfig
 from ..utils.file_manager import RecordingFileManager
 from ..utils.active_recordings import ActiveRecordings
-from ..constants import FileConstants, UIConstants
+from ..constants import UIConstants
 from ..ui.dialogs import NewSessionDialog
 
 if TYPE_CHECKING:
@@ -48,7 +48,7 @@ class SessionController:
             default_base_dir = Path.cwd()  # Fallback to current working directory
 
         dialog = NewSessionDialog(
-            self.app.root,
+            self.app.window.window,
             default_base_dir,
             self.app.config.audio.sample_rate,
             self.app.config.audio.bit_depth,
@@ -58,7 +58,6 @@ class SessionController:
 
         if result:
             try:
-                # Create new session
                 new_session = self.session_manager.create_session(
                     base_dir=result.base_dir,
                     speaker_name=result.speaker_name,
@@ -78,10 +77,7 @@ class SessionController:
                 # Load the new session
                 self.load_session(new_session)
 
-                # Update window title
                 self.app.window.update_session_title(new_session.session_dir.name)
-
-                # Update status
                 self.app.window.set_status(
                     f"Created new session: {new_session.session_dir.name}"
                 )
@@ -103,13 +99,8 @@ class SessionController:
             # Load the session
             self.load_session(session)
 
-            # Update window title
             self.app.window.update_session_title(session.session_dir.name)
-
-            # Update recent sessions menu
-            self.app.window._update_recent_sessions_menu()
-
-            # Update status
+            self.app.menu.update_recent_sessions()
             self.app.window.set_status(f"Loaded session: {session.session_dir.name}")
 
         except (OSError, json.JSONDecodeError, KeyError) as e:
@@ -140,7 +131,6 @@ class SessionController:
         """
         self.app.current_session = session
 
-        # Update paths
         self.app.script_file = session.session_dir / SessionManager.SCRIPT_FILE
         self.app.recording_dir = session.session_dir / "recordings"
 
@@ -157,28 +147,23 @@ class SessionController:
                 session.sort_column, session.sort_reverse
             )
 
-        # Update window title with session name
-        self.app.root.title(f"Revoxx - {session.name}")
-
-        # Update recent sessions menu
-        self.app.window._update_recent_sessions_menu()
+        self.app.window.window.title(f"Revoxx - {session.name}")
+        self.app.menu.update_recent_sessions()
 
         # Resume at last position (like when starting the app)
         self.app.navigation_controller.resume_at_last_recording()
 
         # Show saved recording with delay to ensure mel spectrogram is ready
-        self.app.root.after(
+        self.app.window.window.after(
             UIConstants.INITIAL_DISPLAY_DELAY_MS,
             self.app.display_controller.show_saved_recording,
         )
 
-        # Apply session audio config to runtime config
         if session.audio_config:
             self.app.config.audio.sample_rate = session.audio_config.sample_rate
             self.app.config.audio.bit_depth = session.audio_config.bit_depth
             self.app.config.audio.__post_init__()  # Update dtype and subtype
 
-            # Update settings manager with new audio settings
             self.app.settings_manager.update_setting(
                 "sample_rate", self.app.config.audio.sample_rate
             )
@@ -186,24 +171,13 @@ class SessionController:
                 "bit_depth", self.app.config.audio.bit_depth
             )
 
-            # Update shared state with new audio settings
-            format_type = 1 if FileConstants.AUDIO_FILE_EXTENSION == ".flac" else 0
-            self.app.shared_state.update_audio_settings(
-                sample_rate=self.app.config.audio.sample_rate,
-                bit_depth=self.app.config.audio.bit_depth,
-                channels=self.app.config.audio.channels,
-                format_type=format_type,
-            )
-
-            # Update info panel if it's visible
             if self.app.window.info_panel_visible:
                 self.app.display_controller.update_info_panel()
 
             # Reinitialize audio if needed
-            if hasattr(self.app, "recorder"):
+            if self.app.device_controller:
                 self.app.device_controller.update_audio_settings()
 
-            # Apply session device and channel settings
             self.app.device_controller.apply_session_audio_settings(
                 session.audio_config
             )
@@ -225,7 +199,6 @@ class SessionController:
 
         self.reload_script_and_recordings()
 
-        # Set initial index to 0 (will be overridden by resume if needed)
         self.app.state.recording.current_index = 0
 
     def reload_script_and_recordings(self) -> None:
@@ -249,14 +222,12 @@ class SessionController:
             self.app.state.recording.labels = labels
             self.app.state.recording.utterances = utterances
 
-            # Update active recordings with new data
             self.app.active_recordings.set_data(labels, utterances)
             self.app.state.recording.takes = self.app.active_recordings.get_all_takes()
 
         except (OSError, ValueError, KeyError) as e:
             # OSError for file issues, ValueError for parse errors, KeyError for missing fields
             print(f"Error loading script: {e}")
-            # Set empty state on error
             self.app.state.recording.labels = []
             self.app.state.recording.utterances = []
             self.app.state.recording.takes = {}

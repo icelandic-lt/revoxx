@@ -147,11 +147,30 @@ class AudioQueueProcessor:
         """
         if self.app.window.mel_spectrogram is None:
             return
-        # Use after() to update in main thread
-        self.app.root.after(
-            0,
-            lambda data=audio_array: self.app.window.mel_spectrogram.update_audio(data),
-        )
+
+        # Update main window
+        try:
+            self.app.window.mel_spectrogram.audio_queue.put_nowait(audio_array)
+        except queue.Full:
+            pass  # Queue full, skip this update
+        except AttributeError:
+            pass  # Widget not ready
+
+        # Update second window if active
+        if self.app.has_active_second_window:
+            # Get second window from window manager
+            second = (
+                self.app.window_manager.get_window("second")
+                if hasattr(self.app, "window_manager")
+                else None
+            )
+            if second and second.mel_spectrogram:
+                try:
+                    second.mel_spectrogram.audio_queue.put_nowait(audio_array)
+                except queue.Full:
+                    pass  # Queue full, skip this update
+                except AttributeError:
+                    pass  # Widget not ready
 
     def _update_level_meter(self, level: float) -> None:
         """Update level meter with new level.
@@ -161,4 +180,7 @@ class AudioQueueProcessor:
         """
         # Use after() to update in main thread
         # Widget must exist when keyboard bindings are active
-        self.app.root.after(0, self.app.window.embedded_level_meter.update_level, level)
+        if self.app.window and self.app.window.embedded_level_meter:
+            self.app.window.window.after(
+                0, self.app.window.embedded_level_meter.update_level, level
+            )

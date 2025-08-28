@@ -7,7 +7,6 @@ matplotlib.use("TkAgg")
 
 import argparse
 import sys
-import tkinter as tk
 from pathlib import Path
 from typing import Optional
 import traceback
@@ -19,7 +18,9 @@ from .utils.file_manager import RecordingFileManager, ScriptFileManager
 from .utils.active_recordings import ActiveRecordings
 from .utils.settings_manager import SettingsManager
 from .utils.process_cleanup import ProcessCleanupManager
-from .ui.main_window import MainWindow
+from .ui.window_manager import WindowManager
+from .ui.menus.application_menu import ApplicationMenu
+from .ui.themes import theme_manager, ThemePreset
 from .utils.device_manager import get_device_manager
 from .audio.buffer_manager import BufferManager
 from .audio.shared_state import SharedState
@@ -150,36 +151,50 @@ class Revoxx:
         # Start background processes BEFORE UI initialization (like in original)
         self.process_manager.start_processes()
 
-        # Initialize UI
-        self.root = tk.Tk()
-        self.root.withdraw()  # Hide until ready
+        # Initialize theme from settings
+        if self.settings_manager:
+            saved_theme = getattr(
+                self.settings_manager.settings, "theme", ThemePreset.CYAN.value
+            )
+            try:
+                theme_manager.set_theme(ThemePreset(saved_theme))
+            except ValueError:
+                theme_manager.set_theme(ThemePreset.CYAN)
 
-        # Set window title with session name
-        if self.current_session:
-            self.root.title(f"Revoxx - {self.current_session.name}")
-        else:
-            self.root.title("Revoxx")
+        # Refresh UI constants with theme colors
+        from .constants import UIConstants
 
-        # Prepare callbacks for MainWindow (will be populated after controllers are initialized)
+        UIConstants.refresh()
+
+        # Initialize WindowManager
+        self.window_manager = WindowManager(self)
+
+        # Prepare callbacks for windows (will be populated after controllers are initialized)
         self.app_callbacks = {}
 
-        # Create main window with proper parameters
-        self.window = MainWindow(
-            self.root,
-            self.config,
-            self.state.recording,
-            self.state.ui,
-            self.process_manager.manager_dict,
-            self.app_callbacks,  # Will be populated after controllers are initialized
-            self.settings_manager,
-            self.shared_state,
+        # Create main window using WindowManager
+        self.window = self.window_manager.create_window(
+            window_id="main", parent=None, window_type="main"
         )
+
+        # Hide window until ready
+        self.window.window.withdraw()
+
+        # Restore any saved windows (e.g., second window if it was enabled)
+        self.window_manager.restore_saved_windows()
 
         # Initialize controllers after window is created
         self._init_controllers()
 
+        # Connect WindowManager to DisplayController
+        self.display_controller.window_manager = self.window_manager
+
         # Populate app_callbacks after controllers are initialized
         self._populate_app_callbacks()
+
+        # Create application menu after controllers are initialized
+        self.menu = ApplicationMenu(self)
+        self.menu.create_menu()
 
         # Apply saved settings
         self._apply_saved_settings()
@@ -189,7 +204,7 @@ class Revoxx:
             self.session_controller.load_session(self.current_session)
 
         # Show window
-        self.root.deiconify()
+        self.window.window.deiconify()
 
         # Initial display update
         self.display_controller.update_display()
@@ -201,7 +216,7 @@ class Revoxx:
             # (same as in original implementation)
             from .constants import UIConstants
 
-            self.root.after(
+            self.window.window.after(
                 UIConstants.INITIAL_DISPLAY_DELAY_MS,
                 self.display_controller.show_saved_recording,
             )
@@ -215,7 +230,7 @@ class Revoxx:
         # Bind keyboard shortcuts AFTER everything is initialized
         # Wait for widgets to be created (mel_spectrogram and embedded_level_meter are created after 100ms)
         # Add a bit more delay to be safe
-        self.root.after(150, self._bind_keys)
+        self.window.window.after(150, self._bind_keys)
 
     def _init_controllers(self):
         """Initialize all controllers."""
@@ -246,6 +261,7 @@ class Revoxx:
         self.app_callbacks["update_info_panel"] = (
             self.display_controller.update_info_panel
         )
+        self.app_callbacks["update_second_window"] = self._update_second_window_content
 
         # Audio callbacks
         self.app_callbacks["toggle_monitoring"] = (
@@ -284,78 +300,75 @@ class Revoxx:
         self.config.display.show_spectrogram = settings.show_meters
         self.config.ui.fullscreen = settings.fullscreen
 
-        # Store window geometry for later use
-        self._saved_window_geometry = settings.window_geometry
-
     def _bind_keys(self):
         """Bind keyboard shortcuts."""
         # Recording controls
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.RECORD}>",
             lambda e: self.audio_controller.toggle_recording(),
         )
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.PLAY}>", lambda e: self.audio_controller.play_current()
         )
-        self.root.bind(
+        self.window.window.bind(
             "<Control-d>",
             lambda e: self.file_operations_controller.delete_current_recording(),
         )
-        self.root.bind(
+        self.window.window.bind(
             "<Control-D>",
             lambda e: self.file_operations_controller.delete_current_recording(),
         )
 
         # Navigation keys
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.NAVIGATE_UP}>",
             lambda e: self.navigation_controller.navigate(-1),
         )
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.NAVIGATE_DOWN}>",
             lambda e: self.navigation_controller.navigate(1),
         )
 
         # Browse takes
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.BROWSE_TAKES_LEFT}>",
             lambda e: self.navigation_controller.browse_takes(-1),
         )
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.BROWSE_TAKES_RIGHT}>",
             lambda e: self.navigation_controller.browse_takes(1),
         )
 
         # Toggle displays
         for key in KeyBindings.TOGGLE_SPECTROGRAM:
-            self.root.bind(
-                f"<{key}>", lambda e: self.display_controller.toggle_meters()
+            self.window.window.bind(
+                f"<{key}>", lambda e: self.display_controller.toggle_meters("main")
             )
 
         # Dialog keys
-        self.root.bind(
+        self.window.window.bind(
             "<Control-f>", lambda e: self.dialog_controller.show_find_dialog()
         )
-        self.root.bind(
+        self.window.window.bind(
             "<Control-F>", lambda e: self.dialog_controller.show_find_dialog()
         )
-        self.root.bind(
+        self.window.window.bind(
             "<Control-u>",
             lambda e: self.dialog_controller.show_utterance_order_dialog(),
         )
-        self.root.bind(
+        self.window.window.bind(
             "<Control-U>",
             lambda e: self.dialog_controller.show_utterance_order_dialog(),
         )
-        self.root.bind("<Control-q>", lambda e: self._quit())
-        self.root.bind("<Control-Q>", lambda e: self._quit())
+        self.window.window.bind("<Control-q>", lambda e: self._quit())
+        self.window.window.bind("<Control-Q>", lambda e: self._quit())
 
         # Additional key bindings
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.TOGGLE_MONITORING}>",
             lambda e: self.audio_controller.toggle_monitoring(),
         )
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.TOGGLE_FULLSCREEN}>", lambda e: self._toggle_fullscreen()
         )
 
@@ -366,60 +379,74 @@ class Revoxx:
             modifier = "Command"
         else:
             modifier = "Control"
-        self.root.bind(
+        self.window.window.bind(
             f"<{modifier}-{KeyBindings.DELETE_RECORDING}>",
             lambda e: self.file_operations_controller.delete_current_recording(),
         )
 
         # Help and info
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.SHOW_HELP}>", lambda e: self.dialog_controller.show_help()
         )
-        self.root.bind(
+        self.window.window.bind(
             f"<{KeyBindings.SHOW_INFO}>",
-            lambda e: self.window._toggle_info_panel_callback(),
+            lambda e: self.display_controller.toggle_info_panel(),
+        )
+
+        # Second window shortcuts (Shift + key)
+        self.window.window.bind(
+            "<Shift-M>",
+            lambda e: self._toggle_second_window_meters(),
+        )
+        self.window.window.bind(
+            "<Shift-I>",
+            lambda e: self._toggle_second_window_info_panel(),
+        )
+        self.window.window.bind(
+            "<Shift-F10>",
+            lambda e: self._toggle_second_window_fullscreen(),
         )
 
         # Session management with platform-specific modifiers
         if platform.system() == "Darwin":  # macOS uses Command
-            self.root.bind("<Command-n>", lambda e: self._new_session())
-            self.root.bind("<Command-N>", lambda e: self._new_session())
-            self.root.bind("<Command-o>", lambda e: self._open_session())
-            self.root.bind("<Command-O>", lambda e: self._open_session())
-            self.root.bind(
+            self.window.window.bind("<Command-n>", lambda e: self._new_session())
+            self.window.window.bind("<Command-N>", lambda e: self._new_session())
+            self.window.window.bind("<Command-o>", lambda e: self._open_session())
+            self.window.window.bind("<Command-O>", lambda e: self._open_session())
+            self.window.window.bind(
                 "<Command-i>", lambda e: self.dialog_controller.show_settings_dialog()
             )
-            self.root.bind(
+            self.window.window.bind(
                 "<Command-I>", lambda e: self.dialog_controller.show_settings_dialog()
             )
-            self.root.bind(
+            self.window.window.bind(
                 "<Command-f>", lambda e: self.dialog_controller.show_find_dialog()
             )
-            self.root.bind(
+            self.window.window.bind(
                 "<Command-F>", lambda e: self.dialog_controller.show_find_dialog()
             )
-            self.root.bind(
+            self.window.window.bind(
                 "<Command-u>",
                 lambda e: self.dialog_controller.show_utterance_order_dialog(),
             )
-            self.root.bind(
+            self.window.window.bind(
                 "<Command-U>",
                 lambda e: self.dialog_controller.show_utterance_order_dialog(),
             )
             # Override macOS Cmd+Q behavior
-            self.root.bind("<Command-q>", lambda e: self._handle_cmd_q())
-            self.root.bind("<Command-Q>", lambda e: self._handle_cmd_q())
+            self.window.window.bind("<Command-q>", lambda e: self._handle_cmd_q())
+            self.window.window.bind("<Command-Q>", lambda e: self._handle_cmd_q())
             # Also try to catch it with createcommand
-            self.root.createcommand("::tk::mac::Quit", self._handle_cmd_q)
+            self.window.window.createcommand("::tk::mac::Quit", self._handle_cmd_q)
 
         # Session keys
-        self.root.bind("<Control-n>", lambda e: self._new_session())
-        self.root.bind("<Control-N>", lambda e: self._new_session())
-        self.root.bind("<Control-o>", lambda e: self._open_session())
-        self.root.bind("<Control-O>", lambda e: self._open_session())
+        self.window.window.bind("<Control-n>", lambda e: self._new_session())
+        self.window.window.bind("<Control-N>", lambda e: self._new_session())
+        self.window.window.bind("<Control-o>", lambda e: self._open_session())
+        self.window.window.bind("<Control-O>", lambda e: self._open_session())
 
         # Window close event
-        self.root.protocol("WM_DELETE_WINDOW", self._quit)
+        self.window.window.protocol("WM_DELETE_WINDOW", self._quit)
 
     def _new_session(self):
         """Create a new session."""
@@ -451,15 +478,17 @@ class Revoxx:
                 self.session_controller.load_session(new_session)
 
                 # Update window title
-                self.window.update_session_title(new_session.session_dir.name)
+                self.display_controller.update_window_title()
 
                 # Update status
-                self.window.set_status(
+                self.display_controller.set_status(
                     f"Created new session: {new_session.session_dir.name}"
                 )
 
             except Exception as e:
-                self.window.set_status(f"Error creating session: {e}")
+                self.display_controller.set_status(
+                    f"Error creating session: {e}", MsgType.ERROR
+                )
 
     def _open_session(self):
         """Open an existing session."""
@@ -470,15 +499,20 @@ class Revoxx:
                 session = self.session_manager.load_session(session_path)
                 self.current_session = session
                 self.session_controller.load_session(session)
-                self.window.update_session_title(session.session_dir.name)
+                self.display_controller.update_window_title()
 
-                if hasattr(self.window, "_update_recent_sessions_menu"):
-                    self.window._update_recent_sessions_menu()
+                # Update recent sessions menu
+                if hasattr(self, "menu"):
+                    self.menu.update_recent_sessions()
 
-                self.window.set_status(f"Loaded session: {session.session_dir.name}")
+                self.display_controller.set_status(
+                    f"Loaded session: {session.session_dir.name}"
+                )
 
             except Exception as e:
-                self.window.set_status(f"Error loading session: {e}")
+                self.display_controller.set_status(
+                    f"Error loading session: {e}", MsgType.ERROR
+                )
 
     def _handle_cmd_q(self):
         """Handle Cmd+Q on macOS specifically."""
@@ -532,30 +566,24 @@ class Revoxx:
                 "last_session_path", str(self.current_session.session_dir)
             )
 
-        # Cleanup
-        self.process_manager.shutdown()
+        # Save current window positions before saving settings
+        self.window_manager.save_all_positions()
+
+        # Save settings to disk before cleanup
+        self.settings_manager.save_settings()
+
+        # Dialog cleanup
         self.dialog_controller.cleanup()
 
-        # Clean up buffer manager
-        if hasattr(self, "buffer_manager"):
-            if self.debug:
-                print("[App] Cleaning up buffer manager...")
-            # No wait needed - processes already terminated
-            self.buffer_manager.cleanup_all(wait_time=0)
-
-        # Clean up shared state
-        if hasattr(self, "shared_state"):
-            if self.debug:
-                print("[App] Cleaning up shared state...")
-            self.shared_state.close()
-            self.shared_state.unlink()
+        # Perform all non-UI cleanup through the centralized cleanup method
+        self._perform_cleanup()
 
         # Mark cleanup as done in cleanup manager
         self.cleanup_manager.cleanup_complete()
 
         # Close UI
         try:
-            self.root.destroy()
+            self.window.window.destroy()
         except (AttributeError, RuntimeError):
             pass
 
@@ -566,14 +594,49 @@ class Revoxx:
         """Toggle fullscreen mode.
         This setting is saved to the user's settings.
         """
-        current_state = self.root.attributes("-fullscreen")
-        self.root.attributes("-fullscreen", not current_state)
+        current_state = self.window.window.attributes("-fullscreen")
+        self.window.window.attributes("-fullscreen", not current_state)
 
         # Update config
         self.config.ui.fullscreen = not current_state
 
         # Update settings
         self.settings_manager.update_setting("fullscreen", not current_state)
+
+    def _toggle_second_window_fullscreen(self):
+        """Toggle fullscreen mode for the second window."""
+        self.display_controller.toggle_second_window_fullscreen()
+
+    def _update_second_window_content(self) -> None:
+        """Update second window with current content from main window."""
+        if self.has_active_second_window:
+            self.display_controller.update_display()
+            self.display_controller.update_info_panel()
+            self.display_controller.show_saved_recording()
+
+    def _toggle_second_window_meters(self) -> None:
+        """Toggle meters visibility in second window via keyboard shortcut."""
+        new_state = self.display_controller.toggle_second_window_meters()
+        if new_state is not None:
+            # Update menu checkbox
+            self.menu.menu_vars["second_window_meters"].set(new_state)
+            # Save setting
+            self.settings_manager.update_setting(
+                "second_window_show_meters",
+                new_state,
+            )
+
+    def _toggle_second_window_info_panel(self) -> None:
+        """Toggle info panel visibility in second window via keyboard shortcut."""
+        new_state = self.display_controller.toggle_second_window_info_panel()
+        if new_state is not None:
+            # Update menu checkbox
+            self.menu.menu_vars["second_window_info"].set(new_state)
+            # Save setting
+            self.settings_manager.update_setting(
+                "second_window_show_info_panel",
+                new_state,
+            )
 
     def notify_if_default_device(self, device_type: str = "output") -> None:
         """Notify user once if using default device due to missing selection.
@@ -584,33 +647,38 @@ class Revoxx:
         if device_type == "output":
             # If default output device is in effect and not yet notified, inform user once
             if self._default_output_in_effect and not self._notified_default_output:
-                try:
-                    self.window.set_status(
-                        "Using system default output device (no saved/available selection)",
-                        MsgType.TEMPORARY,
-                    )
-                except AttributeError:
-                    pass
+                self.display_controller.set_status(
+                    "Using system default output device (no saved/available selection)",
+                    MsgType.TEMPORARY,
+                )
                 self._notified_default_output = True
 
             # Additionally, warn once if last stream open failed
             if hasattr(self, "last_output_error") and self.last_output_error:
-                self.window.set_status(
-                    "Output device unavailable. Using system default if possible."
+                self.display_controller.set_status(
+                    "Output device unavailable. Using system default if possible.",
+                    MsgType.TEMPORARY,
                 )
                 self.last_output_error = False
 
         elif device_type == "input":
             # If default input device is in effect and not yet notified, inform user once
             if self._default_input_in_effect and not self._notified_default_input:
-                try:
-                    self.window.set_status(
-                        "Using system default input device (no saved/available selection)",
-                        MsgType.TEMPORARY,
-                    )
-                except AttributeError:
-                    pass
+                self.display_controller.set_status(
+                    "Using system default input device (no saved/available selection)",
+                    MsgType.TEMPORARY,
+                )
                 self._notified_default_input = True
+
+    @property
+    def has_active_second_window(self) -> bool:
+        """Check if second window exists and is active.
+
+        Returns:
+            True if second window exists and is active, False otherwise
+        """
+        second = self.window_manager.get_window("second")
+        return second and second.is_active if second else False
 
     def run(self):
         """Run the application."""
@@ -619,7 +687,7 @@ class Revoxx:
         self.cleanup_manager.refresh_sigint_handler()
 
         self.window.focus_window()
-        self.root.mainloop()
+        self.window.window.mainloop()
 
 
 def parse_arguments() -> argparse.Namespace:

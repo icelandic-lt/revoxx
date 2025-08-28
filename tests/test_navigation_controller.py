@@ -155,7 +155,9 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.browse_takes(1)
 
-        self.mock_app.window.set_status.assert_called_once_with("No more takes forward")
+        self.mock_app.display_controller.set_status.assert_called_once_with(
+            "No more takes forward"
+        )
         self.mock_app.state.recording.set_displayed_take.assert_not_called()
 
     def test_browse_takes_no_more_backward(self):
@@ -164,7 +166,7 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.browse_takes(-1)
 
-        self.mock_app.window.set_status.assert_called_once_with(
+        self.mock_app.display_controller.set_status.assert_called_once_with(
             "No more takes backward"
         )
         self.mock_app.state.recording.set_displayed_take.assert_not_called()
@@ -213,7 +215,7 @@ class TestNavigationController(unittest.TestCase):
             self.controller.resume_at_last_recording()
             mock_find.assert_called_once_with(1)
 
-        self.mock_app.window.set_status.assert_called_with(
+        self.mock_app.display_controller.set_status.assert_called_with(
             "Resumed at last recording: test_label"
         )
 
@@ -224,7 +226,7 @@ class TestNavigationController(unittest.TestCase):
         self.controller.resume_at_last_recording()
 
         # Should return early
-        self.mock_app.window.set_status.assert_not_called()
+        self.mock_app.display_controller.set_status.assert_not_called()
 
     def test_resume_at_last_recording_no_last_index(self):
         """Test resuming when no last recorded index."""
@@ -233,7 +235,7 @@ class TestNavigationController(unittest.TestCase):
         self.controller.resume_at_last_recording()
 
         # Should return early
-        self.mock_app.window.set_status.assert_not_called()
+        self.mock_app.display_controller.set_status.assert_not_called()
 
     def test_get_display_position(self):
         """Test getting display position for an index."""
@@ -250,7 +252,9 @@ class TestNavigationController(unittest.TestCase):
 
         # Verify status update
         self.mock_app.window.update_label_with_filename.assert_called_once()
-        self.mock_app.window.set_status.assert_called_once_with("test_label - Take 2/3")
+        self.mock_app.display_controller.set_status.assert_called_once_with(
+            "test_label - Take 2/3"
+        )
 
     def test_update_take_status_no_recordings(self):
         """Test updating take status when no recordings exist."""
@@ -259,7 +263,9 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.update_take_status()
 
-        self.mock_app.window.set_status.assert_called_once_with("test_label")
+        self.mock_app.display_controller.set_status.assert_called_once_with(
+            "test_label"
+        )
 
     def test_update_take_status_no_label(self):
         """Test updating take status when no current label."""
@@ -268,7 +274,7 @@ class TestNavigationController(unittest.TestCase):
         self.controller.update_take_status()
 
         # Should return early
-        self.mock_app.window.set_status.assert_not_called()
+        self.mock_app.display_controller.set_status.assert_not_called()
 
     def test_after_recording_saved(self):
         """Test after_recording_saved updates state correctly."""

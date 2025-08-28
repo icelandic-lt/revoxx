@@ -228,13 +228,6 @@ class DeviceController:
         except AttributeError:
             pass
 
-        # Send updated settings to processes
-        self.app.queue_manager.update_audio_settings(
-            sample_rate=self.app.config.audio.sample_rate,
-            bit_depth=self.app.config.audio.bit_depth,
-            channels=self.app.config.audio.channels,
-        )
-
     @staticmethod
     def get_available_input_devices() -> List[Dict[str, Any]]:
         """Get list of available input devices.

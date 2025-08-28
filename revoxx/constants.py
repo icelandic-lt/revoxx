@@ -201,6 +201,7 @@ class UIConstants:
     MIN_FONT_SIZE_LARGE = 40
     MIN_FONT_SIZE_MEDIUM = 28
     MIN_FONT_SIZE_SMALL = 14
+    FONT_SIZE_LARGE = 100
 
     # Font families (fallback to system fonts)
     FONT_FAMILY_MONO = ("SF Mono", "Monaco", "Consolas", "Courier New")

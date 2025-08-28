@@ -289,33 +289,3 @@ class AudioQueueManager:
             return True
         except queue.Full:
             return False
-
-    # ========== Settings Update Methods ==========
-
-    def update_audio_settings(
-        self, sample_rate: int, bit_depth: int, channels: int
-    ) -> None:
-        """Update audio settings for both recording and playback processes.
-
-        Args:
-            sample_rate: Sample rate in Hz
-            bit_depth: Bit depth (16, 24, or 32)
-            channels: Number of channels (typically 1 for mono)
-        """
-        settings_update = {
-            "action": "update_settings",
-            "sample_rate": sample_rate,
-            "bit_depth": bit_depth,
-            "channels": channels,
-        }
-
-        # Send to both processes
-        try:
-            self._record_queue.put(settings_update, block=False)
-        except queue.Full:
-            pass
-
-        try:
-            self._playback_queue.put(settings_update, block=False)
-        except queue.Full:
-            pass
