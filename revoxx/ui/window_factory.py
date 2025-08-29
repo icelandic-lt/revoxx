@@ -5,9 +5,11 @@ using configuration templates.
 """
 
 from typing import Dict, Optional, Any
+from pathlib import Path
 import tkinter as tk
 
 from .window_base import WindowBase
+from .icon import AppIcon
 from ..utils.config import RecorderConfig
 from ..utils.state import UIState, RecordingState
 from ..utils.settings_manager import SettingsManager
@@ -248,9 +250,17 @@ class WindowFactory:
         Args:
             window: Window to set icon for
         """
-        # Icon setting would go here
-        # Currently a placeholder for icon implementation
-        pass
+        # Try to find the icon file
+        icon_path = Path(__file__).parent.parent / "resources" / "microphone.png"
+
+        if icon_path.exists():
+            icon = AppIcon.create_icon(icon_path)
+            if icon:
+                try:
+                    window.window.iconphoto(True, icon)
+                except tk.TclError:
+                    # Some platforms don't support iconphoto
+                    pass
 
     @classmethod
     def _handle_main_close(cls, window: WindowBase) -> None:
