@@ -33,29 +33,42 @@ This repository provides **Revoxx**, a graphical recording application for recor
 **Revoxx** is a graphical speech recorder specialized in recording TTS datasets quickly and reliably.<br>
 You can use this project to create emotional / non-emotional voice recordings on a Workstation / Laptop with suitable audio equipment.
 It has integrated support to easily transform raw recordings into datasets for training TTS voice models.<br>
+This tool is especially useful for recording many short utterances - up to an utterance duration of approx. 30-45 secs each.
+For longer texts, you need to split your input texts in appropriately sized chunks that would fit on the speaker screen.
+<br>
 **Revoxx** has been inspired by [Icelandic EmoSpeech scripts](https://github.com/icelandic-lt/emospeech-scripts), but has been vastly improved and is rewritten from scratch.<br>
 
 **Screenshot:**
 
-<img src="doc/screenshot1.png" alt="screenshot1" width="50%"/>
+<img src="doc/screenshot1.png" alt="screenshot1" width="100%"/>
 
 We have condensed our experience from when we recorded [Talrómur 3](https://repository.clarin.is/repository/xmlui/handle/20.500.12537/344),
 the Icelandic emotional speech dataset, and created this tool to minimize hassle, valuable recording & post-processing time.
 
-- **Revoxx** makes recording of speech fast, reliable and convenient for the recording engineer and the voice talent
-- Integrates all necessary tools to check if recordings & equipment meet your expected requirements
-- **Real-time monitoring** including recording levels, mel spectrograms, maximum frequency detection, and more
-- Customizable **industry-standard presets for Peak/RMS levels** alongside a dedicated **Monitoring mode**
-  for precise input calibration
-- Automatically **analyzes and validates audio equipment** compatibility, including Sample Rate, Bit Depth, and I/O
-  channel configurations
-- Recordings are organized into **Recording Sessions**, with consistent audio settings & metadata for all recordings
-- Offers advanced search and navigation capabilities for utterances, with flexible sorting by label, emotion, text
-  content, and recorded takes
-- Enables seamless transitions between recording sessions with automatic progress tracking
-- Supports unlimited re-recording while maintaining a complete **archive of raw recordings**, even for deleted content
-- Facilitates **batch export of multiple sessions** into standardized T3 (Talrómur3) dataset format
-- **Intuitive keyboard shortcuts** for accessing core functionalities
+- **Revoxx** makes recording of speech **fast, reliable and convenient for the recording engineer and the voice talent**
+  - Integrates all necessary tools to check if recordings & equipment meet your expected requirements
+  - Automatically analyzes and validates audio equipment compatibility, including Sample Rate, Bit Depth, and I/O
+    channel configurations
+  - Supports unlimited re-recording while maintaining a complete **archive of raw recordings**, even for deleted content
+  - Text size is automatically adjusted according to available screen real-estate
+  - **Intuitive keyboard shortcuts** for accessing core functionalities
+- Recordings are organized into **Recording Sessions**
+  - Record emotional sessions for each speaker or record more traditional LJSpeech-style sessions
+  - Seamless transitions between different recording sessions with automatic progress tracking: continue where you left-off
+  - Offers advanced search and navigation capabilities for utterances, with flexible sorting by label, emotion, text
+    content, and recorded takes
+  - Consistent audio settings & metadata for all recordings
+- **Real-time monitoring** including toggable recording levels, mel spectrograms, maximum frequency detection, and more
+  - Customizable **industry-standard presets for Peak/RMS levels**
+  - Dedicated **Monitoring mode** for precise input calibration
+- **Multi-Screen Support**
+  - You can use multiple monitors to **separate recording view from speaker view**
+  - We support Apple's "Continuity" feature for a **convenient dual screen setup with an external iPad**
+  - Each screen appearance can be individually configured
+  - All screen layouts, placement & configuration is preserved at exit
+- Export Dataset
+  - Facilitates **batch export of multiple sessions** into T3 (Talrómur3) dataset format
+  - Groups different recording sessions of the same speaker into a common dataset
 
 ## Installation
 

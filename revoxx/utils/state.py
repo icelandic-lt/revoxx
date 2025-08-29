@@ -139,9 +139,6 @@ class UIState:
     screen_width: int = 0
     screen_height: int = 0
 
-    # Meters visibility
-    meters_visible: bool = True
-
     # Font sizes (calculated dynamically)
     font_size_large: int = 60
     font_size_medium: int = 42

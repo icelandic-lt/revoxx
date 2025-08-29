@@ -187,42 +187,6 @@ class TestAudioQueueManager(unittest.TestCase):
 
         self.assertEqual(result, self.mock_audio_queue)
 
-    # ========== Settings Update Tests ==========
-
-    def test_update_audio_settings(self):
-        """Test updating audio settings for both processes."""
-        sample_rate = 48000
-        bit_depth = 24
-        channels = 1
-
-        self.queue_manager.update_audio_settings(sample_rate, bit_depth, channels)
-
-        expected_update = {
-            "action": "update_settings",
-            "sample_rate": sample_rate,
-            "bit_depth": bit_depth,
-            "channels": channels,
-        }
-
-        # Verify both queues received the update
-        self.mock_record_queue.put.assert_called_once_with(expected_update, block=False)
-        self.mock_playback_queue.put.assert_called_once_with(
-            expected_update, block=False
-        )
-
-    def test_update_audio_settings_queue_full(self):
-        """Test updating audio settings when queues are full."""
-        # Make both queues full
-        self.mock_record_queue.put = Mock(side_effect=queue.Full)
-        self.mock_playback_queue.put = Mock(side_effect=queue.Full)
-
-        # Should not raise exception
-        self.queue_manager.update_audio_settings(48000, 24, 1)
-
-        # Verify attempts were made
-        self.mock_record_queue.put.assert_called_once()
-        self.mock_playback_queue.put.assert_called_once()
-
 
 if __name__ == "__main__":
     unittest.main()

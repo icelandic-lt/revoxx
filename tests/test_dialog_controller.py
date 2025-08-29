@@ -16,8 +16,9 @@ class TestDialogController(unittest.TestCase):
         # Create mock app with all required attributes
         self.mock_app = Mock()
 
-        # Mock root window
-        self.mock_app.root = Mock()
+        # Mock window (WindowBase architecture)
+        self.mock_app.window = Mock()
+        self.mock_app.window.window = Mock()  # WindowBase uses window.window now
 
         # Mock config
         self.mock_app.config = Mock()
@@ -73,7 +74,7 @@ class TestDialogController(unittest.TestCase):
 
         self.assertEqual(result, Path("/test/selected/session"))
         mock_dialog_class.assert_called_once_with(
-            self.mock_app.root,
+            self.mock_app.window.window,
             Path("/test/sessions"),
         )
         mock_dialog.show.assert_called_once()
@@ -98,7 +99,7 @@ class TestDialogController(unittest.TestCase):
 
         self.assertEqual(result, Path("/test/export/dir"))
         mock_askdir.assert_called_once_with(
-            title="Select Export Directory", parent=self.mock_app.root
+            title="Select Export Directory", parent=self.mock_app.window.window
         )
 
     @patch("revoxx.controllers.dialog_controller.filedialog.askdirectory")
@@ -122,7 +123,7 @@ class TestDialogController(unittest.TestCase):
             title="Export Recording",
             defaultextension=".wav",
             filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
-            parent=self.mock_app.root,
+            parent=self.mock_app.window.window,
         )
 
     @patch("revoxx.controllers.dialog_controller.filedialog.asksaveasfilename")
@@ -143,7 +144,7 @@ class TestDialogController(unittest.TestCase):
         self.controller.show_find_dialog()
 
         mock_find_dialog_class.assert_called_once_with(
-            self.mock_app.root,
+            self.mock_app.window.window,
             self.mock_app.state.recording.utterances,
             self.mock_app.state.recording.labels,
             self.mock_app.file_manager,
@@ -196,7 +197,7 @@ class TestDialogController(unittest.TestCase):
         self.controller.show_utterance_order_dialog()
 
         mock_order_dialog_class.assert_called_once_with(
-            self.mock_app.root,
+            self.mock_app.window.window,
             self.mock_app.state.recording.utterances,
             self.mock_app.state.recording.labels,
             self.mock_app.file_manager,
@@ -222,7 +223,7 @@ class TestDialogController(unittest.TestCase):
         self.controller.show_device_selection_dialog("input")
 
         mock_showerror.assert_called_once_with(
-            "Error", "No input devices found", parent=self.mock_app.root
+            "Error", "No input devices found", parent=self.mock_app.window.window
         )
 
     @patch("revoxx.controllers.dialog_controller.messagebox.askyesno")
@@ -237,7 +238,7 @@ class TestDialogController(unittest.TestCase):
         mock_askyesno.assert_called_once_with(
             "Recording in Progress",
             "Recording is in progress. Do you want to stop and quit?",
-            parent=self.mock_app.root,
+            parent=self.mock_app.window.window,
         )
 
     def test_confirm_quit_not_recording(self):
@@ -254,7 +255,7 @@ class TestDialogController(unittest.TestCase):
         self.controller.show_error("Test Error", "Error message")
 
         mock_showerror.assert_called_once_with(
-            "Test Error", "Error message", parent=self.mock_app.root
+            "Test Error", "Error message", parent=self.mock_app.window.window
         )
 
     @patch("revoxx.controllers.dialog_controller.messagebox.showinfo")
@@ -263,7 +264,7 @@ class TestDialogController(unittest.TestCase):
         self.controller.show_info("Test Info", "Info message")
 
         mock_showinfo.assert_called_once_with(
-            "Test Info", "Info message", parent=self.mock_app.root
+            "Test Info", "Info message", parent=self.mock_app.window.window
         )
 
     @patch("revoxx.controllers.dialog_controller.messagebox.showwarning")
@@ -272,7 +273,7 @@ class TestDialogController(unittest.TestCase):
         self.controller.show_warning("Test Warning", "Warning message")
 
         mock_showwarning.assert_called_once_with(
-            "Test Warning", "Warning message", parent=self.mock_app.root
+            "Test Warning", "Warning message", parent=self.mock_app.window.window
         )
 
     def test_cleanup_with_dialogs(self):

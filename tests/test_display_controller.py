@@ -78,7 +78,14 @@ class TestDisplayController(unittest.TestCase):
         self.mock_app.current_session = Mock()
         self.mock_app.current_session.name = "Test Session"
 
-        self.controller = DisplayController(self.mock_app)
+        # Mock window manager
+        mock_window_manager = Mock()
+        mock_window_manager.get_active_windows.return_value = [self.mock_app.window]
+        mock_window_manager.get_window.return_value = None
+        mock_window_manager.broadcast.return_value = []
+        mock_window_manager.execute_on_windows.return_value = []
+
+        self.controller = DisplayController(self.mock_app, mock_window_manager)
 
     def test_update_display_with_utterances(self):
         """Test updating display with utterances available."""
@@ -203,35 +210,33 @@ class TestDisplayController(unittest.TestCase):
 
     def test_toggle_meters_show(self):
         """Test toggling meters to show."""
-        self.mock_app.state.ui.meters_visible = False
+        # Setup window with meters_visible = False
+        self.mock_app.window.meters_visible = False
         self.mock_app.window.set_meters_visibility = Mock()
         self.mock_app.audio_controller = Mock()
         self.mock_app.root = Mock()
 
         self.controller.toggle_meters()
 
-        self.assertTrue(self.mock_app.state.ui.meters_visible)
+        # Check window's meters_visible was toggled
         self.mock_app.window.set_meters_visibility.assert_called_once_with(True)
         self.mock_app.audio_controller.update_audio_queue_state.assert_called_once()
-        self.mock_app.settings_manager.update_setting.assert_called_once_with(
-            "show_meters", True
-        )
+        # No longer updating global state, only window state
 
     def test_toggle_meters_hide(self):
         """Test toggling meters to hide."""
-        self.mock_app.state.ui.meters_visible = True
+        # Setup window with meters_visible = True
+        self.mock_app.window.meters_visible = True
         self.mock_app.window.set_meters_visibility = Mock()
         self.mock_app.audio_controller = Mock()
         self.mock_app.root = Mock()
 
         self.controller.toggle_meters()
 
-        self.assertFalse(self.mock_app.state.ui.meters_visible)
+        # Check window's meters_visible was toggled
         self.mock_app.window.set_meters_visibility.assert_called_once_with(False)
         self.mock_app.audio_controller.update_audio_queue_state.assert_called_once()
-        self.mock_app.settings_manager.update_setting.assert_called_once_with(
-            "show_meters", False
-        )
+        # No longer updating global state, only window state
 
     def test_toggle_info_panel_show(self):
         """Test toggling info panel (method removed from DisplayController)."""
@@ -322,29 +327,38 @@ class TestDisplayController(unittest.TestCase):
 
     def test_set_status(self):
         """Test setting the status."""
+        from revoxx.constants import MsgType
+
         self.controller.set_status("Ready")
 
-        self.mock_app.window.set_status.assert_called_once_with("Ready")
+        self.mock_app.window.set_status.assert_called_once_with(
+            "Ready", MsgType.TEMPORARY
+        )
 
     def test_update_window_title_custom(self):
         """Test updating window title with custom text."""
+        self.mock_app.window.window = Mock()
         self.controller.update_window_title("Custom Title")
 
-        self.mock_app.root.title.assert_called_once_with("Custom Title")
+        self.mock_app.window.window.title.assert_called_once_with("Custom Title")
 
     def test_update_window_title_default_with_session(self):
         """Test updating window title to default with session."""
+        self.mock_app.window.window = Mock()
         self.controller.update_window_title()
 
-        self.mock_app.root.title.assert_called_once_with("Revoxx - Test Session")
+        self.mock_app.window.window.title.assert_called_once_with(
+            "Revoxx - Test Session"
+        )
 
     def test_update_window_title_default_no_session(self):
         """Test updating window title to default without session."""
+        self.mock_app.window.window = Mock()
         self.mock_app.current_session = None
 
         self.controller.update_window_title()
 
-        self.mock_app.root.title.assert_called_once_with("Revoxx")
+        self.mock_app.window.window.title.assert_called_once_with("Revoxx")
 
 
 if __name__ == "__main__":

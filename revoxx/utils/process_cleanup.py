@@ -1,7 +1,6 @@
 """Process cleanup utilities for handling signals and process termination."""
 
 import atexit
-import os
 import signal
 import sys
 from typing import Callable, Dict

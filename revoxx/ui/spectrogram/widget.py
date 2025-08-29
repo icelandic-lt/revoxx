@@ -365,6 +365,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         """Update display from audio queue."""
         # Process all pending audio chunks
         chunks_processed = 0
+
         while (
             not self.audio_queue.empty()
             and chunks_processed < self.MAX_CHUNKS_PER_UPDATE
@@ -382,7 +383,6 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
                     # Update time tracking
                     self.current_time = self.recording_handler.current_time
                     self.max_detected_freq = self.recording_handler.max_detected_freq
-
                     self._update_clipping_markers_live()
 
                 chunks_processed += 1

@@ -23,6 +23,9 @@ class TestAudioController(unittest.TestCase):
         self.mock_app.state.is_ready_to_play = Mock(return_value=True)
 
         self.mock_app.window = Mock()
+        self.mock_app.window.window = Mock()
+        self.mock_app.window.window.after = Mock()
+        self.mock_app.window.window.update_idletasks = Mock()
         self.mock_app.window.mel_spectrogram = Mock()
         self.mock_app.window.info_overlay = Mock()
         self.mock_app.window.info_overlay.visible = False
@@ -83,6 +86,23 @@ class TestAudioController(unittest.TestCase):
         self.mock_app.display_controller.show_saved_recording = Mock()
         self.mock_app.display_controller.update_info_overlay = Mock()
         self.mock_app.display_controller.toggle_mel_spectrogram = Mock()
+        self.mock_app.display_controller.clear_spectrograms = Mock()
+        self.mock_app.display_controller.start_spectrogram_recording = Mock()
+        self.mock_app.display_controller.stop_spectrogram_recording = Mock()
+        self.mock_app.display_controller.set_status = Mock()
+        self.mock_app.display_controller.set_monitoring_var = Mock()
+        self.mock_app.display_controller.update_info_panels_with_params = Mock()
+        self.mock_app.display_controller.reset_level_meters = Mock()
+        self.mock_app.display_controller.stop_spectrogram_playback = Mock()
+        self.mock_app.display_controller.show_saved_recording = Mock()
+        self.mock_app.display_controller.toggle_meters = Mock()
+        # Mock when_spectrograms_ready to immediately call the callback
+        self.mock_app.display_controller.when_spectrograms_ready = Mock(
+            side_effect=lambda callback: callback()
+        )
+
+        # Add notify_if_default_device mock
+        self.mock_app.notify_if_default_device = Mock()
 
         self.controller = AudioController(self.mock_app)
 
@@ -115,22 +135,20 @@ class TestAudioController(unittest.TestCase):
             mock_capture.assert_called_once_with("recording")
 
     @patch("revoxx.controllers.audio_controller.sd")
-    @patch("revoxx.controllers.audio_controller.time.sleep")
-    def test_play_current_with_no_recordings(self, mock_sleep, mock_sd):
+    def test_play_current_with_no_recordings(self, mock_sd):
         """Test play_current when no recordings are available."""
         self.mock_app.state.is_ready_to_play = Mock(return_value=False)
 
         self.controller.play_current()
 
-        self.mock_app.window.set_status.assert_called_once_with(
+        self.mock_app.display_controller.set_status.assert_called_once_with(
             "No recording available", MsgType.TEMPORARY
         )
         mock_sd.stop.assert_not_called()
 
     @patch("revoxx.controllers.audio_controller.sd")
-    @patch("revoxx.controllers.audio_controller.time.sleep")
     @patch("revoxx.controllers.audio_controller.get_device_manager")
-    def test_play_current_with_recording(self, mock_get_dm, mock_sleep, mock_sd):
+    def test_play_current_with_recording(self, mock_get_dm, mock_sd):
         """Test play_current when a recording is available."""
         import numpy as np
 
@@ -157,7 +175,7 @@ class TestAudioController(unittest.TestCase):
         # Verify
         mock_sd.stop.assert_called_once()
         self.mock_app.queue_manager.stop_playback.assert_called_once()
-        self.mock_app.window.mel_spectrogram.stop_playback.assert_called_once()
+        self.mock_app.display_controller.stop_spectrogram_playback.assert_called_once()
         self.mock_app.shared_state.reset_level_meter.assert_called()
         self.mock_app.file_manager.load_audio.assert_called_once_with(mock_path)
         mock_buffer.close.assert_called_once()
@@ -197,8 +215,12 @@ class TestAudioController(unittest.TestCase):
         mock_dm = Mock()
         mock_get_dm.return_value = mock_dm
 
-        # Execute
-        self.controller._start_audio_capture("recording")
+        # Mock _refresh_device_manager to return None
+        with patch.object(
+            self.controller, "_refresh_device_manager", return_value=None
+        ):
+            # Execute
+            self.controller._start_audio_capture("recording")
 
         # Verify
         self.assertTrue(self.mock_app.state.recording.is_recording)
@@ -209,11 +231,14 @@ class TestAudioController(unittest.TestCase):
             "test_label", 1
         )
         self.mock_app.process_manager.set_save_path.assert_called_once()
+        # Check that recording was started
         self.mock_app.queue_manager.start_recording.assert_called_once()
-        self.mock_app.window.mel_spectrogram.clear.assert_called_once()
-        self.mock_app.window.mel_spectrogram.start_recording.assert_called_once_with(
+        # Check spectrogram was started (which internally clears first)
+        self.mock_app.display_controller.start_spectrogram_recording.assert_called_once_with(
             48000
         )
+        # Check display was updated
+        self.mock_app.display_controller.update_display.assert_called_once()
 
     @patch("revoxx.controllers.audio_controller.get_device_manager")
     def test_start_audio_capture_monitoring_mode(self, mock_get_dm):
@@ -222,17 +247,25 @@ class TestAudioController(unittest.TestCase):
         mock_dm = Mock()
         mock_get_dm.return_value = mock_dm
         self.mock_app.state.ui = Mock()
-        self.mock_app.state.ui.meters_visible = True
+        self.mock_app.state.ui.meters_visible = False  # Start with meters not visible
 
-        # Execute
-        self.controller._start_audio_capture("monitoring")
+        # Mock _refresh_device_manager to return None (no device manager)
+        with patch.object(
+            self.controller, "_refresh_device_manager", return_value=None
+        ):
+            # Execute
+            self.controller._start_audio_capture("monitoring")
 
         # Verify
         self.assertTrue(self.controller.is_monitoring)
-        self.assertEqual(self.controller.saved_meters_state, True)
+        self.assertEqual(
+            self.controller.saved_meters_state, self.mock_app.window.meters_visible
+        )  # Saved the window's meters_visible state
         self.assertFalse(self.mock_app.state.recording.is_recording)
+        # Check that recording was started
         self.mock_app.queue_manager.start_recording.assert_called_once()
-        self.mock_app.window.set_status.assert_called_with(
+        # Check status was set
+        self.mock_app.display_controller.set_status.assert_called_with(
             "Monitoring input levels...", MsgType.ACTIVE
         )
 
@@ -251,7 +284,7 @@ class TestAudioController(unittest.TestCase):
         # Verify
         self.assertFalse(self.mock_app.state.recording.is_recording)
         self.mock_app.queue_manager.stop_recording.assert_called_once()
-        self.mock_app.window.mel_spectrogram.stop_recording.assert_called_once()
+        self.mock_app.display_controller.stop_spectrogram_recording.assert_called_once()
         self.mock_app.display_controller.update_display.assert_called_once()
 
     def test_stop_audio_capture_monitoring_mode(self):
@@ -268,8 +301,10 @@ class TestAudioController(unittest.TestCase):
         # Verify
         self.assertFalse(self.controller.is_monitoring)
         self.mock_app.queue_manager.stop_recording.assert_called_once()
-        self.mock_app.window.mel_spectrogram.stop_recording.assert_called_once()
-        self.mock_app.window.set_status.assert_called_with("", MsgType.DEFAULT)
+        self.mock_app.display_controller.stop_spectrogram_recording.assert_called_once()
+        self.mock_app.display_controller.set_status.assert_called_with(
+            "", MsgType.DEFAULT
+        )
         self.mock_app.display_controller.show_saved_recording.assert_called_once()
 
     def test_stop_audio_capture_invalid_mode(self):
@@ -284,7 +319,7 @@ class TestAudioController(unittest.TestCase):
         self.controller.stop_synchronized_playback()
 
         self.mock_app.queue_manager.stop_playback.assert_called_once()
-        self.mock_app.window.embedded_level_meter.reset.assert_called_once()
+        self.mock_app.display_controller.reset_level_meters.assert_called_once()
 
 
 if __name__ == "__main__":

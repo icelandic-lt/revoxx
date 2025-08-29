@@ -48,7 +48,7 @@ class DialogController:
             Selected directory path or None if cancelled
         """
         initial_dir = self.app.session_manager.get_default_base_dir()
-        dialog = OpenSessionDialog(self.app.root, initial_dir)
+        dialog = OpenSessionDialog(self.app.window.window, initial_dir)
         return dialog.show()
 
     def show_new_session_dialog(self):
@@ -68,7 +68,7 @@ class DialogController:
             default_base_dir = Path.cwd()  # Fallback to current working directory
 
         dialog = NewSessionDialog(
-            self.app.root,
+            self.app.window.window,
             default_base_dir,
             self.app.config.audio.sample_rate,
             self.app.config.audio.bit_depth,
@@ -83,7 +83,7 @@ class DialogController:
             Selected directory path or None if cancelled
         """
         export_dir = filedialog.askdirectory(
-            title="Select Export Directory", parent=self.app.root
+            title="Select Export Directory", parent=self.app.window.window
         )
 
         if export_dir:
@@ -100,7 +100,7 @@ class DialogController:
             title="Export Recording",
             defaultextension=".wav",
             filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
-            parent=self.app.root,
+            parent=self.app.window.window,
         )
 
         if export_file:
@@ -122,7 +122,7 @@ class DialogController:
             messagebox.showerror(
                 "No Session",
                 "Please load or create a session first.",
-                parent=self.app.root,
+                parent=self.app.window.window,
             )
             return
 
@@ -137,7 +137,7 @@ class DialogController:
         )
 
         self.find_dialog = FindDialog(
-            self.app.root,
+            self.app.window.window,
             self.app.state.recording.utterances,
             self.app.state.recording.labels,
             self.app.file_manager,
@@ -167,7 +167,7 @@ class DialogController:
             messagebox.showerror(
                 "No Session",
                 "Please load or create a session first.",
-                parent=self.app.root,
+                parent=self.app.window.window,
             )
             return
 
@@ -183,7 +183,7 @@ class DialogController:
 
         # Create and show dialog
         dialog = UtteranceOrderDialog(
-            self.app.root,
+            self.app.window.window,
             self.app.state.recording.utterances,
             self.app.state.recording.labels,
             self.app.file_manager,
@@ -231,10 +231,10 @@ class DialogController:
             return
 
         # Create settings dialog
-        self.settings_dialog = tk.Toplevel(self.app.root)
+        self.settings_dialog = tk.Toplevel(self.app.window.window)
         self.settings_dialog.title("Settings")
         self.settings_dialog.geometry("500x400")
-        self.settings_dialog.transient(self.app.root)
+        self.settings_dialog.transient(self.app.window.window)
 
         # TODO: Implement full settings UI
         # For now, just show audio settings
@@ -345,14 +345,16 @@ class DialogController:
 
         if not devices:
             messagebox.showerror(
-                "Error", f"No {device_type} devices found", parent=self.app.root
+                "Error",
+                f"No {device_type} devices found",
+                parent=self.app.window.window,
             )
             return
 
         # Create device selection dialog
-        self.device_dialog = tk.Toplevel(self.app.root)
+        self.device_dialog = tk.Toplevel(self.app.window.window)
         self.device_dialog.title(title)
-        self.device_dialog.transient(self.app.root)
+        self.device_dialog.transient(self.app.window.window)
         self.device_dialog.grab_set()
 
         # Device list
@@ -414,7 +416,7 @@ class DialogController:
             result = messagebox.askyesno(
                 "Recording in Progress",
                 "Recording is in progress. Do you want to stop and quit?",
-                parent=self.app.root,
+                parent=self.app.window.window,
             )
             return result
 
@@ -428,7 +430,7 @@ class DialogController:
             title: Dialog title
             message: Error message
         """
-        messagebox.showerror(title, message, parent=self.app.root)
+        messagebox.showerror(title, message, parent=self.app.window.window)
 
     def show_info(self, title: str, message: str) -> None:
         """Show information dialog.
@@ -437,7 +439,7 @@ class DialogController:
             title: Dialog title
             message: Information message
         """
-        messagebox.showinfo(title, message, parent=self.app.root)
+        messagebox.showinfo(title, message, parent=self.app.window.window)
 
     def show_warning(self, title: str, message: str) -> None:
         """Show warning dialog.
@@ -446,7 +448,7 @@ class DialogController:
             title: Dialog title
             message: Warning message
         """
-        messagebox.showwarning(title, message, parent=self.app.root)
+        messagebox.showwarning(title, message, parent=self.app.window.window)
 
     def cleanup(self) -> None:
         """Clean up open dialogs."""
@@ -469,5 +471,5 @@ class DialogController:
 
     def show_help(self) -> None:
         """Show help dialog with keyboard shortcuts."""
-        dialog = HelpDialog(self.app.root)
+        dialog = HelpDialog(self.app.window.window)
         dialog.show()

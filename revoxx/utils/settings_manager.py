@@ -33,8 +33,13 @@ class UserSettings:
     fullscreen: bool = False
     theme: str = "cyan"  # Theme preset
 
-    # Window settings
-    window_geometry: Optional[str] = None
+    # Window settings - N-screen support
+    windows: Dict[str, Dict[str, Any]] = None
+
+    def __post_init__(self):
+        """Initialize mutable defaults."""
+        if self.windows is None:
+            self.windows = {}
 
     # Level meter settings
     level_meter_preset: str = "broadcast_ebu"
@@ -111,8 +116,7 @@ class SettingsManager:
         if hasattr(self.settings, key):
             setattr(self.settings, key, value)
             self.save_settings()
-        else:
-            print(f"Warning: Unknown setting '{key}'")
+        # Silently ignore unknown settings (already filtered in from_dict)
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         """Get a setting value.
@@ -125,3 +129,21 @@ class SettingsManager:
             Setting value or default
         """
         return getattr(self.settings, key, default)
+
+    def save_window_settings(
+        self, window_id: str, window_settings: Dict[str, Any]
+    ) -> None:
+        """Save settings for a specific window.
+
+        Args:
+            window_id: Window identifier (e.g., 'main', 'monitor1')
+            window_settings: Dictionary of window settings to save
+        """
+        if self.settings.windows is None:
+            self.settings.windows = {}
+
+        if window_id not in self.settings.windows:
+            self.settings.windows[window_id] = {}
+
+        self.settings.windows[window_id].update(window_settings)
+        self.save_settings()
