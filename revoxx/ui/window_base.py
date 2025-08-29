@@ -11,6 +11,7 @@ import tkinter as tk
 from ..constants import UIConstants, MsgType, MsgConfig
 from .font_manager import FontManager
 from .emotion_indicator import EmotionLevelIndicator
+from .widget_initializer import WidgetInitializer
 from ..utils.text_utils import extract_emotion_level, get_max_emotion_level
 from .level_meter.led_level_meter import LEDLevelMeter
 from .level_meter.config import RECORDING_STANDARDS, RecordingStandard
@@ -218,27 +219,26 @@ class WindowBase:
             height=height,
             highlightthickness=0,
         )
-        self.spec_container.grid(
-            row=2, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
-        )
-        self.spec_container.grid_propagate(False)  # Critical: prevent size changes
-
         # Configure grid layout for spec_container children
         self.spec_container.grid_columnconfigure(0, weight=1)  # spec_frame expands
         self.spec_container.grid_columnconfigure(1, weight=0)  # level_meter fixed width
         self.spec_container.grid_rowconfigure(0, weight=1)
+        self.spec_container.grid_propagate(False)  # Critical: prevent size changes
 
-        # Always create spectrogram widget, but hide if not enabled
+        # Always create child widgets
         self._create_spectrogram_widget()
-
         self._create_embedded_level_meter()
 
-        if not getattr(self.settings_manager.settings, "show_meters", True):
-            self.spec_frame.grid_forget()
-            self.meters_visible = False
-        else:
-            # Make meters visible
-            self.meters_visible = True
+        # Check if meters should be visible from settings
+        self.meters_visible = getattr(
+            self.settings_manager.settings, "show_meters", True
+        )
+
+        # Only grid the container if meters should be visible
+        if self.meters_visible:
+            self.spec_container.grid(
+                row=2, column=0, sticky="ew", pady=(UIConstants.FRAME_SPACING, 0)
+            )
 
     def _create_spectrogram_widget(self) -> None:
         """Create the mel spectrogram widget.
@@ -259,38 +259,37 @@ class WindowBase:
             pady=UIConstants.FRAME_SPACING,
         )
 
-        # Defer creation of mel_spectrogram widget until window is ready
+        # Create mel_spectrogram widget when window has real dimensions
         # This avoids the negative figure size error
         self.mel_spectrogram = None
-        self.window.after(100, self._create_mel_spectrogram_widget_deferred)
+        self._setup_mel_spectrogram_creation()
 
-        self.meters_visible = True
+    def _setup_mel_spectrogram_creation(self) -> None:
+        """Setup event-based mel spectrogram creation."""
 
-    def _create_mel_spectrogram_widget_deferred(self) -> None:
-        """Create the mel spectrogram widget after window is properly sized."""
-        if not hasattr(self, "spec_frame"):
+        def create_and_notify():
+            if self.mel_spectrogram is None:
+                self._create_mel_spectrogram_widget()
+                self.window.event_generate("<<SpectrogramReady>>")
+                if self.embedded_level_meter:
+                    self.window.event_generate("<<AllMetersReady>>")
+
+        WidgetInitializer.when_ready(
+            self.spec_frame, create_and_notify, min_width=10, min_height=10
+        )
+
+    def _create_mel_spectrogram_widget(self) -> None:
+        """Create the mel spectrogram widget."""
+        if not hasattr(self, "spec_frame") or self.mel_spectrogram is not None:
             return
 
-        self.window.update_idletasks()
-
-        # Only create if not already created
-        if self.mel_spectrogram is None:
-            # Check if frame is visible and has size
-            if (
-                self.spec_frame.winfo_width() > 10
-                and self.spec_frame.winfo_height() > 10
-            ):
-                self.mel_spectrogram = MelSpectrogramWidget(
-                    self.spec_frame,
-                    self.config.audio,
-                    self.config.display,
-                    self.manager_dict,
-                    self.shared_audio_state,
-                )
-            else:
-                # Frame not visible yet - retry later when it becomes visible
-                # This happens when meters are hidden at startup
-                pass
+        self.mel_spectrogram = MelSpectrogramWidget(
+            self.spec_frame,
+            self.config.audio,
+            self.config.display,
+            self.manager_dict,
+            self.shared_audio_state,
+        )
 
     def _create_combined_info_panel(self) -> None:
         """Create the combined info panel as a separate panel.
@@ -389,7 +388,6 @@ class WindowBase:
             width=130,  # Increased width for level meter for better readability
             highlightthickness=0,
         )
-        # Don't pack yet - will be managed by toggle methods
 
         # Create LED level meter
         if self.shared_audio_state:
@@ -398,13 +396,34 @@ class WindowBase:
             )
             self.embedded_level_meter.pack(fill=tk.BOTH, expand=True)
 
-            # Apply saved preset from settings
+            # Always grid the level meter frame within container
+            # Container visibility controls whether it's shown
+            self.level_meter_frame.grid(
+                row=0,
+                column=1,
+                sticky="nsew",
+                padx=(UIConstants.FRAME_SPACING // 2, UIConstants.FRAME_SPACING),
+                pady=UIConstants.FRAME_SPACING,
+            )
+            self.level_meter_frame.grid_propagate(False)
+
+            # Apply saved preset from settings after ensuring widget is ready
             preset_str = getattr(
                 self.settings_manager.settings, "level_meter_preset", "broadcast_ebu"
             )
-            self.window.after(100, lambda: self.set_level_meter_preset(preset_str))
+            self._apply_level_meter_preset_when_ready(preset_str)
         else:
             self.embedded_level_meter = None
+
+    def _apply_level_meter_preset_when_ready(self, preset_str: str) -> None:
+        """Apply level meter preset after ensuring widget is ready."""
+        # Widget is now always in grid, just apply preset when ready
+        WidgetInitializer.when_ready(
+            self.level_meter_frame,
+            lambda: self.set_level_meter_preset(preset_str),
+            min_width=10,
+            min_height=10,
+        )
 
     def update_display(
         self, index: int, is_recording: bool, display_position: int
@@ -752,14 +771,9 @@ class WindowBase:
             # Create widget if not yet created (happens when meters were hidden at startup)
             if self.mel_spectrogram is None:
                 self.window.update_idletasks()  # Update frame size after grid
-                # Create directly here since frame is now visible
-                self.mel_spectrogram = MelSpectrogramWidget(
-                    self.spec_frame,
-                    self.config.audio,
-                    self.config.display,
-                    self.manager_dict,
-                    self.shared_audio_state,
-                )
+                self._create_mel_spectrogram_widget()
+                # Fire event after creation
+                self.window.event_generate("<<SpectrogramReady>>")
             else:
                 self.window.update_idletasks()
                 self.mel_spectrogram.canvas.draw_idle()

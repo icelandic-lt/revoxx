@@ -135,8 +135,7 @@ class TestAudioController(unittest.TestCase):
             mock_capture.assert_called_once_with("recording")
 
     @patch("revoxx.controllers.audio_controller.sd")
-    @patch("revoxx.controllers.audio_controller.time.sleep")
-    def test_play_current_with_no_recordings(self, mock_sleep, mock_sd):
+    def test_play_current_with_no_recordings(self, mock_sd):
         """Test play_current when no recordings are available."""
         self.mock_app.state.is_ready_to_play = Mock(return_value=False)
 
@@ -148,9 +147,8 @@ class TestAudioController(unittest.TestCase):
         mock_sd.stop.assert_not_called()
 
     @patch("revoxx.controllers.audio_controller.sd")
-    @patch("revoxx.controllers.audio_controller.time.sleep")
     @patch("revoxx.controllers.audio_controller.get_device_manager")
-    def test_play_current_with_recording(self, mock_get_dm, mock_sleep, mock_sd):
+    def test_play_current_with_recording(self, mock_get_dm, mock_sd):
         """Test play_current when a recording is available."""
         import numpy as np
 

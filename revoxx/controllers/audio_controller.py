@@ -5,9 +5,8 @@ operations in the application. It coordinates between different subsystems
 and manages the overall audio workflow.
 """
 
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Callable
 import sounddevice as sd
 
 from ..constants import UIConstants, MsgType
@@ -103,11 +102,16 @@ class AudioController:
             )
             self.app.queue_manager.set_input_device(None)
 
-    def stop_all_playback_activities(self) -> None:
+    def stop_all_playback_activities(
+        self, callback: Optional[Callable[[], None]] = None
+    ) -> None:
         """Stop all current playback and monitoring activities.
 
         Ensure consistent playback stopping behavior across navigation, recording,
         and playback.
+
+        Args:
+            callback: Optional callback to execute after playback is fully stopped
         """
         if self.is_monitoring:
             self.stop_monitoring_mode()
@@ -121,13 +125,24 @@ class AudioController:
         except AttributeError:
             pass
 
-        # Give the playback process time to handle the stop command
-        time.sleep(UIConstants.PLAYBACK_STOP_DELAY)
-        # Also clear playback status to IDLE
-        try:
-            self.app.shared_state.stop_playback()
-        except AttributeError:
-            pass
+        # Schedule clearing playback status after a short delay
+        def clear_and_callback():
+            try:
+                self.app.shared_state.stop_playback()
+            except AttributeError:
+                pass
+
+            if callback:
+                callback()
+
+        # Use non-blocking delay if we have a window
+        if hasattr(self.app, "window") and self.app.window:
+            self.app.window.window.after(
+                UIConstants.PLAYBACK_STOP_DELAY_MS, clear_and_callback
+            )
+        else:
+            # In tests or without window, execute immediately
+            clear_and_callback()
 
     def toggle_recording(self) -> None:
         """Toggle recording state."""

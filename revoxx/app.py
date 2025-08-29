@@ -209,14 +209,7 @@ class Revoxx:
         # Resume at last position if available
         if self.current_session:
             self.navigation_controller.resume_at_last_recording()
-            # Show saved recording with delay to ensure mel spectrogram is ready
-            # (same as in original implementation)
-            from .constants import UIConstants
-
-            self.window.window.after(
-                UIConstants.INITIAL_DISPLAY_DELAY_MS,
-                self.display_controller.show_saved_recording,
-            )
+            self.display_controller.show_saved_recording_when_ready()
 
         # Start audio queue processing transfer thread
         # This thread runs continuously and transfers audio data from the recording process
@@ -224,10 +217,8 @@ class Revoxx:
         # The thread will discard data if no widget is available to display it.
         self.audio_controller.start_audio_queue_processing()
 
-        # Bind keyboard shortcuts AFTER everything is initialized
-        # Wait for widgets to be created (mel_spectrogram and embedded_level_meter are created after 100ms)
-        # Add a bit more delay to be safe
-        self.window.window.after(150, self._bind_keys)
+        # Bind keyboard shortcuts
+        self._bind_keys()
 
     def _init_controllers(self):
         """Initialize all controllers."""

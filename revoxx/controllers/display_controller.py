@@ -5,6 +5,7 @@ from pathlib import Path
 import soundfile as sf
 
 from ..constants import MsgType
+from ..ui.widget_initializer import WidgetInitializer
 
 if TYPE_CHECKING:
     from ..app import Revoxx
@@ -48,6 +49,22 @@ class DisplayController:
         self._for_each_window(
             lambda w: w.update_display(current_index, is_recording, display_pos)
         )
+
+    def show_saved_recording_when_ready(self) -> None:
+        """Show saved recording when spectrogram widget is ready."""
+        # Check if spectrogram exists and is ready
+        if (
+            self.app.window
+            and hasattr(self.app.window, "mel_spectrogram")
+            and self.app.window.mel_spectrogram is not None
+        ):
+            # Already ready, show immediately
+            self.show_saved_recording()
+        elif self.app.window:
+            # Wait for SpectrogramReady event
+            self.app.window.window.bind(
+                "<<SpectrogramReady>>", lambda e: self.show_saved_recording()
+            )
 
     def show_saved_recording(self) -> None:
         """Load and display a saved recording if it exists."""
@@ -118,7 +135,8 @@ class DisplayController:
                 and not self.app.audio_controller.is_monitoring
             ):
                 if self.app.window:
-                    self.app.window.window.after(50, self.show_saved_recording)
+                    # Show saved recording when spectrogram is ready
+                    self.show_saved_recording_when_ready()
             elif self.app.state.recording.is_recording:
                 # If we're currently recording and meters were just turned on,
                 # set mel spectrogram to recording mode
@@ -473,39 +491,34 @@ class DisplayController:
         Args:
             callback: Function to call when spectrograms are ready
         """
-        all_ready = True
-        for window in self._get_active_windows():
-            if not window.mel_spectrogram:
-                all_ready = False
-                break
+        # Collect windows that need spectrograms
+        windows_needing_spectrograms = [
+            w for w in self._get_active_windows() if not w.mel_spectrogram
+        ]
 
-        if all_ready:
-            # Execute immediately
+        if not windows_needing_spectrograms:
+            # All ready, execute immediately
             callback()
         else:
-            # Store callback and wait
-            self._spectrogram_callbacks.append(callback)
-            self.app.window.window.after(50, self._check_spectrograms_ready)
+            # wait for all spectrograms
+            spec_frames = [
+                w.spec_frame
+                for w in windows_needing_spectrograms
+                if hasattr(w, "spec_frame")
+            ]
 
-    def _check_spectrograms_ready(self) -> None:
-        """Check if spectrograms are ready and execute callbacks."""
-        all_ready = True
-        for window in self._get_active_windows():
-            if not window.mel_spectrogram:
-                all_ready = False
-                break
+            if spec_frames:
+                WidgetInitializer.fire_when_all_ready(
+                    self.app.window.window,
+                    "<<AllSpectrogramsReady>>",
+                    *spec_frames,
+                    min_dimensions=10,
+                )
 
-        if all_ready:
-            # Execute all pending callbacks
-            callbacks = self._spectrogram_callbacks.copy()
-            self._spectrogram_callbacks.clear()
-            for callback in callbacks:
-                try:
-                    callback()
-                except Exception as e:
-                    print(f"Error in spectrogram ready callback: {e}")
-        else:
-            self.app.window.window.after(50, self._check_spectrograms_ready)
+                # Bind to the event and execute callback
+                self.app.window.window.bind(
+                    "<<AllSpectrogramsReady>>", lambda e: callback()
+                )
 
     def toggle_fullscreen(self) -> bool:
         """Toggle fullscreen mode and return new state.
@@ -584,9 +597,12 @@ class DisplayController:
 
             window.window.protocol("WM_DELETE_WINDOW", close_with_menu_update)
 
-            # Sync content with main window
-            self.app.window.window.after(
-                50, lambda: self._sync_window_content(window_id)
+            # Sync content when window is ready
+            WidgetInitializer.when_ready(
+                window.window,
+                lambda: self._sync_window_content(window_id),
+                min_width=100,
+                min_height=100,
             )
         elif window:
             # Just bring existing window to front

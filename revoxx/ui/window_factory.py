@@ -186,17 +186,8 @@ class WindowFactory:
         window._create_spectrogram_area()
         window._create_combined_info_panel()
 
-        # Defer initial font calculation until window is properly sized
-        def apply_initial_fonts():
-            width = window.window.winfo_width()
-            height = window.window.winfo_height()
-            # Only calculate if we have real dimensions
-            if width > 1 and height > 1:
-                window.font_manager.calculate_base_sizes(width, height)
-                window._apply_fonts()
-
-        # Schedule font application after window is rendered
-        window.window.after(100, apply_initial_fonts)
+        # Mark that fonts haven't been initialized yet
+        window._fonts_initialized = False
 
     @classmethod
     def _apply_initial_visibility(cls, window: WindowBase, template: dict) -> None:
@@ -316,6 +307,11 @@ class WindowFactory:
         # Update font sizes
         window.font_manager.calculate_base_sizes(event.width, event.height)
         window._apply_fonts()
+
+        # Fire FontsReady event on first resize
+        if hasattr(window, "_fonts_initialized") and not window._fonts_initialized:
+            window._fonts_initialized = True
+            window.window.event_generate("<<FontsReady>>")
 
         # Save geometry if settings available
         if window.settings_manager and window.features.get("remember_session"):

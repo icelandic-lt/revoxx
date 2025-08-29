@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from ..session import SessionManager, Session, SessionConfig
 from ..utils.file_manager import RecordingFileManager
 from ..utils.active_recordings import ActiveRecordings
-from ..constants import UIConstants
 from ..ui.dialogs import NewSessionDialog
 
 if TYPE_CHECKING:
@@ -153,11 +152,8 @@ class SessionController:
         # Resume at last position (like when starting the app)
         self.app.navigation_controller.resume_at_last_recording()
 
-        # Show saved recording with delay to ensure mel spectrogram is ready
-        self.app.window.window.after(
-            UIConstants.INITIAL_DISPLAY_DELAY_MS,
-            self.app.display_controller.show_saved_recording,
-        )
+        # Show saved recording when spectrogram is ready
+        self.app.display_controller.show_saved_recording_when_ready()
 
         if session.audio_config:
             self.app.config.audio.sample_rate = session.audio_config.sample_rate
