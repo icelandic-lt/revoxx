@@ -46,15 +46,6 @@ class ApplicationMenu:
             ),
             "monitoring": tk.BooleanVar(value=False),
             "fullscreen": tk.BooleanVar(value=app.config.ui.fullscreen),
-            "second_window": tk.BooleanVar(
-                value=app.settings_manager.settings.second_window_enabled
-            ),
-            "second_window_meters": tk.BooleanVar(
-                value=app.settings_manager.settings.second_window_show_meters
-            ),
-            "second_window_info": tk.BooleanVar(
-                value=app.settings_manager.settings.second_window_show_info_panel
-            ),
             "theme": tk.StringVar(
                 value=getattr(
                     app.settings_manager.settings, "theme", ThemePreset.CYAN.value
@@ -71,6 +62,25 @@ class ApplicationMenu:
         self.recent_menu = None
         self.second_window_menu = None
         self.second_window_menu_indices = {}
+
+        # Add variables for monitor1 (second window)
+        monitor1_enabled = False
+        monitor1_meters = False
+        monitor1_info = True
+
+        # Check if monitor1 settings exist
+        if (
+            app.settings_manager.settings.windows
+            and "monitor1" in app.settings_manager.settings.windows
+        ):
+            monitor1_settings = app.settings_manager.settings.windows["monitor1"]
+            monitor1_enabled = monitor1_settings.get("enabled", False)
+            monitor1_meters = monitor1_settings.get("meters_visible", False)
+            monitor1_info = monitor1_settings.get("info_panel_visible", True)
+
+        self.menu_vars["second_window"] = tk.BooleanVar(value=monitor1_enabled)
+        self.menu_vars["second_window_meters"] = tk.BooleanVar(value=monitor1_meters)
+        self.menu_vars["second_window_info"] = tk.BooleanVar(value=monitor1_info)
 
     def create_menu(self) -> None:
         """Create the complete application menu bar."""
@@ -504,7 +514,7 @@ class ApplicationMenu:
         enabled = self.menu_vars["second_window"].get()
 
         if enabled:
-            self.app.display_controller.open_second_window()
+            self.app.display_controller.open_window("monitor1")
             # Enable menu items
             for key in ["meters", "info", "fullscreen"]:
                 if key in self.second_window_menu_indices:
@@ -512,7 +522,7 @@ class ApplicationMenu:
                         self.second_window_menu_indices[key], state="normal"
                     )
         else:
-            self.app.display_controller.close_second_window()
+            self.app.display_controller.close_window("monitor1")
             # Disable menu items
             for key in ["meters", "info", "fullscreen"]:
                 if key in self.second_window_menu_indices:
@@ -520,7 +530,8 @@ class ApplicationMenu:
                         self.second_window_menu_indices[key], state="disabled"
                     )
 
-        self.app.settings_manager.update_setting("second_window_enabled", enabled)
+        # Save window enabled state in new windows structure
+        self.app.settings_manager.save_window_settings("monitor1", {"enabled": enabled})
 
     def _update_second_window_config(self) -> None:
         """Update second window configuration."""
@@ -529,19 +540,20 @@ class ApplicationMenu:
                 "show_meters": self.menu_vars["second_window_meters"].get(),
                 "show_info_panel": self.menu_vars["second_window_info"].get(),
             }
-            self.app.display_controller.update_second_window_config(config)
+            self.app.display_controller.update_window_config("monitor1", config)
 
             # Save settings
-            self.app.settings_manager.update_setting(
-                "second_window_show_meters", config["show_meters"]
-            )
-            self.app.settings_manager.update_setting(
-                "second_window_show_info_panel", config["show_info_panel"]
+            self.app.settings_manager.save_window_settings(
+                "monitor1",
+                {
+                    "meters_visible": config["show_meters"],
+                    "info_panel_visible": config["show_info_panel"],
+                },
             )
 
     def _toggle_second_window_fullscreen(self) -> None:
         """Toggle fullscreen for second window."""
-        self.app.display_controller.toggle_second_window_fullscreen()
+        self.app.display_controller.toggle_window_fullscreen("monitor1")
 
     def _set_theme(self, theme_preset: str) -> None:
         """Set application theme."""

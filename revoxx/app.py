@@ -186,9 +186,6 @@ class Revoxx:
         # Initialize controllers after window is created
         self._init_controllers()
 
-        # Connect WindowManager to DisplayController
-        self.display_controller.window_manager = self.window_manager
-
         # Populate app_callbacks after controllers are initialized
         self._populate_app_callbacks()
 
@@ -238,7 +235,7 @@ class Revoxx:
         self.navigation_controller = NavigationController(self)
         self.session_controller = SessionController(self)
         self.device_controller = DeviceController(self)
-        self.display_controller = DisplayController(self)
+        self.display_controller = DisplayController(self, self.window_manager)
         self.file_operations_controller = FileOperationsController(self)
         self.dialog_controller = DialogController(self)
 
@@ -605,7 +602,7 @@ class Revoxx:
 
     def _toggle_second_window_fullscreen(self):
         """Toggle fullscreen mode for the second window."""
-        self.display_controller.toggle_second_window_fullscreen()
+        self.display_controller.toggle_window_fullscreen("monitor1")
 
     def _update_second_window_content(self) -> None:
         """Update second window with current content from main window."""
@@ -616,26 +613,24 @@ class Revoxx:
 
     def _toggle_second_window_meters(self) -> None:
         """Toggle meters visibility in second window via keyboard shortcut."""
-        new_state = self.display_controller.toggle_second_window_meters()
+        new_state = self.display_controller.toggle_window_meters("monitor1")
         if new_state is not None:
             # Update menu checkbox
             self.menu.menu_vars["second_window_meters"].set(new_state)
             # Save setting
-            self.settings_manager.update_setting(
-                "second_window_show_meters",
-                new_state,
+            self.settings_manager.save_window_settings(
+                "monitor1", {"meters_visible": new_state}
             )
 
     def _toggle_second_window_info_panel(self) -> None:
         """Toggle info panel visibility in second window via keyboard shortcut."""
-        new_state = self.display_controller.toggle_second_window_info_panel()
+        new_state = self.display_controller.toggle_window_info_panel("monitor1")
         if new_state is not None:
             # Update menu checkbox
             self.menu.menu_vars["second_window_info"].set(new_state)
             # Save setting
-            self.settings_manager.update_setting(
-                "second_window_show_info_panel",
-                new_state,
+            self.settings_manager.save_window_settings(
+                "monitor1", {"info_panel_visible": new_state}
             )
 
     def notify_if_default_device(self, device_type: str = "output") -> None:
@@ -677,8 +672,8 @@ class Revoxx:
         Returns:
             True if second window exists and is active, False otherwise
         """
-        second = self.window_manager.get_window("second")
-        return second and second.is_active if second else False
+        monitor1 = self.window_manager.get_window("monitor1")
+        return monitor1 and monitor1.is_active if monitor1 else False
 
     def run(self):
         """Run the application."""

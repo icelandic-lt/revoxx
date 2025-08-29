@@ -56,8 +56,16 @@ class AudioQueueProcessor:
 
     def update_state(self) -> None:
         """Update processing state based on UI visibility."""
-        # Both meters are controlled together via meters_visible
-        needs_audio = self.app.state.ui.meters_visible
+        # Check any window setting
+        needs_audio = False
+
+        if hasattr(self.app, "window_manager") and self.app.window_manager:
+            active_windows = self.app.window_manager.get_active_windows()
+            for window in active_windows:
+                meters_vis = getattr(window, "meters_visible", False)
+                if meters_vis:
+                    needs_audio = True
+                    break
 
         if self.app.manager_dict:
             self.app.process_manager.set_audio_queue_active(needs_audio)
@@ -87,7 +95,8 @@ class AudioQueueProcessor:
     def _process_queue_item(self) -> None:
         """Process a single item from the audio queue."""
         # Check if we should process audio data
-        if not self.app.process_manager.is_audio_queue_active():
+        is_active = self.app.process_manager.is_audio_queue_active()
+        if not is_active:
             # Meters are off - just sleep a bit to avoid busy waiting
             time.sleep(0.1)
             return
@@ -145,32 +154,23 @@ class AudioQueueProcessor:
         Args:
             audio_array: Audio data to display in spectrogram
         """
-        if self.app.window.mel_spectrogram is None:
-            return
+        # Broadcast to ALL active windows with visible meters
+        if hasattr(self.app, "window_manager") and self.app.window_manager:
+            active_windows = self.app.window_manager.get_active_windows()
 
-        # Update main window
-        try:
-            self.app.window.mel_spectrogram.audio_queue.put_nowait(audio_array)
-        except queue.Full:
-            pass  # Queue full, skip this update
-        except AttributeError:
-            pass  # Widget not ready
+            for window in active_windows:
+                has_spectrogram = (
+                    hasattr(window, "mel_spectrogram") and window.mel_spectrogram
+                )
+                meters_visible = getattr(window, "meters_visible", False)
 
-        # Update second window if active
-        if self.app.has_active_second_window:
-            # Get second window from window manager
-            second = (
-                self.app.window_manager.get_window("second")
-                if hasattr(self.app, "window_manager")
-                else None
-            )
-            if second and second.mel_spectrogram:
-                try:
-                    second.mel_spectrogram.audio_queue.put_nowait(audio_array)
-                except queue.Full:
-                    pass  # Queue full, skip this update
-                except AttributeError:
-                    pass  # Widget not ready
+                if has_spectrogram and meters_visible:
+                    try:
+                        window.mel_spectrogram.audio_queue.put_nowait(audio_array)
+                    except queue.Full:
+                        pass
+                    except AttributeError:
+                        pass  # Widget not ready
 
     def _update_level_meter(self, level: float) -> None:
         """Update level meter with new level.

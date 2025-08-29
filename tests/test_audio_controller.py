@@ -261,8 +261,8 @@ class TestAudioController(unittest.TestCase):
         # Verify
         self.assertTrue(self.controller.is_monitoring)
         self.assertEqual(
-            self.controller.saved_meters_state, False
-        )  # Was False initially
+            self.controller.saved_meters_state, self.mock_app.window.meters_visible
+        )  # Saved the window's meters_visible state
         self.assertFalse(self.mock_app.state.recording.is_recording)
         # Check that recording was started
         self.mock_app.queue_manager.start_recording.assert_called_once()

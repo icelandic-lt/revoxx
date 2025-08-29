@@ -337,13 +337,16 @@ class AudioController:
         state so the UI can be restored to user preferences when monitoring
         ends.
         """
-        # Save current meters state to restore later
-        self.saved_meters_state = self.app.state.ui.meters_visible
+        # Save current meters state from main window to restore later
+        if self.app.window and hasattr(self.app.window, "meters_visible"):
+            self.saved_meters_state = self.app.window.meters_visible
+        else:
+            self.saved_meters_state = False
 
     def _show_monitoring_visualizations(self) -> None:
         """Enable visualizations for monitoring mode."""
-        # Show both meters if not visible (they are controlled together)
-        if not self.app.state.ui.meters_visible:
+        # Show meters in main window if not visible
+        if self.app.window and not self.app.window.meters_visible:
             self.app.display_controller.toggle_meters()
             self.app.window.window.update_idletasks()
 
@@ -462,9 +465,12 @@ class AudioController:
     def _restore_ui_state_after_monitoring(self) -> None:
         """Restore UI state after monitoring mode."""
         # Restore meters state (both are controlled together)
+        # Restore meters state if it was changed during monitoring
         if (
             self.saved_meters_state is not None
-            and self.saved_meters_state != self.app.state.ui.meters_visible
+            and self.app.window
+            and hasattr(self.app.window, "meters_visible")
+            and self.saved_meters_state != self.app.window.meters_visible
         ):
             self.app.display_controller.toggle_meters()
 

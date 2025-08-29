@@ -23,14 +23,15 @@ class DisplayController:
     - Multi-window coordination
     """
 
-    def __init__(self, app: "Revoxx"):
+    def __init__(self, app: "Revoxx", window_manager):
         """Initialize the display controller.
 
         Args:
             app: Reference to the main application instance
+            window_manager: WindowManager instance for multi-window coordination
         """
         self.app = app
-        self.window_manager = None  # Will be set by app after window_manager is created
+        self.window_manager = window_manager
         self._spectrogram_callbacks: List[Callable] = []
 
     def update_display(self) -> None:
@@ -85,16 +86,13 @@ class DisplayController:
             window = self._get_window_by_id(window_id)
             if window:
                 current = (
-                    window.ui_state.meters_visible
-                    if hasattr(window, "ui_state")
-                    else False
+                    window.meters_visible if hasattr(window, "ui_state") else False
                 )
                 window.set_meters_visibility(not current)
         else:
-            # Toggle all windows
-            self.app.state.ui.meters_visible = not self.app.state.ui.meters_visible
+            # Toggle all windows - each toggles its own state
             self._for_each_window(
-                lambda w: w.set_meters_visibility(self.app.state.ui.meters_visible)
+                lambda w: w.set_meters_visibility(not w.meters_visible)
             )
 
         self.app.audio_controller.update_audio_queue_state()
@@ -107,7 +105,14 @@ class DisplayController:
             self.recalculate_window_font("main")
 
         # Show current recording if available - but only if not currently recording/monitoring
-        if self.app.state.ui.meters_visible:
+        # Check if any window has meters visible
+        any_meters_visible = any(
+            w.meters_visible
+            for w in self._get_active_windows()
+            if hasattr(w, "meters_visible")
+        )
+
+        if any_meters_visible:
             if (
                 not self.app.state.recording.is_recording
                 and not self.app.audio_controller.is_monitoring
@@ -126,9 +131,11 @@ class DisplayController:
                     )
                 )
 
-        self.app.settings_manager.update_setting(
-            "show_meters", self.app.state.ui.meters_visible
-        )
+        # Save the main window's meters state as the global preference
+        if self.app.window and hasattr(self.app.window, "meters_visible"):
+            self.app.settings_manager.update_setting(
+                "show_meters", self.app.window.meters_visible
+            )
 
     def update_info_panel(self) -> None:
         """Update the combined info panel with current recording information."""
@@ -259,21 +266,7 @@ class DisplayController:
         Returns:
             List of active window instances
         """
-        # Use WindowManager if available
-        if self.window_manager:
-            return self.window_manager.get_active_windows()
-
-        # Fallback to direct window references
-        windows = []
-        if self.app.window:
-            windows.append(self.app.window)
-        if (
-            hasattr(self.app, "second_window")
-            and self.app.second_window
-            and self.app.second_window.is_active
-        ):
-            windows.append(self.app.second_window)
-        return windows
+        return self.window_manager.get_active_windows()
 
     def _get_window_by_id(self, window_id: str) -> Optional["WindowBase"]:
         """Get a specific window by its ID.
@@ -284,15 +277,7 @@ class DisplayController:
         Returns:
             Window instance or None if not found
         """
-        if self.window_manager:
-            return self.window_manager.get_window(window_id)
-
-        # Fallback to direct references
-        if window_id == "main" and self.app.window:
-            return self.app.window
-        elif window_id == "second" and hasattr(self.app, "second_window"):
-            return self.app.second_window
-        return None
+        return self.window_manager.get_window(window_id)
 
     def _for_each_window(self, action: Callable[["WindowBase"], None]) -> None:
         """Execute action on each active window.
@@ -415,81 +400,68 @@ class DisplayController:
         """
         return getattr(self.app.window, "info_panel_visible", False)
 
-    # ============= Second Window Specific Methods =============
+    # ============= Generic Window Methods =============
 
-    def toggle_second_window_meters(self) -> Optional[bool]:
-        """Toggle meters visibility in second window.
-
-        Returns:
-            New meters state or None if no second window
-        """
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            result = second.toggle_meters()
-            # Return focus to main window after action
-            self.window_manager.focus_main_window()
-            return result
-        return None
-
-    def toggle_second_window_info_panel(self) -> Optional[bool]:
-        """Toggle info panel visibility in second window.
-
-        Returns:
-            New info panel state or None if no second window
-        """
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            result = second.toggle_info_panel()
-            # Return focus to main window after action
-            self.window_manager.focus_main_window()
-            return result
-        return None
-
-    def toggle_second_window_fullscreen(self) -> None:
-        """Toggle fullscreen mode for second window."""
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            current = second.window.attributes("-fullscreen")
-            # Toggle fullscreen
-            second.toggle_fullscreen()
-            # Save the new state
-            if self.app.settings_manager:
-                self.app.settings_manager.update_setting(
-                    "second_fullscreen", not current
-                )
-
-    def get_second_window_config(self) -> Optional[Dict[str, bool]]:
-        """Get current configuration of second window.
-
-        Returns:
-            Dictionary with config values or None if no second window
-        """
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            return {
-                "show_meters": second.ui_state.meters_visible,
-                "show_info_panel": second.info_panel_visible,
-            }
-        return None
-
-    def execute_on_second_window(self, action: str, *args, **kwargs) -> Any:
-        """Execute an action on the second window if active.
-
-        Generic method for less common operations.
+    def toggle_window_meters(self, window_id: str) -> Optional[bool]:
+        """Toggle meters visibility in specified window.
 
         Args:
-            action: Method name to call on second window
-            *args: Positional arguments for the method
-            **kwargs: Keyword arguments for the method
+            window_id: ID of the window to toggle
 
         Returns:
-            Result of the method call or None if no second window
+            New meters state or None if window not found
         """
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            method = getattr(second, action, None)
-            if method and callable(method):
-                return method(*args, **kwargs)
+        results = self.window_manager.execute_on_windows(window_id, "toggle_meters")
+        if results:
+            self.window_manager.focus_main_window()
+            return results[0]
+        return None
+
+    def toggle_window_info_panel(self, window_id: str) -> Optional[bool]:
+        """Toggle info panel visibility in specified window.
+
+        Args:
+            window_id: ID of the window to toggle
+
+        Returns:
+            New info panel state or None if window not found
+        """
+        results = self.window_manager.execute_on_windows(window_id, "toggle_info_panel")
+        if results:
+            self.window_manager.focus_main_window()
+            return results[0]
+        return None
+
+    def toggle_window_fullscreen(self, window_id: str) -> None:
+        """Toggle fullscreen mode for specified window.
+
+        Args:
+            window_id: ID of the window to toggle
+        """
+        window = self._get_window_by_id(window_id)
+        if window and window.is_active:
+            current = window.window.attributes("-fullscreen")
+            window.toggle_fullscreen()
+            if self.app.settings_manager:
+                self.app.settings_manager.save_window_settings(
+                    window_id, {"fullscreen": not current}
+                )
+
+    def get_window_config(self, window_id: str) -> Optional[Dict[str, bool]]:
+        """Get current configuration of specified window.
+
+        Args:
+            window_id: ID of the window
+
+        Returns:
+            Dictionary with config values or None if window not found
+        """
+        window = self._get_window_by_id(window_id)
+        if window and window.is_active:
+            return {
+                "show_meters": window.meters_visible,
+                "show_info_panel": window.info_panel_visible,
+            }
         return None
 
     def when_spectrograms_ready(self, callback: Callable[[], None]) -> None:
@@ -561,19 +533,20 @@ class DisplayController:
 
         self.app.settings_manager.update_setting("show_info_panel", new_state)
 
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            if new_state:
-                second.info_panel.grid(
-                    row=3,
-                    column=0,
-                    sticky="ew",
-                    pady=(10, 0),
-                )
-                second.info_panel_visible = True
-            else:
-                second.info_panel.grid_forget()
-                second.info_panel_visible = False
+        # Broadcast to all other windows
+        for window in self._get_active_windows():
+            if window.window_id != "main":
+                if new_state:
+                    window.info_panel.grid(
+                        row=3,
+                        column=0,
+                        sticky="ew",
+                        pady=(10, 0),
+                    )
+                    window.info_panel_visible = True
+                else:
+                    window.info_panel.grid_forget()
+                    window.info_panel_visible = False
 
         return new_state
 
@@ -583,11 +556,7 @@ class DisplayController:
         Args:
             theme_preset: Theme preset name (e.g., 'classic', 'modern')
         """
-        self.app.window.set_theme(theme_preset)
-
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            second.set_theme(theme_preset)
+        self.window_manager.broadcast("set_theme", theme_preset)
 
     def set_level_meter_preset(self, preset: str) -> None:
         """Set level meter preset.
@@ -595,102 +564,86 @@ class DisplayController:
         Args:
             preset: Preset name (e.g., 'broadcast_ebu')
         """
-        self.app.window.set_level_meter_preset(preset)
+        self.window_manager.broadcast("set_level_meter_preset", preset)
 
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            second.set_level_meter_preset(preset)
+    def open_window(self, window_id: str) -> None:
+        """Open a window with specified ID.
 
-    def open_second_window(self) -> None:
-        """Open the second window."""
-        second_window = (
-            self.window_manager.get_window("second") if self.window_manager else None
-        )
+        Args:
+            window_id: ID of the window to open
+        """
+        window = self.window_manager.get_window(window_id)
 
-        if second_window is None and self.window_manager:
-            second_window = self.window_manager.create_window(
-                window_id="second",
-                parent=self.app.window.window,  # Main window's tk root
-                window_type="secondary",
-            )
-
-            # Apply saved settings for second window panels
-            if self.app.settings_manager:
-                show_meters = getattr(
-                    self.app.settings_manager.settings,
-                    "second_window_show_meters",
-                    False,
-                )
-                show_info = getattr(
-                    self.app.settings_manager.settings,
-                    "second_window_show_info_panel",
-                    True,
-                )
-
-                second_window.set_meters_visibility(show_meters)
-                if not show_info and hasattr(second_window, "info_panel"):
-                    second_window.info_panel.grid_forget()
-                    second_window.info_panel_visible = False
+        if window is None:
+            window = self.window_manager.create_window(window_id=window_id)
 
             def close_with_menu_update():
                 if self.app.menu:
-                    self.app.menu.on_second_window_closed()
-                self.window_manager.close_window("second")
+                    self.app.menu.on_window_closed(window_id)
+                self.window_manager.close_window(window_id)
 
-            second_window.window.protocol("WM_DELETE_WINDOW", close_with_menu_update)
+            window.window.protocol("WM_DELETE_WINDOW", close_with_menu_update)
 
             # Sync content with main window
-            self.app.window.window.after(50, self._sync_second_window_content)
-        elif second_window:
+            self.app.window.window.after(
+                50, lambda: self._sync_window_content(window_id)
+            )
+        elif window:
             # Just bring existing window to front
-            second_window.window.lift()
-            second_window.window.focus_force()
+            window.window.lift()
+            window.window.focus_force()
 
-    def _sync_second_window_content(self) -> None:
-        """Synchronize content from main window to second window."""
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
+    def _sync_window_content(self, window_id: str) -> None:
+        """Synchronize content from main window to specified window.
+
+        Args:
+            window_id: ID of the window to sync
+        """
+        window = self._get_window_by_id(window_id)
+        if window and window.is_active:
             self.update_display()
 
-            if second.info_panel_visible:
+            if window.info_panel_visible:
                 self.update_info_panel()
 
             # Handle spectrogram content based on current state
-            if second.ui_state.meters_visible:
-                # Use when_spectrograms_ready to wait for initialization
+            if window.meters_visible:
+
                 def sync_spectrogram_state():
                     if (
                         self.app.state.recording.is_recording
                         or self.app.audio_controller.is_monitoring
                     ):
-                        # If recording or monitoring, start recording mode in spectrogram
                         sample_rate = self.app.config.audio.sample_rate
-                        if second.mel_spectrogram:
+                        if window.mel_spectrogram:
                             if (
-                                not second.mel_spectrogram.recording_handler.is_recording
+                                not window.mel_spectrogram.recording_handler.is_recording
                             ):
-                                second.mel_spectrogram.clear()
-                                second.mel_spectrogram.start_recording(sample_rate)
+                                window.mel_spectrogram.clear()
+                                window.mel_spectrogram.start_recording(sample_rate)
                     else:
-                        # Otherwise show saved recording if available
                         self.show_saved_recording()
 
                 self.when_spectrograms_ready(sync_spectrogram_state)
 
-    def close_second_window(self) -> None:
-        """Close the second window."""
-        if self.window_manager:
-            self.window_manager.close_window("second")
-
-    def update_second_window_config(self, config: Dict[str, bool]) -> None:
-        """Update second window configuration.
+    def close_window(self, window_id: str) -> None:
+        """Close specified window.
 
         Args:
+            window_id: ID of the window to close
+        """
+        self.window_manager.close_window(window_id)
+
+    def update_window_config(self, window_id: str, config: Dict[str, bool]) -> None:
+        """Update window configuration.
+
+        Args:
+            window_id: ID of the window to configure
             config: Configuration dictionary with 'show_meters' and 'show_info_panel'
         """
-        second = self._get_window_by_id("second")
-        if second and second.is_active:
-            second.update_configuration(
+        window = self._get_window_by_id(window_id)
+        if window and window.is_active:
+            window.update_configuration(
                 show_meters=config.get("show_meters"),
                 show_info_panel=config.get("show_info_panel"),
             )

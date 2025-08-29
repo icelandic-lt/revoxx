@@ -78,6 +78,7 @@ class WindowBase:
         self.app_callbacks = app_callbacks
         self.settings_manager = settings_manager
         self.shared_audio_state = shared_audio_state
+        self.meters_visible = False
 
         # Initialize font manager
         self.font_manager = FontManager(self.ui_state, self.config)
@@ -234,10 +235,10 @@ class WindowBase:
 
         if not getattr(self.settings_manager.settings, "show_meters", True):
             self.spec_frame.grid_forget()
-            self.ui_state.meters_visible = False
+            self.meters_visible = False
         else:
             # Make meters visible
-            self.ui_state.meters_visible = True
+            self.meters_visible = True
 
     def _create_spectrogram_widget(self) -> None:
         """Create the mel spectrogram widget.
@@ -263,7 +264,7 @@ class WindowBase:
         self.mel_spectrogram = None
         self.window.after(100, self._create_mel_spectrogram_widget_deferred)
 
-        self.ui_state.meters_visible = True
+        self.meters_visible = True
 
     def _create_mel_spectrogram_widget_deferred(self) -> None:
         """Create the mel spectrogram widget after window is properly sized."""
@@ -728,7 +729,7 @@ class WindowBase:
             if hasattr(self, "level_meter_frame"):
                 self.level_meter_frame.grid_forget()
 
-        self.ui_state.meters_visible = visible
+        self.meters_visible = visible
 
         # Update menu checkbox if available (in RootWindow)
         if hasattr(self, "meters_var"):
@@ -764,7 +765,7 @@ class WindowBase:
                 self.mel_spectrogram.canvas.draw_idle()
         else:
             self.spec_frame.grid_forget()
-        self.ui_state.meters_visible = visible
+        self.meters_visible = visible
 
     def _set_level_meter_visibility(self, visible: bool) -> None:
         """Set level meter visibility.
@@ -957,7 +958,7 @@ class WindowBase:
         Returns:
             New meters visibility state
         """
-        current = self.ui_state.meters_visible
+        current = self.meters_visible
         self.set_meters_visibility(not current)
 
         # Force layout update and recalculate font after meter toggle
