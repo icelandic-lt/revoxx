@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from revoxx.session.manager import SessionManager
 from revoxx.session.models import SessionConfig
-from .test_config import TestAudioConfig
+from tests.test_config import TestAudioConfig
 
 
 class TestSessionManager(unittest.TestCase):
