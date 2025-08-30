@@ -8,8 +8,8 @@ in JSON format that collects all non-silence parts of an audio file as time-stam
 import argparse
 import json
 import os
+import soundfile as sf
 from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
-import torchaudio
 from tqdm import tqdm
 
 
@@ -23,10 +23,10 @@ def get_audio_files(directory):
 
 
 def process_audio(file_path, model, base_dir, use_dynamic_threshold):
-    # Get audio info
-    info = torchaudio.info(file_path)
-    sample_rate = info.sample_rate
-    overall_length = info.num_frames / sample_rate
+    # Get audio info using soundfile instead of torchaudio
+    info = sf.info(file_path)
+    sample_rate = info.samplerate
+    overall_length = info.frames / sample_rate
 
     # read audio file and convert to 16 kHz sample rate by default
     wav = read_audio(file_path)

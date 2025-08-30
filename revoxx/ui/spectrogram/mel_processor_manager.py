@@ -3,7 +3,7 @@
 from typing import Tuple
 import numpy as np
 
-from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor, MEL_CONFIG
+from ...audio.processors import MelSpectrogramProcessor, MEL_CONFIG
 from .display_utils import create_empty_spectrogram
 
 
