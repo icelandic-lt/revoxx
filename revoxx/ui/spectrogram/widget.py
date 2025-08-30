@@ -338,10 +338,24 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         # Defensive: ensure no old clipping markers leak into live monitor/recording
         self.clipping_visualizer.clear()
         self.recording_handler.start_recording()
-        self._update_recording_display()
 
         # Reset time axis - always show 3 seconds for recording
         self._update_time_axis_labels(0, UIConstants.SPECTROGRAM_DISPLAY_SECONDS)
+
+        # Clear display with empty data first
+        empty_data = (
+            np.ones((self.adaptive_n_mels, self.spec_frames)) * AudioConstants.DB_MIN
+        )
+        self.update_display_data(empty_data, self.adaptive_n_mels)
+
+        # Cache the background with empty spectrogram (needed for blitting)
+        if self.use_blitting:
+            self.invalidate_background()
+            self.canvas.draw()
+            self.cache_background()
+
+        # Start displaying real data
+        self._update_recording_display()
 
         # Start periodic updates for recording
         self._start_recording_updates()
@@ -363,37 +377,37 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
 
     def _update_display(self) -> None:
         """Update display from audio queue."""
-        # Process all pending audio chunks
+        # Process all pending audio chunks for real-time display
         chunks_processed = 0
+        display_needs_update = False
 
-        while (
-            not self.audio_queue.empty()
-            and chunks_processed < self.MAX_CHUNKS_PER_UPDATE
-        ):
+        # Process all available chunks to prevent queue buildup
+        while not self.audio_queue.empty():
             try:
                 audio_chunk = self.audio_queue.get_nowait()
                 should_update = self.recording_handler.update_audio(audio_chunk)
 
                 if should_update:
-                    if self.recording_handler.is_recording:
-                        self._update_recording_display()
-                        # Force canvas update for real-time display
-                        self.draw_idle()
-
+                    display_needs_update = True
                     # Update time tracking
                     self.current_time = self.recording_handler.current_time
                     self.max_detected_freq = self.recording_handler.max_detected_freq
-                    self._update_clipping_markers_live()
 
                 chunks_processed += 1
 
             except queue.Empty:
                 break
 
+        # Update display once after processing all chunks
+        if display_needs_update and self.recording_handler.is_recording:
+            self._update_recording_display()
+            self._update_clipping_markers_live()
+
         if self.recording_handler.is_recording or self.playback_controller.is_playing:
             self._update_frequency_display()
 
-        self.draw_idle()
+        if display_needs_update:
+            self.draw_idle()
 
     # Playback methods
     def start_playback(self, duration: float, sample_rate: int) -> None:
@@ -477,7 +491,24 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         self._apply_adaptive_layout()
         self._update_time_axis_labels(0, duration)
 
-        self.canvas.draw()
+        # Invalidate background after major changes
+        # self.invalidate_background()
+        # self.canvas.draw()
+        # Cache background after full draw
+        # self.cache_background()
+
+    def cleanup(self) -> None:
+        """Clean up resources before widget destruction."""
+        # Stop all periodic updates
+        self._stop_recording_updates()
+
+        # Stop playback if running
+        if self.playback_handler and self.playback_controller.is_playing:
+            self.playback_handler.stop_playback()
+
+        # Clear the audio queue
+        if hasattr(self, "audio_queue"):
+            self._clear_queue(self.audio_queue)
 
     def clear(self) -> None:
         """Clear the spectrogram display."""
@@ -693,16 +724,23 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             data: The spectrogram data to display
             n_mels: Number of mel bins
         """
-        return self.ax.imshow(
+        im = self.ax.imshow(
             data,
             aspect="auto",
             origin="lower",
+            animated=True,
             cmap=theme_manager.colormap,
             interpolation="bilinear",
             vmin=AudioConstants.DB_MIN,
             vmax=AudioConstants.DB_MAX,
             extent=(0, self.spec_frames - 1, 0, n_mels - 1),
         )
+
+        # Add to animated artists list for blitting
+        if im not in self.animated_artists:
+            self.animated_artists.append(im)
+
+        return im
 
     def _update_or_recreate_image(
         self, data: np.ndarray, n_mels: int, force_recreate: bool = False
@@ -787,7 +825,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         if min_duration_seconds is not None:
             min_frames = int(min_duration_seconds * self.frames_per_second)
             if n_frames_visible < min_frames:
-                # Prepend zeros to reach minimum duration
+                # Prepend zeros to the left (oldest data left, newest right)
                 padding_frames = min_frames - n_frames_visible
                 padding = np.ones((n_mels, padding_frames)) * AudioConstants.DB_MIN
                 visible_array = np.hstack([padding, visible_array])
@@ -926,7 +964,11 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
     def _stop_recording_updates(self) -> None:
         """Stop periodic display updates."""
         if self.recording_update_id:
-            self.parent.after_cancel(self.recording_update_id)
+            try:
+                self.parent.after_cancel(self.recording_update_id)
+            except tk.TclError:
+                # Widget might be destroyed already
+                pass
             self.recording_update_id = None
 
     def _recording_update_loop(self) -> None:

@@ -63,6 +63,13 @@ class SpectrogramDisplayBase:
         self.canvas_widget: Optional[tk.Widget] = None
         self.freq_axis_manager: Optional[FrequencyAxisManager] = None
 
+        # Blitting support (experimental, disabled - no performance benefit with TkAgg backend)
+        self.use_blitting = False
+        self.background = None  # Cached background for blitting
+        self.animated_artists = (
+            []
+        )  # "animated artists" => matplotlib "sprech" for drawable element
+
         # Display parameters
         self.frames_per_second = audio_config.sample_rate / AudioConstants.HOP_LENGTH
         self.spec_frames = int(
@@ -335,10 +342,32 @@ class SpectrogramDisplayBase:
         if self.im is not None:
             self.im.set_data(data)
             self.im.set_clim(vmin=AudioConstants.DB_MIN, vmax=AudioConstants.DB_MAX)
-
-            # Always set extent based on current dimensions
             extent = (0, self.spec_frames - 1, 0, n_mels - 1)
             self.im.set_extent(extent)
+
+            # Try blitting if enabled and background is cached
+            if self.use_blitting and self.background is not None:
+                try:
+                    # Restore background
+                    self.canvas.restore_region(self.background)
+                    # Redraw the spectrogram
+                    self.ax.draw_artist(self.im)
+                    # Blit only the axes area
+                    self.canvas.blit(self.ax.bbox)
+                    # Try without forced update - let Tkinter handle it naturally
+                    # self.canvas.get_tk_widget().update_idletasks()
+                except (AttributeError, ValueError, tk.TclError) as e:
+                    # Fallback to normal draw if blitting fails
+                    if self.manager_dict.get("debug_mode", False):
+                        print(f"DEBUG: Blitting failed with {type(e).__name__}: {e}")
+                        print(
+                            "DEBUG: Disabling blitting and falling back to normal drawing"
+                        )
+                    self.use_blitting = False
+                    self.canvas.draw_idle()
+            else:
+                # Normal draw
+                self.canvas.draw_idle()
 
     def clear_display(self) -> None:
         """Clear the display."""
@@ -352,4 +381,49 @@ class SpectrogramDisplayBase:
     def draw_idle(self) -> None:
         """Request a redraw when idle."""
         if self.canvas:
+            self.canvas.draw_idle()
+
+    def cache_background(self) -> None:
+        """Cache the static background for blitting.
+
+        This should be called after any changes to static elements
+        like axes, labels, or figure size.
+        """
+        if not self.use_blitting or not self.canvas:
+            return
+
+        # Draw the full canvas first
+        self.canvas.draw()
+
+        # Cache the background (everything except animated artists)
+        self.background = self.canvas.copy_from_bbox(self.ax.bbox)
+
+    def invalidate_background(self) -> None:
+        """Invalidate the cached background.
+
+        Call this when static elements change (resize, zoom, etc.)
+        """
+        self.background = None
+
+    def _blit_update(self) -> None:
+        """Perform a fast blit update of animated artists."""
+        if not self.background or not self.canvas:
+            # Background not cached, cache it first
+            self.cache_background()
+            return
+
+        try:
+            # Restore the cached background
+            self.canvas.restore_region(self.background)
+
+            # Redraw all animated artists
+            for artist in self.animated_artists:
+                if artist.get_visible():
+                    self.ax.draw_artist(artist)
+
+            # Blit the updated region
+            self.canvas.blit(self.ax.bbox)
+        except (AttributeError, ValueError):
+            # Fallback if blitting fails
+            self.use_blitting = False
             self.canvas.draw_idle()
