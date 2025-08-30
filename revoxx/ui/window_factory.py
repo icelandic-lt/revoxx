@@ -241,10 +241,26 @@ class WindowFactory:
         Args:
             window: Window to set icon for
         """
-        # Try to find the icon file
-        icon_path = Path(__file__).parent.parent / "resources" / "microphone.png"
+        icon_path = None
 
-        if icon_path.exists():
+        # Try development path first
+        dev_path = Path(__file__).parent.parent / "resources" / "microphone.png"
+        if dev_path.exists():
+            icon_path = dev_path
+        else:
+            # Try installed package (Python 3.9+ required)
+            try:
+                from importlib.resources import files
+
+                resource_path = files("revoxx.resources") / "microphone.png"
+                # Convert to Path object for consistency
+                icon_path = Path(str(resource_path))
+            except (ImportError, AttributeError, FileNotFoundError):
+                # importlib.resources not available or resource not found
+                pass
+
+        # Set icon if we found it
+        if icon_path and icon_path.exists():
             icon = AppIcon.create_icon(icon_path)
             if icon:
                 try:
