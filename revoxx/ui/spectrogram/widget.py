@@ -11,7 +11,7 @@ from ...constants import AudioConstants
 from ...constants import UIConstants
 from ..themes import theme_manager
 from ...audio.processors import ClippingDetector
-from ...audio.processors.mel_spectrogram import MelSpectrogramProcessor, MEL_CONFIG
+from ...audio.processors import MelSpectrogramProcessor, MEL_CONFIG
 from ...utils.config import AudioConfig, DisplayConfig
 
 from .display_base import SpectrogramDisplayBase

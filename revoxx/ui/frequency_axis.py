@@ -2,11 +2,11 @@
 
 from typing import List, Tuple
 import numpy as np
-import librosa
 from matplotlib.axes import Axes
 
 from ..constants import UIConstants
-from ..audio.processors.mel_spectrogram import MEL_CONFIG
+from ..audio.processors import MEL_CONFIG
+from ..audio.processors.mel_spectrogram import mel_frequencies as get_mel_frequencies
 
 
 class FrequencyAxisManager:
@@ -147,9 +147,7 @@ class FrequencyAxisManager:
     @staticmethod
     def _get_mel_frequencies(n_mels: int, fmin: float, fmax: float) -> np.ndarray:
         """Get mel frequency values for each bin."""
-        return librosa.mel_frequencies(n_mels=n_mels + 2, fmin=fmin, fmax=fmax)[
-            1:-1
-        ]  # Remove edge bins
+        return get_mel_frequencies(n_mels, fmin, fmax)
 
     def _filter_overlapping_ticks(
         self, tick_positions: np.ndarray, n_mels: int

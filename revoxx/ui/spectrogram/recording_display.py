@@ -2,7 +2,7 @@
 
 from typing import Tuple, List
 import numpy as np
-from scipy import interpolate
+from ...utils.spectrogram_utils import resample_spectrogram
 
 from ...constants import AudioConstants
 from ...audio.processors import ClippingDetector
@@ -142,18 +142,8 @@ class RecordingDisplay:
     ) -> np.ndarray:
         """Resample spectrogram to fit display width if needed."""
         if n_frames != self.spec_frames:
-            # Resample to fit display
-            x_old = np.linspace(0, 1, n_frames)
-            x_new = np.linspace(0, 1, self.spec_frames)
-
-            resampled = np.zeros((n_mels, self.spec_frames))
-            for i in range(n_mels):
-                f = interpolate.interp1d(
-                    x_old, mel_spec[i, :], kind="linear", fill_value="extrapolate"
-                )
-                resampled[i, :] = f(x_new)
-
-            return resampled
+            # Use fast vectorized resampling
+            return resample_spectrogram(mel_spec, self.spec_frames)
         elif mel_spec.shape[1] < self.spec_frames:
             # Pad with minimum values if needed
             padded = np.ones((n_mels, self.spec_frames)) * AudioConstants.DB_MIN
