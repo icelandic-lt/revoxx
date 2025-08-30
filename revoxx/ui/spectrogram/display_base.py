@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.axes import Axes
 from matplotlib.image import AxesImage
-from scipy import interpolate
+from ...utils.spectrogram_utils import resample_spectrogram
 
 from ...constants import AudioConstants
 from ...constants import UIConstants
@@ -320,17 +320,8 @@ class SpectrogramDisplayBase:
         Returns:
             Resampled array matching display width
         """
-        # Create interpolation grid
-        x_old = np.linspace(0, 1, n_frames_visible)
-        x_new = np.linspace(0, 1, self.spec_frames)
-
-        # Interpolate each mel bin
-        resampled = np.zeros((n_mels, self.spec_frames))
-        for i in range(n_mels):
-            f = interpolate.interp1d(
-                x_old, visible_array[i, :], kind="linear", fill_value="extrapolate"
-            )
-            resampled[i, :] = f(x_new)
+        # Use fast vectorized resampling
+        resampled = resample_spectrogram(visible_array, self.spec_frames)
 
         return resampled
 

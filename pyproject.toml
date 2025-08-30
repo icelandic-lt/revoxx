@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoxx"
-version = "1.0.0"
+version = "1.0.0.dev10"
 description = "Speech recording application for creating high-quality speech datasets"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "Apache-2.0"
 authors = [
     {name = "Grammatek ehf", email = "info@grammatek.com"}
 ]
@@ -18,7 +18,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -31,19 +30,20 @@ classifiers = [
 keywords = ["speech", "recording", "tts", "dataset", "audio", "voice", "emotional-speech"]
 requires-python = ">=3.9"
 dependencies = [
-    "numpy>=2.0.0",
+    "numpy>=1.20.0,<1.24.0; python_version<'3.10'",  # Older numpy for Python 3.9
+    "numpy>=1.23.0,<1.26.0; python_version=='3.10.*'",  # Avoid 1.26.x CPU bug on Python 3.10
+    "numpy>=1.24.0; python_version>='3.11'",  # NumPy 2.x works fine with Python 3.11+
     "matplotlib>=3.5.0",
-    "librosa>=0.10.0",
-    "scipy>=1.10.0",
     "sounddevice>=0.4.0",
     "soundfile>=0.12.0",
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
-    "silero-vad>=5.0",
     "tqdm>=4.65.0",
 ]
 
 [project.optional-dependencies]
+vad = [
+    "torch>=2.0.0",
+    "silero-vad>=5.0",
+]
 dev = [
     "black>=22.0.0",
     "isort>=5.10.0",
@@ -64,7 +64,8 @@ revoxx-export = "scripts_module.export:main"
 revoxx-vadiate = "scripts_module.vadiate:main"
 
 [tool.setuptools]
-packages = ["revoxx", "revoxx.audio", "revoxx.audio.processors", "revoxx.dataset",
+packages = ["revoxx", "revoxx.audio", "revoxx.audio.processors", "revoxx.controllers",
+           "revoxx.dataset", "revoxx.resources", "revoxx.resources.templates",
            "revoxx.session", "revoxx.ui", "revoxx.ui.dialogs", "revoxx.ui.level_meter",
            "revoxx.ui.menus", "revoxx.ui.spectrogram", "revoxx.ui.spectrogram.controllers",
            "revoxx.utils", "scripts_module"]
