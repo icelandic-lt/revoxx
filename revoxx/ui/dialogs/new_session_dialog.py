@@ -55,6 +55,7 @@ class NewSessionDialog:
         current_sample_rate: int,
         current_bit_depth: int,
         current_input_device: Optional[str] = None,
+        default_script: Optional[Path] = None,
     ):
         """Initialize the new session dialog.
 
@@ -64,6 +65,7 @@ class NewSessionDialog:
             current_sample_rate: Current sample rate in Hz from app config
             current_bit_depth: Current bit depth (16 or 24) from app config
             current_input_device: Current input device name from app config
+            default_script: Optional path to a script file to use for the new session
         """
         self.parent = parent
         self.result: Optional[NewSessionData] = None
@@ -71,6 +73,7 @@ class NewSessionDialog:
         self.current_sample_rate = current_sample_rate
         self.current_bit_depth = current_bit_depth
         self.current_input_device_name = current_input_device
+        self.default_script = default_script
 
         # Get device manager
         self.device_manager = get_device_manager()
@@ -87,6 +90,10 @@ class NewSessionDialog:
 
         # Create UI
         self._create_widgets()
+
+        # Set default script if provided
+        if self.default_script:
+            self.script_path_var.set(str(self.default_script))
 
         setup_dialog_window(
             self.dialog,

@@ -231,10 +231,15 @@ revoxx --session path/to/session # Open specific session
 
 ## Prepare recordings
 
-Before you start recording, you should prepare a script with the utterances you want to record.
-The script should be a simple text file with one utterance per line. The utterances can be in any language you want.
+Before you start recording, you need to prepare an utterance script with the utterances you want to record. This can be simplified by using the "Import Text to Script" Dialog:
 
-A script file follows Festival-style and has the following possible two formats:
+<img src="https://raw.githubusercontent.com/icelandic-lt/revoxx/main/doc/import_raw_text.png" alt="Raw text import dialog" width="30%"/>
+
+This dialog takes an input script of raw text and converts it into an utterance script. You can redo this for the same input text as many times you want, e.g. if you want to use separate emotional levels for different speakers.
+
+### Utterance script format
+
+A script file follows Festival-style format. The script should be a simple text file with one utterance per line. The utterances can be in any language you want.
 
 For a script with emotion levels:
 
@@ -250,9 +255,9 @@ For a script without emotion levels. This format was used for recording our non-
 
 You can see for both formats an example in the directory [t3_scripts](t3_scripts).
 
-The emotion levels can be from any monotonic numerical value range you want. If you want to follow Talrómur 3 dataset conventions, you can use emotion levels 0-5 for 6 emotions: neutral, happy, sad, angry, surprised, and helpful.
-The emotion levels are used to control the emotion intensity of the speech in combination with the specific emotion.
-Neutral speech corresponds to emotion level 0.
+The emotion levels can be from any monotonic numerical value range you want. If you want to follow Talrómur 3 conventions, you can use emotion intensity levels 1-5 and 6 emotions: neutral, happy, sad, angry, surprised, and helpful.
+The emotion intensity levels are used to control the emotion intensity of the speech in combination with the specific emotion.
+Neutral speech is treated as intensity level 0 at dataset export.
 
 ## Record dataset
 

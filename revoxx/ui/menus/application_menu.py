@@ -128,6 +128,14 @@ class ApplicationMenu:
             accelerator=f"{accel_mod}+O",
         )
 
+        file_menu.add_separator()
+
+        # Import text to script
+        file_menu.add_command(
+            label="Import Text to Script...",
+            command=self._import_text_to_script,
+        )
+
         # Recent Sessions submenu
         self.recent_menu = tk.Menu(
             file_menu,
@@ -644,6 +652,33 @@ high-quality speech datasets"""
             )
         except Exception as e:
             self.app.display_controller.set_status(f"Error loading session: {e}")
+
+    def _import_text_to_script(self) -> None:
+        """Show the import text to script dialog."""
+        from ..dialogs.import_text_dialog import ImportTextDialog
+
+        # Pass settings manager for saving/loading directory preferences
+        # The dialog will handle default directories internally
+        dialog = ImportTextDialog(
+            self.root,
+            default_dir=None,  # Let dialog use saved settings or home directory
+            settings_manager=self.app.settings_manager,
+        )
+        result = dialog.show()
+
+        if result:
+            self.app.display_controller.set_status(f"Script created: {result.name}")
+
+            # Optionally ask if user wants to create a new session with this script
+            response = messagebox.askyesno(
+                "Create Session",
+                "Script file created successfully.\n\nWould you like to create a new session with this script?",
+                parent=self.root,
+            )
+
+            if response:
+                # Pass the script path to new session dialog
+                self.app._new_session(default_script=result)
 
     def update_menu_states(self, states: dict) -> None:
         """Update menu checkboxes based on current application state.
