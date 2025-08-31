@@ -436,11 +436,17 @@ class Revoxx:
         # Window close event
         self.window.window.protocol("WM_DELETE_WINDOW", self._quit)
 
-    def _new_session(self):
-        """Create a new session."""
+    def _new_session(self, default_script=None):
+        """Create a new session.
+
+        Args:
+            default_script: Optional path to a script file to use for the new session
+        """
         from .session import SessionConfig
 
-        result = self.dialog_controller.show_new_session_dialog()
+        result = self.dialog_controller.show_new_session_dialog(
+            default_script=default_script
+        )
 
         if result:
             try:

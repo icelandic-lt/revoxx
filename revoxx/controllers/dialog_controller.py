@@ -51,8 +51,11 @@ class DialogController:
         dialog = OpenSessionDialog(self.app.window.window, initial_dir)
         return dialog.show()
 
-    def show_new_session_dialog(self):
+    def show_new_session_dialog(self, default_script=None):
         """Show dialog to create a new session.
+
+        Args:
+            default_script: Optional path to a script file to use for the new session
 
         Returns:
             Dialog result object with all session parameters or None if cancelled
@@ -73,6 +76,7 @@ class DialogController:
             self.app.config.audio.sample_rate,
             self.app.config.audio.bit_depth,
             self.app.config.audio.input_device,
+            default_script=default_script,
         )
         return dialog.show()
 

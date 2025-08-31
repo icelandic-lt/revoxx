@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoxx"
-version = "1.0.0.dev13"
+version = "1.0.0.dev14"
 description = "Speech recording application for creating high-quality speech datasets"
 readme = "README.md"
 license = "Apache-2.0"
@@ -15,7 +15,7 @@ maintainers = [
     {name = "Grammatek ehf", email = "info@grammatek.com"}
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
@@ -23,6 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",

@@ -54,6 +54,10 @@ class UserSettings:
     export_format: str = "flac"
     export_include_intensity: bool = True
 
+    # Text import settings
+    import_input_dir: Optional[str] = None
+    import_output_dir: Optional[str] = None
+
     # Session settings
     last_session_path: Optional[str] = None
 
