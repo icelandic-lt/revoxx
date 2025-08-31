@@ -29,6 +29,7 @@ This repository provides **Revoxx**, a graphical recording application for recor
 ## System Requirements
 - **Operating System:** Linux/OS-X, should work on Windows
 - **Recording:** Audio Interface, good voice microphone and headphones
+- **Linux:** Requires PortAudio library (`sudo apt-get install portaudio19-dev` on Ubuntu/Debian)
 
 ## Description
 
@@ -193,6 +194,8 @@ Once installed, you can run Revoxx using:
 revoxx
 ```
 
+**macOS Note:** The first launch may take longer than usual as macOS verifies the application (Gatekeeper security check). Subsequent launches will be faster.
+
 ### During development (without installation)
 
 Run as a Python module:
@@ -258,6 +261,6 @@ to be defined
 ## Acknowledgements
 This project is part of the program Language Technology for Icelandic. The program was funded by the Icelandic Ministry of Culture and Business Affairs.
 
-## LICENSE
+## License
 
-[]()
+This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/icelandic-lt/revoxx/blob/main/LICENSE) file for details.
