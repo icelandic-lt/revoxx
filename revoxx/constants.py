@@ -6,6 +6,7 @@ file handling, and keyboard bindings.
 """
 
 from enum import Enum
+import platform
 
 
 class MsgType(Enum):
@@ -201,11 +202,41 @@ class UIConstants:
     MIN_FONT_SIZE_LARGE = 40
     MIN_FONT_SIZE_MEDIUM = 28
     MIN_FONT_SIZE_SMALL = 14
-    FONT_SIZE_LARGE = 100
+    # Linux/X11 may have rendering issues with very large font sizes
+    # This setting seems to ensure correct character rendering throughout
+    FONT_SIZE_LARGE = 75
 
-    # Font families (fallback to system fonts)
-    FONT_FAMILY_MONO = ("SF Mono", "Monaco", "Consolas", "Courier New")
-    FONT_FAMILY_SANS = ("SF Pro Display", "Helvetica Neue", "Arial")
+    # Platform-specific font configuration
+    _system = platform.system()
+    if _system == "Darwin":  # macOS
+        FONT_FAMILY_MONO = ("SF Mono", "Monaco", "Menlo", "Courier New")
+        FONT_FAMILY_SANS = ("SF Pro Display", "Helvetica Neue", "Arial")
+    elif _system == "Linux":
+        # Linux fonts with good Unicode support
+        # Ubuntu fonts first - if available - followed by other common fonts
+        FONT_FAMILY_MONO = (
+            "Ubuntu Mono",
+            "DejaVu Sans Mono",
+            "Liberation Mono",
+            "Noto Sans Mono",
+            "Bitstream Vera Sans Mono",
+            "FreeMono",
+            "Courier New",
+            "monospace",
+        )
+        FONT_FAMILY_SANS = (
+            "Ubuntu",
+            "DejaVu Sans",
+            "Liberation Sans",
+            "Noto Sans",
+            "Bitstream Vera Sans",
+            "FreeSans",
+            "Arial",
+            "sans-serif",
+        )
+    else:  # Windows and other systems
+        FONT_FAMILY_MONO = ("Consolas", "Courier New", "Lucida Console")
+        FONT_FAMILY_SANS = ("Segoe UI", "Arial", "Tahoma")
 
     # Spectrogram display
     SPECTROGRAM_WIDTH_INCHES = 8

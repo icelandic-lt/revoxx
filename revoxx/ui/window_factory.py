@@ -320,9 +320,17 @@ class WindowFactory:
         if event.widget != window.window:
             return
 
-        # Update font sizes
         window.font_manager.calculate_base_sizes(event.width, event.height)
-        window._apply_fonts()
+        window._update_fixed_ui_fonts()
+
+        # Debounce text font recalculation
+        if hasattr(window, "_resize_timer"):
+            window.window.after_cancel(window._resize_timer)
+        if hasattr(window, "text_var") and window.text_var.get():
+            window._invalidate_layout_cache()
+            window._resize_timer = window.window.after(
+                150, lambda: window.refresh_text_layout()
+            )
 
         # Fire FontsReady event on first resize
         if hasattr(window, "_fonts_initialized") and not window._fonts_initialized:

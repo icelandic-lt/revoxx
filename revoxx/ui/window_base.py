@@ -119,6 +119,8 @@ class WindowBase:
             fg=UIConstants.COLOR_TEXT_SECONDARY,
             bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
             font=(UIConstants.FONT_FAMILY_MONO[0], 14),
+            width=40,  # Fixed width to prevent layout shifts
+            anchor="w",  # Left-align text within the fixed width
         )
         self.status_label.pack(
             side=tk.LEFT,
@@ -458,17 +460,13 @@ class WindowBase:
         # Extract emotion level and clean text
         emotion_level, clean_text = extract_emotion_level(full_text)
 
-        # Display only the clean text (without emotion label)
-        self.text_var.set(clean_text)
+        self.update_utterance_text(clean_text)
 
         # Update emotion indicator
         if emotion_level is not None:
             self.emotion_indicator.set_level(emotion_level)
         else:
             self.emotion_indicator.set_level(0)  # No emotion level
-
-        # Adjust font size to fit text
-        self.adjust_text_font_size(clean_text)
 
     def _update_progress_display(self, display_position: int) -> None:
         """Update the progress counter display.
@@ -540,15 +538,18 @@ class WindowBase:
         # Store current message type
         self._current_msg_type = msg_type
 
-        self.status_var.set(message)
+        # Handle different message types
+        if msg_type == MsgType.DEFAULT:
+            # For DEFAULT type, update directly with utterance info (don't set message)
+            self._update_default_status()
+        else:
+            # For all other types, set the message
+            self.status_var.set(message)
 
         # Schedule auto-clear for temporary messages
         if msg_type == MsgType.TEMPORARY:
             duration = duration_ms or MsgConfig.DEFAULT_TEMPORARY_DURATION_MS
             self._status_timer = self.window.after(duration, self._clear_status)
-        elif msg_type == MsgType.DEFAULT:
-            # For DEFAULT type, show current utterance immediately
-            self._update_default_status()
 
     def _clear_status(self) -> None:
         """Clear status and return to default (utterance info)."""
@@ -678,48 +679,131 @@ class WindowBase:
         else:
             self.duration_var.set("")
 
-    def adjust_text_font_size(self, text: str) -> None:
-        """Adjust font size only if text doesn't fit with current size.
+    def update_utterance_text(self, text: str) -> None:
+        """Update utterance display with new text and optimal font size.
 
-        Only reduces font size when necessary to fit long text.
-        Always tries to use the maximum possible font size.
+        This is the main public API for setting utterance text.
+        Calculates optimal font size and applies both text and font in one operation.
 
         Args:
             text: The text to display
         """
         if not text:
+            self.text_var.set("")
             return
 
-        # Force complete layout update on the entire window
-        self.window.update_idletasks()
-
-        # Get available space
-        available_width = self.utterance_frame.winfo_width() - (
-            2 * UIConstants.MAIN_FRAME_PADDING
-        )
-        available_height = self.utterance_frame.winfo_height() - (
-            2 * UIConstants.MAIN_FRAME_PADDING
-        )
+        # Get current dimensions (cached or fresh)
+        width, height = self._get_cached_dimensions()
 
         # Skip if frame hasn't been sized yet
-        if available_width <= 0 or available_height <= 0:
+        if width <= 0 or height <= 0:
+            # Just set the text with default font
+            self.text_var.set(text)
             return
 
-        # Use FontManager to calculate optimal size
-        # Allow much larger font sizes for better space utilization
-        optimal_size, wrap_length = self.font_manager.calculate_adaptive_font_size(
+        optimal_size, wrap_length = self._calculate_optimal_font_size(
+            text, width, height
+        )
+        self._apply_text_font(optimal_size, wrap_length)
+        self.text_var.set(text)
+
+    def _invalidate_layout_cache(self) -> None:
+        """Invalidate the layout dimensions cache.
+
+        Call this when layout changes occur (meters toggle, info panel toggle, etc.)
+        """
+        if hasattr(self, "_cached_frame_dims"):
+            delattr(self, "_cached_frame_dims")
+
+    def _get_cached_dimensions(self) -> tuple[int, int]:
+        """Get cached frame dimensions or calculate if needed.
+
+        Returns:
+            Tuple of (width, height) available for text display
+        """
+        # Check if recalculation needed
+        should_recalculate = (
+            not hasattr(self, "_cached_frame_dims")
+            or self.meters_visible != getattr(self, "_last_meters_state", None)
+            or self.info_panel_visible != getattr(self, "_last_info_panel_state", None)
+        )
+
+        if should_recalculate:
+            self._update_layout_cache()
+
+        return getattr(self, "_cached_width", 0), getattr(self, "_cached_height", 0)
+
+    def _update_layout_cache(self) -> None:
+        """Update cached frame dimensions."""
+        # Only force update if dimensions changed
+        if not hasattr(self, "_cached_frame_dims"):
+            self.window.update_idletasks()
+
+        self._cached_width = self.utterance_frame.winfo_width() - (
+            2 * UIConstants.MAIN_FRAME_PADDING
+        )
+        self._cached_height = self.utterance_frame.winfo_height() - (
+            2 * UIConstants.MAIN_FRAME_PADDING
+        )
+        self._cached_frame_dims = True
+        self._last_meters_state = self.meters_visible
+        self._last_info_panel_state = self.info_panel_visible
+
+    def refresh_text_layout(self) -> None:
+        """Refresh the text layout with recalculated font size.
+
+        This is the main public API for updating font size of existing text.
+        Use this after window resize, panel toggles, etc.
+        """
+        text = self.text_var.get()
+        if not text:
+            return
+
+        # Get current dimensions
+        width, height = self._get_cached_dimensions()
+
+        # Skip if frame hasn't been sized yet
+        if width <= 0 or height <= 0:
+            return
+
+        # Calculate and apply new font size
+        optimal_size, wrap_length = self._calculate_optimal_font_size(
+            text, width, height
+        )
+        self._apply_text_font(optimal_size, wrap_length)
+
+    def _calculate_optimal_font_size(
+        self, text: str, width: int, height: int
+    ) -> tuple[int, int]:
+        """Calculate optimal font size for given text and dimensions.
+
+        Args:
+            text: Text to size
+            width: Available width
+            height: Available height
+
+        Returns:
+            Tuple of (font_size, wrap_length)
+        """
+        return self.font_manager.calculate_adaptive_font_size(
             text,
-            available_width,
-            available_height,
+            width,
+            height,
             max_font_size=UIConstants.FONT_SIZE_LARGE,
             min_font_size=UIConstants.MIN_FONT_SIZE_SMALL,
             use_mono_font=False,
         )
 
-        # Apply the calculated font size
+    def _apply_text_font(self, font_size: int, wrap_length: int) -> None:
+        """Apply font configuration to text display.
+
+        Args:
+            font_size: Font size in points
+            wrap_length: Text wrap length in pixels
+        """
         sans_font = self.font_manager.get_sans_font()
         self.text_display.config(
-            font=(sans_font, optimal_size, "normal"), wraplength=wrap_length
+            font=(sans_font, font_size, "normal"), wraplength=wrap_length
         )
 
     def set_meters_visibility(self, visible: bool) -> None:
@@ -846,11 +930,11 @@ class WindowBase:
         if hasattr(self, "level_meter_preset_var"):
             self.level_meter_preset_var.set(preset_name)
 
-    def _apply_fonts(self) -> None:
-        """Apply calculated fonts to widgets.
+    def _update_fixed_ui_fonts(self) -> None:
+        """Update fonts for fixed UI elements (status, indicators, etc.).
 
-        Updates all UI elements with appropriately scaled fonts.
-        Also adjusts text wrapping width based on window size.
+        This only updates non-content UI elements with fixed font sizes.
+        Utterance text font sizing is handled separately.
         """
         # Get font families from manager
         mono_font = self.font_manager.get_mono_font()
@@ -860,10 +944,7 @@ class WindowBase:
         self.rec_indicator.config(font=(mono_font, 24, "bold"))
         self.progress_label.config(font=(mono_font, 24, "bold"))
 
-        # Update text layout with adaptive font sizing if we have text
-        current_text = self.text_var.get()
-        if current_text:
-            self.adjust_text_font_size(current_text)
+        # Note: Text font sizing is handled by update_utterance_text() and refresh_text_layout()
 
     def _apply_theme_to_widgets(self) -> None:
         """Apply current theme colors to all widgets."""
@@ -975,10 +1056,10 @@ class WindowBase:
         current = self.meters_visible
         self.set_meters_visibility(not current)
 
-        # Force layout update and recalculate font after meter toggle
-        self.window.update_idletasks()
+        self._invalidate_layout_cache()
+
         if self.text_var.get():
-            self.adjust_text_font_size(self.text_var.get())
+            self.window.after_idle(self.refresh_text_layout)
 
         return not current
 
@@ -1000,10 +1081,12 @@ class WindowBase:
                 self.info_panel_visible = True
                 new_state = True
 
-            # Force layout update and recalculate font
-            self.window.update_idletasks()
+            # Invalidate cache to trigger recalculation on next update
+            self._invalidate_layout_cache()
+
+            # Schedule font recalculation after layout stabilizes
             if self.text_var.get():
-                self.adjust_text_font_size(self.text_var.get())
+                self.window.after_idle(self.refresh_text_layout)
 
             return new_state
         return False
