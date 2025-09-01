@@ -60,7 +60,7 @@ class TestAudioQueueManager(unittest.TestCase):
 
         self.assertTrue(result)
         self.mock_playback_queue.put.assert_called_once_with(
-            {"action": "set_output_device", "index": 1}, block=False
+            {"action": "set_output_device", "device_name": 1}, block=False
         )
 
     def test_set_output_device_queue_full(self):
@@ -77,7 +77,7 @@ class TestAudioQueueManager(unittest.TestCase):
 
         self.assertTrue(result)
         self.mock_playback_queue.put.assert_called_once_with(
-            {"action": "set_output_device", "index": None}, block=False
+            {"action": "set_output_device", "device_name": None}, block=False
         )
 
     def test_set_output_channel_mapping_success(self):
@@ -131,7 +131,7 @@ class TestAudioQueueManager(unittest.TestCase):
 
         self.assertTrue(result)
         self.mock_record_queue.put.assert_called_once_with(
-            {"action": "set_input_device", "index": 2}, block=False
+            {"action": "set_input_device", "device_name": 2}, block=False
         )
 
     def test_set_input_device_queue_full(self):

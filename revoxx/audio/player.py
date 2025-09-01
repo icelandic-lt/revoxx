@@ -19,6 +19,7 @@ from .queue_manager import AudioQueueManager
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
 from ..utils.process_cleanup import ProcessCleanupManager
+from ..utils.device_manager import get_device_manager
 from ..constants import UIConstants
 
 
@@ -53,9 +54,9 @@ class AudioPlayer:
         # Level calculator for meter updates
         self.level_calculator = LevelCalculator(config.sample_rate)
 
-    def set_output_device(self, index: Optional[int]) -> None:
-        """Update output device index used for future streams."""
-        self.config.output_device = index
+    def set_output_device(self, device_name: Optional[str]) -> None:
+        """Update output device name used for future streams."""
+        self.config.output_device = device_name
 
     def start_playback(
         self, audio_data: np.ndarray, sample_rate: int, audio_buffer: AudioBuffer
@@ -106,12 +107,23 @@ class AudioPlayer:
         # Store for callback use
         self._playback_output_channel_index = target_channel_index
 
+        # Convert device name to index for current device list
+        device_index = None
+        if self.config.output_device is not None:
+            try:
+                device_manager = get_device_manager()
+                device_index = device_manager.get_device_index_by_name(
+                    self.config.output_device
+                )
+            except (ImportError, RuntimeError):
+                pass
+
         # Open stream with fallback to default device
         try:
             self.stream = sd.OutputStream(
                 samplerate=sample_rate,
                 blocksize=self.blocksize,
-                device=self.config.output_device,
+                device=device_index,
                 channels=num_stream_channels,
                 dtype="float32",  # Always use float32 for sounddevice
                 callback=self._audio_callback,
@@ -203,15 +215,19 @@ class AudioPlayer:
             return None
 
         elif action == "set_output_device":
-            value = command.get("index", None)
-            if isinstance(value, int):
-                self.set_output_device(value)
-            elif value is None:
-                self.set_output_device(None)
+            device_name = command.get("device_name", None)
+            self.set_output_device(device_name)
 
         elif action == "set_output_channel_mapping":
             mapping = command.get("mapping", None)
             self._update_channel_mapping(mapping)
+
+        elif action == "refresh_devices":
+            try:
+                device_manager = get_device_manager()
+                device_manager.refresh()
+            except (ImportError, RuntimeError):
+                pass
 
         else:
             return attached_buffer  # Unknown command, keep buffer

@@ -88,7 +88,7 @@ class DeviceManager:
         Returns:
             Device info dict or None if not found
         """
-        for dev in self._input_devices:
+        for dev in self._all_devices:
             if dev["name"] == name:
                 return dev.copy()
         return None

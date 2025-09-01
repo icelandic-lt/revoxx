@@ -263,6 +263,24 @@ Neutral speech is treated as intensity level 0 at dataset export.
 
 to be defined
 
+## Known Issues
+
+### Linux: USB Audio Output Devices
+
+On Linux systems, USB audio output devices (e.g., Focusrite Scarlett, Clarett+) may temporarily disappear from the device list during playback. This is a known issue with the interaction between PortAudio and ALSA/PulseAudio. 
+
+**Symptoms:**
+- Output device works for the first playback but fails on subsequent attempts
+- Error message: "Output device 'DeviceName' disappeared from system"
+- Device reappears after restarting the application
+- Input devices (recording) are typically not affected
+
+**Workarounds:**
+- The application will automatically fall back to the system default audio output device
+- If the issue persists, restart the application
+- Consider updating to the latest version of sounddevice (>=0.5.1)
+- Check that no other application is claiming exclusive access to the device
+
 ## Acknowledgements
 This project is part of the program Language Technology for Icelandic. The program was funded by the Icelandic Ministry of Culture and Business Affairs.
 
