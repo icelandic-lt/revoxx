@@ -674,9 +674,7 @@ class DisplayController:
         if not window:
             return
 
-        # Force layout update first
-        window.window.update_idletasks()
+        window._invalidate_layout_cache()
 
-        # Recalculate font size immediately after layout update
         if hasattr(window, "text_var") and window.text_var.get():
-            window.adjust_text_font_size(window.text_var.get())
+            window.window.after_idle(window.refresh_text_layout)
