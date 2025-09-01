@@ -65,8 +65,6 @@ class ImportTextDialog:
         )
         self.dialog.minsize(self.MIN_WIDTH, self.DEFAULT_HEIGHT)
 
-        self._update_distribution_plot()
-
     def _load_directories(self, default_dir: Optional[Path]) -> None:
         """Load saved directories from settings."""
         if self.settings_manager:
@@ -89,7 +87,7 @@ class ImportTextDialog:
         self.output_file_var = tk.StringVar()
 
         self.max_length_var = tk.IntVar(value=80)
-        self.split_mode_var = tk.StringVar(value="sentences")
+        self.split_mode_var = tk.StringVar(value="lines")
         self.max_length_label = None
 
         self.add_emotion_var = tk.BooleanVar(value=False)
@@ -107,6 +105,7 @@ class ImportTextDialog:
         self.canvas = None
 
         self.emotion_spinboxes = []
+        self.emotion_radio_buttons = []
         self.fixed_level_combo = None
 
     def _create_widgets(self):
@@ -173,16 +172,6 @@ class ImportTextDialog:
 
         ttk.Label(length_frame, text="Max length:").pack(side=tk.LEFT)
 
-        def validate_int(value):
-            if value == "":
-                return True
-            try:
-                val = int(value)
-                return 20 <= val <= 500
-            except ValueError:
-                return False
-
-        vcmd = (self.dialog.register(validate_int), "%P")
         spinbox = ttk.Spinbox(
             length_frame,
             from_=20,
@@ -190,8 +179,6 @@ class ImportTextDialog:
             textvariable=self.max_length_var,
             width=10,
             command=self._on_max_length_change,
-            validate="key",
-            validatecommand=vcmd,
         )
         spinbox.pack(side=tk.LEFT, padx=(self.PADDING_SMALL, 0))
         spinbox.bind("<KeyRelease>", lambda e: self._on_max_length_change())
@@ -208,9 +195,9 @@ class ImportTextDialog:
         split_frame.pack(fill=tk.X, padx=(20, 0))
 
         modes = [
+            ("Lines", "lines"),
             ("Sentences", "sentences"),
             ("Paragraphs", "paragraphs"),
-            ("Lines", "lines"),
         ]
         for i, (text, value) in enumerate(modes):
             padx = (0, 15) if i < len(modes) - 1 else 0
@@ -256,13 +243,15 @@ class ImportTextDialog:
         fixed_frame = ttk.Frame(options_frame)
         fixed_frame.pack(fill=tk.X)
 
-        ttk.Radiobutton(
+        fixed_radio = ttk.Radiobutton(
             fixed_frame,
             text="Fixed level:",
             variable=self.emotion_mode_var,
             value="fixed",
             command=self._on_mode_change,
-        ).pack(side=tk.LEFT)
+        )
+        fixed_radio.pack(side=tk.LEFT)
+        self.emotion_radio_buttons.append(fixed_radio)
 
         self.fixed_level_combo = ttk.Combobox(
             fixed_frame,
@@ -277,13 +266,15 @@ class ImportTextDialog:
         dist_frame = ttk.Frame(options_frame)
         dist_frame.pack(fill=tk.X, pady=(self.PADDING_SMALL, 0))
 
-        ttk.Radiobutton(
+        dist_radio = ttk.Radiobutton(
             dist_frame,
             text="Normal distribution:",
             variable=self.emotion_mode_var,
             value="distribution",
             command=self._on_mode_change,
-        ).pack(anchor=tk.W)
+        )
+        dist_radio.pack(anchor=tk.W)
+        self.emotion_radio_buttons.append(dist_radio)
 
         # Distribution parameters
         params_frame = ttk.Frame(options_frame)
@@ -505,17 +496,17 @@ class ImportTextDialog:
         mode = self.split_mode_var.get()
         if self.max_length_label:
             text_map = {
+                "lines": "characters per line",
                 "sentences": "characters per sentence",
                 "paragraphs": "characters per paragraph",
-                "lines": "characters per line",
             }
             self.max_length_label.config(text=text_map.get(mode, ""))
 
         # Update split mode explanation
         explanations = {
-            "sentences": "Text is split at sentence boundaries (. ! ?) followed by whitespace. Multiple sentences may be combined if they fit within max length.",
-            "paragraphs": "Text is split at paragraph boundaries (double line breaks). Long paragraphs are further split at sentence boundaries if needed.",
             "lines": "Text is split at original line breaks. Each line becomes a separate utterance, split further if exceeding max length.",
+            "sentences": "Text is split at sentence boundaries (. ! ?) followed by whitespace. Each sentence becomes a separate utterance, split further only if exceeding max length.",
+            "paragraphs": "Text is split at paragraph boundaries (double line breaks). Long paragraphs are further split at sentence boundaries if needed.",
         }
         if hasattr(self, "split_explanation_label"):
             self.split_explanation_label.config(text=explanations.get(mode, ""))
@@ -546,7 +537,9 @@ class ImportTextDialog:
         for spinbox in self.emotion_spinboxes:
             spinbox.config(state="disabled" if is_fixed else "normal")
 
-        if not is_fixed:
+        if is_fixed:
+            self._show_plot_placeholder()
+        else:
             self._update_distribution_plot()
 
     def _on_distribution_change(self):
@@ -554,13 +547,40 @@ class ImportTextDialog:
         if self.emotion_mode_var.get() == "distribution":
             self._update_distribution_plot()
 
+    def _show_plot_placeholder(self):
+        """Show placeholder text in the plot area."""
+        if self.figure:
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            ax.text(
+                0.5,
+                0.5,
+                "Select 'Normal distribution' to see histogram",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=10,
+                color="gray",
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            self.canvas.draw()
+
     def _set_emotion_widgets_state(self, state):
         """Set state of emotion-related widgets."""
+        # Set state for radio buttons
+        for radio in self.emotion_radio_buttons:
+            radio.config(state=state)
+
+        # Set state for combo and spinboxes
         self.fixed_level_combo.config(state=state)
         for spinbox in self.emotion_spinboxes:
             spinbox.config(state=state)
 
-        if state == "normal":
+        # Update plot visibility
+        if state == "disabled":
+            self._show_plot_placeholder()
+        elif state == "normal":
             self._on_mode_change()
 
     def _update_distribution_plot(self):
@@ -605,7 +625,6 @@ class ImportTextDialog:
             )
             ax.plot(x, pdf, "r-", linewidth=2, label="Theoretical")
 
-            ax.set_xlabel("Emotion Level")
             ax.set_ylabel("Probability")
             ax.set_title("Emotion Level Distribution")
             # Show reasonable number of ticks even for large ranges

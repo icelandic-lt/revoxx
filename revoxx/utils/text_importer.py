@@ -140,7 +140,10 @@ class TextImporter:
 
     @staticmethod
     def _split_into_sentences(text: str, max_length: int) -> List[str]:
-        """Split text into sentences respecting max length.
+        """Split text into individual sentences, respecting max length.
+
+        Each sentence becomes a separate utterance. Long sentences are split
+        at punctuation or word boundaries.
 
         Args:
             text: Text to split
@@ -149,41 +152,27 @@ class TextImporter:
         Returns:
             List of sentences
         """
+        # Clean up whitespace and line breaks within text
+        text = " ".join(text.split())
+
         # Split on sentence boundaries
         sentence_pattern = r"(?<=[.!?])\s+"
         sentences = re.split(sentence_pattern, text)
 
         utterances = []
-        current = ""
 
         for sentence in sentences:
             sentence = sentence.strip()
             if not sentence:
                 continue
 
-            # Check if we can add this sentence to current utterance
-            if current and len(current) + len(sentence) + 1 <= max_length:
-                current = current + " " + sentence
+            # Each sentence becomes its own utterance
+            if len(sentence) <= max_length:
+                utterances.append(sentence)
             else:
-                # Save current utterance if not empty
-                if current:
-                    utterances.append(current)
-
-                # Handle the sentence
-                if len(sentence) <= max_length:
-                    current = sentence
-                else:
-                    # Split long sentence
-                    parts = TextImporter.split_long_sentence(sentence, max_length)
-                    if parts:
-                        utterances.extend(parts[:-1])
-                        current = parts[-1]
-                    else:
-                        current = ""
-
-        # Don't forget the last utterance
-        if current:
-            utterances.append(current)
+                # Split long sentence at punctuation or words
+                parts = TextImporter.split_long_sentence(sentence, max_length)
+                utterances.extend(parts)
 
         return utterances
 
