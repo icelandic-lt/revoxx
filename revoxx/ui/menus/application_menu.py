@@ -15,6 +15,7 @@ from ..themes import theme_manager, ThemePreset
 from ..level_meter.config import RecordingStandard, get_standard_description
 from ..dialogs.dataset_dialog import DatasetDialog
 from .audio_devices import AudioDevicesMenuBuilder
+from ...utils.device_manager import get_device_manager
 
 if TYPE_CHECKING:
     from ...app import Revoxx
@@ -359,6 +360,27 @@ class ApplicationMenu:
             if method:
                 method(*args)
 
+        # Convert device names to indices for menu initialization
+        device_manager = get_device_manager()
+
+        initial_input_index = None
+        if self.app.config.audio.input_device:
+            initial_input_index = device_manager.get_device_index_by_name(
+                self.app.config.audio.input_device
+            )
+
+        initial_output_index = None
+        if self.app.config.audio.output_device:
+            initial_output_index = device_manager.get_device_index_by_name(
+                self.app.config.audio.output_device
+            )
+
+        def _on_rescan_devices():
+            """Send refresh commands to audio processes when devices are rescanned."""
+            if self.app.queue_manager:
+                self.app.queue_manager.refresh_playback_devices()
+                self.app.queue_manager.refresh_record_devices()
+
         self.audio_devices_menu = AudioDevicesMenuBuilder(
             parent_menu,
             on_select_input=lambda idx: _call_controller("set_input_device", idx),
@@ -369,8 +391,9 @@ class ApplicationMenu:
             on_select_output_channels=lambda m: _call_controller(
                 "set_output_channel_mapping", m
             ),
-            initial_input_index=self.app.config.audio.input_device,
-            initial_output_index=self.app.config.audio.output_device,
+            on_rescan_devices=_on_rescan_devices,
+            initial_input_index=initial_input_index,
+            initial_output_index=initial_output_index,
             initial_input_mapping=getattr(
                 self.app.settings_manager.settings, "input_channel_mapping", None
             ),

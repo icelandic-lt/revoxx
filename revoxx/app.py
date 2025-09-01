@@ -92,9 +92,12 @@ class Revoxx:
         )
         self.cleanup_manager.setup_signal_handlers()
 
-        if self.current_session:
-            self.script_file = self.current_session.get_script_path()
-            self.recording_dir = self.current_session.get_recordings_dir()
+        if self.current_session and self.current_session.session_dir:
+            # Use session_dir directly to avoid method calls that check for None
+            self.script_file = self.current_session.session_dir / (
+                self.current_session.script_path or "script.txt"
+            )
+            self.recording_dir = self.current_session.session_dir / "recordings"
             self.file_manager = RecordingFileManager(self.recording_dir)
             self.active_recordings = ActiveRecordings(self.file_manager)
         else:
@@ -102,6 +105,9 @@ class Revoxx:
             self.recording_dir = None
             self.file_manager = None
             self.active_recordings = None
+            # Clear invalid session
+            if self.current_session and not self.current_session.session_dir:
+                self.current_session = None
 
         # Initialize shared state for audio
         self.shared_state = SharedState(create=True)
@@ -189,16 +195,20 @@ class Revoxx:
         # Populate app_callbacks after controllers are initialized
         self._populate_app_callbacks()
 
-        # Create application menu after controllers are initialized
+        # Apply saved settings BEFORE creating menu so device settings are loaded
+        self._apply_saved_settings()
+
+        # Create application menu after settings are loaded
         self.menu = ApplicationMenu(self)
         self.menu.create_menu()
 
-        # Apply saved settings
-        self._apply_saved_settings()
-
         # Load session data if available
         if self.current_session:
-            self.session_controller.load_session(self.current_session)
+            try:
+                self.session_controller.load_session(self.current_session)
+            except Exception as e:
+                print(f"Error loading session: {e}")
+                traceback.print_exc()
 
         # Show window
         self.window.window.deiconify()
@@ -794,10 +804,16 @@ def _load_session_from_args(args, session_manager):
             session = session_manager.load_session(last_session_path)
             if session:
                 print(f"Loaded last session: {session.name}")
+                # Check session_dir exists
+                if not session.session_dir:
+                    print(
+                        f"Warning: Session {session.name} has no session_dir, skipping"
+                    )
+                    return None
                 return session
-        except Exception:
+        except Exception as e:
             # Last session not available, will need to create/select one
-            pass
+            print(f"Warning: Could not load last session from {last_session_path}: {e}")
 
     return None
 

@@ -3,7 +3,7 @@
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from ..utils.device_manager import get_device_manager
-from ..constants import FileConstants
+from ..constants import FileConstants, MsgType
 
 if TYPE_CHECKING:
     from ..app import Revoxx
@@ -34,15 +34,33 @@ class DeviceController:
 
     def apply_saved_settings(self) -> None:
         """Apply saved device settings from configuration."""
-        # Apply saved input device
-        saved_input = self.app.settings_manager.get_setting("input_device")
-        if saved_input is not None:
-            self.set_input_device(saved_input, save=False)
+        device_manager = get_device_manager()
 
-        # Apply saved output device
+        # Apply saved input device (convert name to index)
+        saved_input = self.app.settings_manager.get_setting("input_device")
+
+        if saved_input is not None:
+            # Convert device name to index
+            input_index = device_manager.get_device_index_by_name(saved_input)
+
+            if input_index is not None:
+                self.set_input_device(input_index, save=False)
+            else:
+                # Device not found, use system default
+                self.set_input_device(None, save=False)
+
+        # Apply saved output device (convert name to index)
         saved_output = self.app.settings_manager.get_setting("output_device")
+
         if saved_output is not None:
-            self.set_output_device(saved_output, save=False)
+            # Convert device name to index
+            output_index = device_manager.get_device_index_by_name(saved_output)
+
+            if output_index is not None:
+                self.set_output_device(output_index, save=False)
+            else:
+                # Device not found, use system default
+                self.set_output_device(None, save=False)
 
         # Apply saved input channel mapping
         saved_input_mapping = self.app.settings_manager.get_setting(
@@ -65,24 +83,39 @@ class DeviceController:
             index: Device index to set (None for system default)
             save: Whether to save the setting persistently
         """
+        # Convert index to device name for persistent storage
+        device_manager = get_device_manager()
+        if index is None:
+            device_name = None
+            display_name = "System Default"
+        else:
+            device_name = device_manager.get_device_name_by_index(index)
+            if not device_name:
+                # Device not found
+                self.app.window.set_status(
+                    f"Device index {index} not found", MsgType.ERROR
+                )
+                return
+            display_name = device_name
+
         # Check if device is changing
-        old_index = self.app.config.audio.input_device
-        device_changed = old_index != index
+        old_device_name = self.app.config.audio.input_device
+        device_changed = old_device_name != device_name
 
-        # Update configuration
-        self.app.config.audio.input_device = index
+        # Update configuration with device NAME (not index)
+        self.app.config.audio.input_device = device_name
 
-        # Update shared state
+        # Update shared state with index for compatibility
         try:
             self.app.shared_state.set_input_device_index(index)
         except AttributeError:
             pass
 
-        # Send to record process
-        self.app.queue_manager.set_input_device(index)
+        # Send device name to record process (will convert to index there)
+        self.app.queue_manager.set_input_device(device_name)
 
         # Update device status flags
-        if index is None:
+        if device_name is None:
             self._default_input_in_effect = True
             self._notified_default_input = False
         else:
@@ -91,21 +124,12 @@ class DeviceController:
 
         # Save to settings if requested
         if save:
-            self.app.settings_manager.update_setting("input_device", index)
+            self.app.settings_manager.update_setting("input_device", device_name)
             # Update session settings
             self._update_session_input_device(index, device_changed)
 
         # Update UI status
-        device_manager = get_device_manager()
-        devices = device_manager.get_input_devices()
-
-        if index is None:
-            device_name = "System Default"
-        else:
-            device_info = next((d for d in devices if d["index"] == index), None)
-            device_name = device_info["name"] if device_info else "Unknown"
-
-        self.app.window.set_status(f"Input device: {device_name}")
+        self.app.window.set_status(f"Input device: {display_name}")
 
     def set_input_channel_mapping(
         self, mapping: Optional[List[int]], save: bool = True
@@ -143,24 +167,40 @@ class DeviceController:
             index: Device index to set (None for system default)
             save: Whether to save the setting persistently
         """
+
+        # Convert index to device name for persistent storage
+        device_manager = get_device_manager()
+        if index is None:
+            device_name = None
+            display_name = "System Default"
+        else:
+            device_name = device_manager.get_device_name_by_index(index)
+            if not device_name:
+                # Device not found
+                self.app.window.set_status(
+                    f"Device index {index} not found", MsgType.ERROR
+                )
+                return
+            display_name = device_name
+
         # Check if device is changing
-        old_index = self.app.config.audio.output_device
-        device_changed = old_index != index
+        old_device_name = self.app.config.audio.output_device
+        device_changed = old_device_name != device_name
 
-        # Update configuration
-        self.app.config.audio.output_device = index
+        # Update configuration with device NAME (not index)
+        self.app.config.audio.output_device = device_name
 
-        # Update shared state
+        # Update shared state with index for compatibility
         try:
             self.app.shared_state.set_output_device_index(index)
         except AttributeError:
             pass
 
-        # Send to playback process
-        self.app.queue_manager.set_output_device(index)
+        # Send device name to playback process (will convert to index there)
+        self.app.queue_manager.set_output_device(device_name)
 
         # Update device status flags
-        if index is None:
+        if device_name is None:
             self._default_output_in_effect = True
             self._notified_default_output = False
         else:
@@ -169,21 +209,12 @@ class DeviceController:
 
         # Save to settings if requested
         if save:
-            self.app.settings_manager.update_setting("output_device", index)
+            self.app.settings_manager.update_setting("output_device", device_name)
             # Update session settings
             self._update_session_output_device(index, device_changed)
 
         # Update UI status
-        device_manager = get_device_manager()
-        devices = device_manager.get_output_devices()
-
-        if index is None:
-            device_name = "System Default"
-        else:
-            device_info = next((d for d in devices if d["index"] == index), None)
-            device_name = device_info["name"] if device_info else "Unknown"
-
-        self.app.window.set_status(f"Output device: {device_name}")
+        self.app.window.set_status(f"Output device: {display_name}")
 
     def set_output_channel_mapping(
         self, mapping: Optional[List[int]], save: bool = True

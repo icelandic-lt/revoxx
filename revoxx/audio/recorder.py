@@ -20,6 +20,7 @@ from .queue_manager import AudioQueueManager
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
 from ..utils.process_cleanup import ProcessCleanupManager
+from ..utils.device_manager import get_device_manager
 
 
 class AudioRecorder:
@@ -62,9 +63,9 @@ class AudioRecorder:
             config.sync_response_time_ms, config.sample_rate
         )
 
-    def set_input_device(self, index: Optional[int]) -> None:
-        """Update input device index used for future streams."""
-        self.config.input_device = index
+    def set_input_device(self, device_name: Optional[str]) -> None:
+        """Update input device name used for future streams."""
+        self.config.input_device = device_name
 
     def start_recording(self) -> bool:
         """Start synchronized recording.
@@ -163,8 +164,19 @@ class AudioRecorder:
             Maximum number of input channels or None if unknown
         """
         try:
+            # Convert device name to index if needed
+            device_index = None
             if self.config.input_device is not None:
-                dev_info = sd.query_devices(self.config.input_device)
+                try:
+                    device_manager = get_device_manager()
+                    device_index = device_manager.get_device_index_by_name(
+                        self.config.input_device
+                    )
+                except (ImportError, RuntimeError):
+                    pass
+
+            if device_index is not None:
+                dev_info = sd.query_devices(device_index)
             else:
                 dev_info = sd.query_devices(None)
 
@@ -222,10 +234,26 @@ class AudioRecorder:
             "callback": self._audio_callback,
         }
 
-        # Try with configured device
+        # Convert device name to index for current device list
+        device_index = None
         if self.config.input_device is not None:
             try:
-                stream_params["device"] = self.config.input_device
+                device_manager = get_device_manager()
+                device_index = device_manager.get_device_index_by_name(
+                    self.config.input_device
+                )
+                if device_index is None:
+                    print(
+                        f"Device '{self.config.input_device}' not found, falling back to default",
+                        file=sys.stderr,
+                    )
+            except (ImportError, RuntimeError):
+                pass
+
+        # Try with configured device
+        if device_index is not None:
+            try:
+                stream_params["device"] = device_index
                 return sd.InputStream(**stream_params)
             except (sd.PortAudioError, OSError):
                 pass  # Fall through to default
@@ -354,16 +382,22 @@ class AudioRecorder:
             return audio_data
 
         elif action == "set_input_device":
-            value = command.get("index", None)
-            if isinstance(value, int):
-                self.set_input_device(value)
-            elif value is None:
-                self.set_input_device(None)
+            device_name = command.get("device_name", None)
+            self.set_input_device(device_name)
             return True
 
         elif action == "set_input_channel_mapping":
             mapping = command.get("mapping", None)
             self._update_channel_mapping(mapping)
+            return True
+
+        elif action == "refresh_devices":
+            try:
+                device_manager = get_device_manager()
+                device_manager.refresh()
+                print("[Recorder] Device list refreshed", file=sys.stderr)
+            except (ImportError, RuntimeError) as e:
+                print(f"[Recorder] Error refreshing devices: {e}", file=sys.stderr)
             return True
 
         else:

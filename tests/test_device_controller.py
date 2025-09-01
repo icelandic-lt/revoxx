@@ -60,15 +60,17 @@ class TestDeviceController(unittest.TestCase):
         )
         mock_get_dm.return_value = mock_dm
 
+        mock_dm.get_device_name_by_index = Mock(return_value="Device 1")
+
         # Execute
         self.controller.set_input_device(1)
 
         # Verify
-        self.assertEqual(self.mock_app.config.audio.input_device, 1)
+        self.assertEqual(self.mock_app.config.audio.input_device, "Device 1")
         self.mock_app.settings_manager.update_setting.assert_called_with(
-            "input_device", 1
+            "input_device", "Device 1"
         )
-        self.mock_app.queue_manager.set_input_device.assert_called_with(1)
+        self.mock_app.queue_manager.set_input_device.assert_called_with("Device 1")
         self.assertFalse(self.controller.is_default_input_active)
         self.mock_app.window.set_status.assert_called_with("Input device: Device 1")
 
@@ -104,11 +106,13 @@ class TestDeviceController(unittest.TestCase):
         )
         mock_get_dm.return_value = mock_dm
 
+        mock_dm.get_device_name_by_index = Mock(return_value="Device 1")
+
         # Execute
         self.controller.set_input_device(1, save=False)
 
         # Verify
-        self.assertEqual(self.mock_app.config.audio.input_device, 1)
+        self.assertEqual(self.mock_app.config.audio.input_device, "Device 1")
         self.mock_app.settings_manager.update_setting.assert_not_called()
 
     @patch("revoxx.controllers.device_controller.get_device_manager")
@@ -122,11 +126,13 @@ class TestDeviceController(unittest.TestCase):
         mock_get_dm.return_value = mock_dm
         self.mock_app.queue_manager.set_input_device = Mock(return_value=False)
 
+        mock_dm.get_device_name_by_index = Mock(return_value="Device 1")
+
         # Execute - should not raise exception
         self.controller.set_input_device(1)
 
         # Verify - should still update config
-        self.assertEqual(self.mock_app.config.audio.input_device, 1)
+        self.assertEqual(self.mock_app.config.audio.input_device, "Device 1")
 
     @patch("revoxx.controllers.device_controller.get_device_manager")
     def test_set_output_device_valid(self, mock_get_dm):
@@ -141,15 +147,17 @@ class TestDeviceController(unittest.TestCase):
         )
         mock_get_dm.return_value = mock_dm
 
+        mock_dm.get_device_name_by_index = Mock(return_value="Device 2")
+
         # Execute
         self.controller.set_output_device(2)
 
         # Verify
-        self.assertEqual(self.mock_app.config.audio.output_device, 2)
+        self.assertEqual(self.mock_app.config.audio.output_device, "Device 2")
         self.mock_app.settings_manager.update_setting.assert_called_with(
-            "output_device", 2
+            "output_device", "Device 2"
         )
-        self.mock_app.queue_manager.set_output_device.assert_called_with(2)
+        self.mock_app.queue_manager.set_output_device.assert_called_with("Device 2")
         self.assertFalse(self.controller.is_default_output_active)
         self.mock_app.window.set_status.assert_called_with("Output device: Device 2")
 
@@ -343,12 +351,19 @@ class TestDeviceController(unittest.TestCase):
         # Execute - should not raise exception
         self.controller.refresh_devices()
 
-    def test_apply_saved_settings(self):
+    @patch("revoxx.controllers.device_controller.get_device_manager")
+    def test_apply_saved_settings(self, mock_get_dm):
         """Test applying saved device settings."""
         # Setup
+        mock_dm = Mock()
+        mock_dm.get_device_index_by_name = Mock(
+            side_effect=[1, 2]
+        )  # Return indices for the device names
+        mock_get_dm.return_value = mock_dm
+
         self.mock_app.settings_manager.get_setting.side_effect = [
-            1,  # input_device
-            2,  # output_device
+            "Device 1",  # input_device (now a name)
+            "Device 2",  # output_device (now a name)
             [0],  # input_channel_mapping
             [1, 0],  # output_channel_mapping
         ]

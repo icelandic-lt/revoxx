@@ -210,7 +210,7 @@ class TestIPCCommunication(unittest.TestCase):
 
         command = manager.get_record_command(timeout=0.1)
         self.assertEqual(command["action"], "set_input_device")
-        self.assertEqual(command["index"], 5)
+        self.assertEqual(command["device_name"], 5)  # Now passes device_name
 
         # Test output device setting
         success = manager.set_output_device(3)
@@ -218,7 +218,7 @@ class TestIPCCommunication(unittest.TestCase):
 
         command = manager.get_playback_command(timeout=0.1)
         self.assertEqual(command["action"], "set_output_device")
-        self.assertEqual(command["index"], 3)
+        self.assertEqual(command["device_name"], 3)  # Now passes device_name
 
         # Test channel mapping
         mapping = [0, 2, 4]

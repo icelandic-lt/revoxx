@@ -128,6 +128,12 @@ class SessionController:
         Args:
             session: Session to load
         """
+        # Validate session before loading
+        if not session:
+            raise ValueError("Cannot load None session")
+        if not session.session_dir:
+            raise ValueError(f"Session has no session_dir: {session.name}")
+
         self.app.current_session = session
 
         self.app.script_file = session.session_dir / SessionManager.SCRIPT_FILE

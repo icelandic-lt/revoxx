@@ -74,18 +74,18 @@ class AudioQueueManager:
         # Stop command should block to ensure it gets through
         self._playback_queue.put({"action": "stop"})
 
-    def set_output_device(self, index: Optional[int]) -> bool:
+    def set_output_device(self, device_name: Optional[str]) -> bool:
         """Set the output device for playback.
 
         Args:
-            index: Device index or None for system default
+            device_name: Device name or None for system default
 
         Returns:
             True if command was queued, False if queue was full
         """
         try:
             self._playback_queue.put(
-                {"action": "set_output_device", "index": index}, block=False
+                {"action": "set_output_device", "device_name": device_name}, block=False
             )
             return True
         except queue.Full:
@@ -121,6 +121,18 @@ class AudioQueueManager:
         except queue.Full:
             return False
 
+    def refresh_playback_devices(self) -> bool:
+        """Send refresh devices command to playback process.
+
+        Returns:
+            True if command was queued, False if queue was full
+        """
+        try:
+            self._playback_queue.put({"action": "refresh_devices"}, block=False)
+            return True
+        except queue.Full:
+            return False
+
     # ========== Recording Control Methods ==========
 
     def start_recording(self) -> bool:
@@ -140,18 +152,18 @@ class AudioQueueManager:
         # Stop command should block to ensure it gets through
         self._record_queue.put({"action": "stop"})
 
-    def set_input_device(self, index: Optional[int]) -> bool:
+    def set_input_device(self, device_name: Optional[str]) -> bool:
         """Set the input device for recording.
 
         Args:
-            index: Device index or None for system default
+            device_name: Device name or None for system default
 
         Returns:
             True if command was queued, False if queue was full
         """
         try:
             self._record_queue.put(
-                {"action": "set_input_device", "index": index}, block=False
+                {"action": "set_input_device", "device_name": device_name}, block=False
             )
             return True
         except queue.Full:
@@ -182,6 +194,18 @@ class AudioQueueManager:
         """
         try:
             self._record_queue.put({"action": "quit"}, block=False)
+            return True
+        except queue.Full:
+            return False
+
+    def refresh_record_devices(self) -> bool:
+        """Send refresh devices command to record process.
+
+        Returns:
+            True if command was queued, False if queue was full
+        """
+        try:
+            self._record_queue.put({"action": "refresh_devices"}, block=False)
             return True
         except queue.Full:
             return False

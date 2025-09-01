@@ -79,8 +79,16 @@ class AudioController:
         if not device_manager:
             return
 
-        available = [d["index"] for d in device_manager.get_output_devices()]
-        if self.app.config.audio.output_device not in available:
+        # Check if device name is still available
+        available_names = [d["name"] for d in device_manager.get_output_devices()]
+
+        if self.app.config.audio.output_device not in available_names:
+            # Device disappeared - this can happen on Linux with USB audio devices
+            print(
+                f"ERROR: Output device '{self.app.config.audio.output_device}' disappeared from system"
+            )
+            print(f"Available devices: {available_names}")
+            print("Falling back to system default audio device")
             self.app.display_controller.set_status(
                 "Selected output device not found. Using system default.", MsgType.ERROR
             )
@@ -95,8 +103,9 @@ class AudioController:
         if not device_manager:
             return
 
-        available = [d["index"] for d in device_manager.get_input_devices()]
-        if self.app.config.audio.input_device not in available:
+        # Check if device name is still available
+        available_names = [d["name"] for d in device_manager.get_input_devices()]
+        if self.app.config.audio.input_device not in available_names:
             self.app.display_controller.set_status(
                 "Selected input device not found. Using system default.", MsgType.ERROR
             )

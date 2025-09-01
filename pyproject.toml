@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoxx"
-version = "1.0.0.dev14"
+version = "1.0.0.dev21"
 description = "Speech recording application for creating high-quality speech datasets"
 readme = "README.md"
 license = "Apache-2.0"
@@ -34,7 +34,7 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy>=2.0.2",  # NumPy 2.x with performance fixes for all Python versions
     "matplotlib>=3.8.0",  # NumPy 2.x compatible
-    "sounddevice>=0.4.0",
+    "sounddevice>=0.5.1",  # Updated for better Linux USB audio support
     "soundfile>=0.12.0",
     "tqdm>=4.65.0",
 ]

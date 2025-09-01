@@ -255,7 +255,7 @@ class WindowFactory:
                 resource_path = files("revoxx.resources") / "microphone.png"
                 # Convert to Path object for consistency
                 icon_path = Path(str(resource_path))
-            except (ImportError, AttributeError, FileNotFoundError):
+            except (ImportError, AttributeError, FileNotFoundError, TypeError):
                 # importlib.resources not available or resource not found
                 pass
 

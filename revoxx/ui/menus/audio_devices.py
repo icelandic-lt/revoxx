@@ -26,6 +26,7 @@ class AudioDevicesMenuBuilder:
         on_select_output: Optional[Callable[[int], None]] = None,
         on_select_input_channels: Optional[Callable[[Optional[list]], None]] = None,
         on_select_output_channels: Optional[Callable[[Optional[list]], None]] = None,
+        on_rescan_devices: Optional[Callable[[], None]] = None,
         initial_input_index: Optional[int] = None,
         initial_output_index: Optional[int] = None,
         initial_input_mapping: Optional[list] = None,
@@ -37,6 +38,7 @@ class AudioDevicesMenuBuilder:
         self.on_select_output = on_select_output
         self.on_select_input_channels = on_select_input_channels
         self.on_select_output_channels = on_select_output_channels
+        self.on_rescan_devices = on_rescan_devices
         self.debug = debug
         # Store initial mappings for first build
         self._initial_input_mapping = initial_input_mapping
@@ -231,6 +233,12 @@ class AudioDevicesMenuBuilder:
         # Optionally dump devices in debug mode
         if self.debug:
             device_manager.debug_dump_devices()
+        # Notify parent to refresh audio processes
+        if self.on_rescan_devices:
+            try:
+                self.on_rescan_devices()
+            except Exception:
+                pass
         # Rebuild menus
         self.refresh()
 
