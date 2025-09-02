@@ -454,7 +454,7 @@ class DeviceManager:
                     kind.append("OUTPUT")
                 print(f"{d['index']}: {d['name']} [{', '.join(kind)}]")
                 print(
-                    f"   Channels: in={d.get('max_input_channels',0)}, out={d.get('max_output_channels',0)}"
+                    f"   Channels: in={d.get('max_input_channels', 0)}, out={d.get('max_output_channels', 0)}"
                 )
                 if d.get("default_samplerate"):
                     print(f"   Default SR: {d['default_samplerate']} Hz")

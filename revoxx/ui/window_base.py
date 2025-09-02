@@ -87,6 +87,9 @@ class WindowBase:
         # Initialize embedded level meter (will be created in _create_control_area)
         self.embedded_level_meter = None
 
+        # Initialize saved status for restoration after temporary messages
+        self._saved_status = ""
+
     @property
     def window(self):
         """Get the underlying window object (Tk or Toplevel)."""
@@ -540,8 +543,9 @@ class WindowBase:
 
         # Handle different message types
         if msg_type == MsgType.DEFAULT:
-            # For DEFAULT type, update directly with utterance info (don't set message)
-            self._update_default_status()
+            # For DEFAULT type, save the status for later restoration
+            self._saved_status = message
+            self.status_var.set(message)
         else:
             # For all other types, set the message
             self.status_var.set(message)
@@ -555,7 +559,8 @@ class WindowBase:
         """Clear status and return to default (utterance info)."""
         self._status_timer = None
         self._current_msg_type = MsgType.DEFAULT
-        self._update_default_status()
+        # Restore saved status
+        self.status_var.set(self._saved_status)
 
     def _update_default_status(self) -> None:
         """Update status with default utterance/take information."""

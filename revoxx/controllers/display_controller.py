@@ -220,6 +220,36 @@ class DisplayController:
         """Reset the level meter display."""
         self.reset_level_meters()
 
+    def format_take_status(self, label: str) -> str:
+        """Format the take status display string for a given label.
+
+        This returns current take information in the status bar.
+
+        Args:
+            label: The utterance label (e.g., "utterance_001")
+
+        Returns:
+            - Empty string if label is None or empty
+            - Just the label if no active_recordings exist
+            - Just the label if no takes exist for this utterance
+            - "label - Take X/Y" if takes exist, where X is the position of the
+              current take in the list and Y is the total number of takes
+        """
+        if not label:
+            return ""
+
+        if not self.app.active_recordings:
+            return label
+
+        current_take = self.app.state.recording.get_current_take(label)
+        existing_takes = self.app.active_recordings.get_existing_takes(label)
+
+        if existing_takes and current_take in existing_takes:
+            position = existing_takes.index(current_take) + 1
+            return f"{label} - Take {position}/{len(existing_takes)}"
+
+        return label
+
     def set_status(self, status: str, msg_type: MsgType = MsgType.TEMPORARY) -> None:
         """Set the status bar text.
 

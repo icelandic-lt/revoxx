@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from ..constants import FileConstants
+from ..constants import FileConstants, MsgType
 
 if TYPE_CHECKING:
     from ..app import Revoxx
@@ -134,10 +134,6 @@ class NavigationController:
             # Update info overlay if visible
             if self.app.window.info_panel_visible:
                 self.app.display_controller.update_info_panel()
-        else:
-            # No more takes in that direction
-            direction_text = "forward" if direction > 0 else "backward"
-            self.app.display_controller.set_status(f"No more takes {direction_text}")
 
     def find_utterance(self, index: int) -> None:
         """Navigate directly to a specific utterance by index.
@@ -252,15 +248,8 @@ class NavigationController:
         if not current_label:
             return
 
-        current_take = self.app.state.recording.get_current_take(current_label)
-        if not self.app.active_recordings:
-            existing_takes = []
-        else:
-            existing_takes = self.app.active_recordings.get_existing_takes(
-                current_label
-            )
-
         # Update label with filename if we have a recording
+        current_take = self.app.state.recording.get_current_take(current_label)
         if current_take > 0:
             filename = f"take_{current_take:03d}{FileConstants.AUDIO_FILE_EXTENSION}"
             self.app.window.update_label_with_filename(current_label, filename)
@@ -277,18 +266,8 @@ class NavigationController:
                 if second:
                     second.update_label_with_filename(current_label)
 
-        if existing_takes and current_take in existing_takes:
-            # Find position in the list
-            position = existing_takes.index(current_take) + 1
-            total = len(existing_takes)
-            self.app.display_controller.set_status(
-                f"{current_label} - Take {position}/{total}"
-            )
-        elif not existing_takes:
-            # Show label even without recordings
-            self.app.display_controller.set_status(f"{current_label}")
-        else:
-            self.app.display_controller.set_status(f"{current_label}")
+        status_text = self.app.display_controller.format_take_status(current_label)
+        self.app.display_controller.set_status(status_text, MsgType.DEFAULT)
 
     def after_recording_saved(self, label: str) -> None:
         """Called after a recording has been saved to disk.
