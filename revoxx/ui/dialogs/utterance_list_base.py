@@ -31,6 +31,7 @@ class UtteranceListDialog:
         "emotion": (50, 80),  # Emotion column
         "text": (200, 500),  # Text column
         "recordings": (50, 80),  # Takes column
+        "text_length": (60, 100),  # Text length column
     }
 
     # Character width approximation for column sizing
@@ -137,17 +138,19 @@ class UtteranceListDialog:
                 display_text += "..."
 
             # Store item data with both display position and actual index
-            item_data = {
-                "index": actual_idx,  # Original index in utterances list
-                "display_pos": display_pos,  # Position in the display order
-                "label": label,
-                "emotion": emotion,
-                "text": display_text,
-                "full_text": utterance,
-                "clean_text": clean_text,
-                "takes": take_count,
-            }
-            self.all_items.append(item_data)
+            self.all_items.append(
+                {
+                    "index": actual_idx,
+                    "display_pos": display_pos,
+                    "label": label,
+                    "emotion": emotion,
+                    "text": display_text,
+                    "full_text": utterance,
+                    "clean_text": clean_text,
+                    "takes": take_count,
+                    "text_length": len(clean_text),
+                }
+            )
 
         # Calculate optimal column widths
         self.column_widths = self._calculate_column_widths()
@@ -191,6 +194,7 @@ class UtteranceListDialog:
             + self.column_widths["emotion"]
             + self.column_widths["text"]
             + self.column_widths["recordings"]
+            + self.column_widths["text_length"]
             + 50  # Extra for padding, borders, scrollbar
         )
 
@@ -265,6 +269,17 @@ class UtteranceListDialog:
         widths["recordings"] = min(
             max(max_takes * self.CHAR_WIDTH + 30, self.COLUMN_LIMITS["recordings"][0]),
             self.COLUMN_LIMITS["recordings"][1],
+        )
+
+        # Text length column
+        max_length = max(
+            (len(str(item["text_length"])) for item in self.all_items), default=3
+        )
+        widths["text_length"] = min(
+            max(
+                max_length * self.CHAR_WIDTH + 30, self.COLUMN_LIMITS["text_length"][0]
+            ),
+            self.COLUMN_LIMITS["text_length"][1],
         )
 
         return widths
@@ -343,7 +358,7 @@ class UtteranceListDialog:
         # Create treeview for utterance list with emotion column
         self.tree = ttk.Treeview(
             list_frame,
-            columns=("emotion", "text", "recordings"),
+            columns=("emotion", "text", "recordings", "text_length"),
             show="tree headings",
             selectmode="browse",
         )
@@ -368,6 +383,9 @@ class UtteranceListDialog:
         self.tree.heading(
             "recordings", text="Takes", command=lambda: self._sort_by("recordings")
         )
+        self.tree.heading(
+            "text_length", text="Length", command=lambda: self._sort_by("text_length")
+        )
 
         # Initially set minimum widths - will be adjusted after data is loaded
         self.tree.column(
@@ -389,6 +407,11 @@ class UtteranceListDialog:
             "recordings",
             width=self.COLUMN_LIMITS["recordings"][0],
             minwidth=self.COLUMN_LIMITS["recordings"][0],
+        )
+        self.tree.column(
+            "text_length",
+            width=self.COLUMN_LIMITS["text_length"][0],
+            minwidth=self.COLUMN_LIMITS["text_length"][0],
         )
 
         # Scrollbars
@@ -425,6 +448,9 @@ class UtteranceListDialog:
         self.tree.column("text", width=self.column_widths["text"], minwidth=150)
         self.tree.column(
             "recordings", width=self.column_widths["recordings"], minwidth=40
+        )
+        self.tree.column(
+            "text_length", width=self.column_widths["text_length"], minwidth=40
         )
 
         # Sort by default column
@@ -466,6 +492,11 @@ class UtteranceListDialog:
             # Sort by number of recordings, then by label
             self.all_items.sort(
                 key=lambda x: (x["takes"], x["label"]), reverse=self.sort_reverse
+            )
+        elif self.sort_column == "text_length":
+            # Sort by text length, then by label
+            self.all_items.sort(
+                key=lambda x: (x["text_length"], x["label"]), reverse=self.sort_reverse
             )
 
     def _sort_by(self, column: str) -> None:
@@ -527,6 +558,7 @@ class UtteranceListDialog:
             "emotion": ("Emotion", "emotion"),
             "text": ("Text", "text"),
             "recordings": ("Takes", "recordings"),
+            "text_length": ("Length", "text_length"),
         }
 
         # Map 'order' and 'index' to 'label' column for display purposes
@@ -591,7 +623,12 @@ class UtteranceListDialog:
                 "",
                 "end",
                 text=item["label"],
-                values=(item["emotion"], item["text"], str(item["takes"])),
+                values=(
+                    item["emotion"],
+                    item["text"],
+                    str(item["takes"]),
+                    str(item["text_length"]),
+                ),
                 tags=(str(item["index"]),),
             )
 

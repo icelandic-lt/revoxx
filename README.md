@@ -60,8 +60,8 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 - Recordings are organized into **Recording Sessions**
   - Record emotional sessions for each speaker or record more traditional LJSpeech-style sessions
   - Seamless transitions between different recording sessions with automatic progress tracking: continue where you left-off
-  - Offers advanced search and navigation capabilities for utterances, with flexible sorting by label, emotion, text
-    content, and recorded takes
+  - Offers advanced search and navigation capabilities for utterances, with flexible sorting and ordering by label, emotion, text
+    content, text length and recorded takes
   - Consistent audio settings & metadata for all recordings
 - **Real-time monitoring** including toggable recording levels, mel spectrograms, maximum frequency detection, and more
   - Customizable **industry-standard presets for Peak/RMS levels**
@@ -294,10 +294,6 @@ You can see for both formats an example in the directory [t3_scripts](t3_scripts
 The emotion levels can be from any monotonic numerical value range you want. If you want to follow Talrómur 3 conventions, you can use emotion intensity levels 1-5 and 6 emotions: neutral, happy, sad, angry, surprised, and helpful.
 The emotion intensity levels are used to control the emotion intensity of the speech in combination with the specific emotion.
 Neutral speech is treated as intensity level 0 at dataset export.
-
-## Record dataset
-
-to be defined
 
 ## Known Issues
 
