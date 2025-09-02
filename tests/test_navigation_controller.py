@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from revoxx.controllers.navigation_controller import NavigationController
+from revoxx.constants import MsgType
 
 
 class TestNavigationController(unittest.TestCase):
@@ -130,9 +131,9 @@ class TestNavigationController(unittest.TestCase):
 
         # Verify take browsing
         self.mock_app.audio_controller.stop_all_playback_activities.assert_called_once()
-        # get_existing_takes is called twice: once in browse_takes and once in update_take_status
+        # get_existing_takes is called once in browse_takes
         self.assertEqual(
-            self.mock_app.active_recordings.get_existing_takes.call_count, 2
+            self.mock_app.active_recordings.get_existing_takes.call_count, 1
         )
         self.mock_app.state.recording.set_displayed_take.assert_called_once_with(
             "test_label", 2
@@ -155,9 +156,8 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.browse_takes(1)
 
-        self.mock_app.display_controller.set_status.assert_called_once_with(
-            "No more takes forward"
-        )
+        # No status message anymore when reaching boundary
+        self.mock_app.display_controller.set_status.assert_not_called()
         self.mock_app.state.recording.set_displayed_take.assert_not_called()
 
     def test_browse_takes_no_more_backward(self):
@@ -166,9 +166,8 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.browse_takes(-1)
 
-        self.mock_app.display_controller.set_status.assert_called_once_with(
-            "No more takes backward"
-        )
+        # No status message anymore when reaching boundary
+        self.mock_app.display_controller.set_status.assert_not_called()
         self.mock_app.state.recording.set_displayed_take.assert_not_called()
 
     def test_browse_takes_with_no_recordings(self):
@@ -252,8 +251,12 @@ class TestNavigationController(unittest.TestCase):
 
         # Verify status update
         self.mock_app.window.update_label_with_filename.assert_called_once()
+        self.mock_app.display_controller.format_take_status.assert_called_once_with(
+            "test_label"
+        )
         self.mock_app.display_controller.set_status.assert_called_once_with(
-            "test_label - Take 2/3"
+            self.mock_app.display_controller.format_take_status.return_value,
+            MsgType.DEFAULT,
         )
 
     def test_update_take_status_no_recordings(self):
@@ -263,8 +266,12 @@ class TestNavigationController(unittest.TestCase):
 
         self.controller.update_take_status()
 
-        self.mock_app.display_controller.set_status.assert_called_once_with(
+        self.mock_app.display_controller.format_take_status.assert_called_once_with(
             "test_label"
+        )
+        self.mock_app.display_controller.set_status.assert_called_once_with(
+            self.mock_app.display_controller.format_take_status.return_value,
+            MsgType.DEFAULT,
         )
 
     def test_update_take_status_no_label(self):
