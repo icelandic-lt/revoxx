@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=65.5.1", "wheel"]
+requires = ["setuptools>=65.5.1", "wheel", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoxx"
-version = "1.0.0.dev21"
+dynamic = ["version"]
 description = "Speech recording application for creating high-quality speech datasets"
 readme = "README.md"
 license = "Apache-2.0"
@@ -110,3 +110,11 @@ force_grid_wrap = 0
 use_parentheses = true
 ensure_newline_before_comments = true
 line_length = 88
+
+[tool.setuptools_scm]
+# This will use git tags for versioning when available
+# Fallback version is used when building without git (e.g., from PyPI source)
+fallback_version = "1.0.0"
+# Format for development versions
+version_scheme = "post-release"
+local_scheme = "dirty-tag"
