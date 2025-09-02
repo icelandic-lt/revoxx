@@ -1,6 +1,7 @@
 """Dataset exporter for converting Revoxx sessions to Talrómur 3 format."""
 
 import shutil
+import json
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from collections import Counter
@@ -30,6 +31,7 @@ class DatasetExporter:
         audio_format: str = "flac",
         zero_intensity_emotions: List[str] = None,
         include_intensity: bool = True,
+        include_vad: bool = False,
     ):
         """Initialize dataset exporter.
 
@@ -38,11 +40,13 @@ class DatasetExporter:
             audio_format: Output audio format ('wav' or 'flac')
             zero_intensity_emotions: List of emotions to set intensity to 0
             include_intensity: Whether to include intensity column in index.tsv
+            include_vad: Whether to run VAD analysis on the exported dataset
         """
         self.output_dir = Path(output_dir)
         self.format = audio_format.lower()
         self.zero_intensity_emotions = zero_intensity_emotions or ["neutral"]
         self.include_intensity = include_intensity
+        self.include_vad = include_vad
 
     def _group_sessions_by_speaker(self, session_paths: List[Path]) -> Dict:
         """Group sessions by speaker name.
@@ -171,6 +175,11 @@ class DatasetExporter:
                     "output_path": str(dataset_dir),
                 }
             )
+
+        # Run VAD processing if requested
+        if self.include_vad:
+            vad_stats = self._run_vad_processing(all_datasets, progress_callback)
+            total_statistics["vad_statistics"] = vad_stats
 
         return all_datasets, total_statistics
 
@@ -387,3 +396,115 @@ class DatasetExporter:
         readme_path = dataset_dir / "README.txt"
         with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
+
+    def _run_vad_processing(
+        self, dataset_paths: List[Path], progress_callback=None
+    ) -> Dict:
+        """Run VAD processing on exported datasets using multiprocessing.
+
+        Args:
+            dataset_paths: List of dataset directories to process
+            progress_callback: Optional progress callback (count, message)
+
+        Returns:
+            Dictionary with total files processed and warnings
+        """
+        try:
+            from scripts_module.vadiate import get_audio_files
+            import multiprocessing as mp
+            from concurrent.futures import ProcessPoolExecutor, as_completed
+        except ImportError:
+            return {}  # VAD not available
+
+        # Count total files for progress
+        total_files = sum(len(get_audio_files(str(d))) for d in dataset_paths)
+        if total_files == 0:
+            return {}
+
+        processed = 0
+        vad_statistics = {"total_files": total_files, "warnings": []}
+
+        # Use process pool for parallel processing
+        # Each process handles VAD analysis for one complete dataset (speaker)
+        # This means if we export 3 speakers, we use up to 3 processes
+        # Each process analyzes all audio files within its assigned speaker's dataset
+        num_workers = min(mp.cpu_count(), len(dataset_paths))
+
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Submit one VAD processing task per dataset (per speaker)
+            # Each task processes all audio files in that speaker's dataset directory
+            future_to_dataset = {
+                executor.submit(self._process_dataset_vad, dataset_path): dataset_path
+                for dataset_path in dataset_paths
+            }
+
+            # Process completed tasks
+            for future in as_completed(future_to_dataset):
+                dataset_path = future_to_dataset[future]
+                try:
+                    result = future.result()
+                    processed += result["files_processed"]
+                    vad_statistics["warnings"].extend(result["warnings"])
+                    if progress_callback:
+                        progress_callback(
+                            processed, f"VAD analysis: {processed}/{total_files}"
+                        )
+                except Exception as e:
+                    vad_statistics["warnings"].append(
+                        f"VAD processing error for {dataset_path}: {e}"
+                    )
+
+        return vad_statistics
+
+    @staticmethod
+    def _process_dataset_vad(dataset_path: Path) -> Dict:
+        """Process VAD for a single dataset (one speaker's complete dataset).
+
+        This method runs in a separate process and handles all audio files
+        for one speaker. If multiple speakers were exported, each speaker's
+        dataset is processed by a different process in parallel.
+
+        Args:
+            dataset_path: Path to the dataset directory for one speaker
+
+        Returns:
+            Dictionary with files processed and warnings
+        """
+        from scripts_module.vadiate import (
+            get_audio_files,
+            process_audio,
+            load_silero_vad,
+        )
+
+        vad_output = dataset_path / "vad.json"
+        audio_files = get_audio_files(str(dataset_path))
+
+        result_info = {"files_processed": 0, "warnings": []}
+
+        if not audio_files:
+            return result_info
+
+        # Load model for this process
+        model = load_silero_vad()
+        results = {}
+
+        for file_path in audio_files:
+            try:
+                rel_path, result, warnings = process_audio(
+                    file_path,
+                    model,
+                    str(dataset_path),
+                    use_dynamic_threshold=True,
+                    collect_warnings=True,
+                )
+                results[rel_path] = result
+                result_info["warnings"].extend(warnings)
+                result_info["files_processed"] += 1
+            except Exception as e:
+                result_info["warnings"].append(f"VAD error for {file_path}: {e}")
+
+        # Save results
+        with open(vad_output, "w") as f:
+            json.dump(results, f, indent=2)
+
+        return result_info

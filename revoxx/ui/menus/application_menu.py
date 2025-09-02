@@ -488,7 +488,9 @@ class ApplicationMenu:
         if self.app.current_session and self.app.current_session.session_dir:
             base_dir = self.app.current_session.session_dir.parent
 
-        dialog = DatasetDialog(self.root, base_dir, self.app.settings_manager)
+        dialog = DatasetDialog(
+            self.root, base_dir, self.app.settings_manager, self.app.process_manager
+        )
         result = dialog.show()
 
         if result:

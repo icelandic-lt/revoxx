@@ -22,7 +22,9 @@ def get_audio_files(directory):
     return audio_files
 
 
-def process_audio(file_path, model, base_dir, use_dynamic_threshold):
+def process_audio(
+    file_path, model, base_dir, use_dynamic_threshold, collect_warnings=False
+):
     # Get audio info using soundfile instead of torchaudio
     info = sf.info(file_path)
     sample_rate = info.samplerate
@@ -30,6 +32,8 @@ def process_audio(file_path, model, base_dir, use_dynamic_threshold):
 
     # read audio file and convert to 16 kHz sample rate by default
     wav = read_audio(file_path)
+
+    warnings = []
 
     # First attempt with default threshold (0.5)
     speech_timestamps = get_speech_timestamps(
@@ -42,9 +46,12 @@ def process_audio(file_path, model, base_dir, use_dynamic_threshold):
 
     # If no speech detected and dynamic threshold is enabled, try again with lower threshold
     if not speech_timestamps and use_dynamic_threshold:
-        print(
-            f"No speech detected in {file_path} with default threshold. Trying with lower threshold..."
-        )
+        warning_msg = f"No speech detected in {file_path} with default threshold. Trying with lower threshold..."
+        if collect_warnings:
+            warnings.append(warning_msg)
+        else:
+            print(warning_msg)
+
         speech_timestamps = get_speech_timestamps(
             wav,
             model,
@@ -66,14 +73,19 @@ def process_audio(file_path, model, base_dir, use_dynamic_threshold):
         result["begin"] = speech_segments[0][0]
         result["end"] = speech_segments[-1][1]
     else:
-        print(
-            f"Warning: No speech detected in {file_path}"
-            + (" even with lower threshold." if use_dynamic_threshold else ".")
+        warning_msg = f"Warning: No speech detected in {file_path}" + (
+            " even with lower threshold." if use_dynamic_threshold else "."
         )
+        if collect_warnings:
+            warnings.append(warning_msg)
+        else:
+            print(warning_msg)
 
     # Get relative path
     rel_path = os.path.relpath(file_path, base_dir)
 
+    if collect_warnings:
+        return rel_path, result, warnings
     return rel_path, result
 
 

@@ -41,16 +41,24 @@ class DatasetDialog:
     # Entry field widths
     ENTRY_WIDTH_STANDARD = 40
 
-    def __init__(self, parent, base_dir: Path, settings_manager: SettingsManager):
+    def __init__(
+        self,
+        parent,
+        base_dir: Path,
+        settings_manager: SettingsManager,
+        process_manager=None,
+    ):
         """Initialize dataset creation dialog.
 
         Args:
             parent: Parent window
             base_dir: Base directory containing sessions
             settings_manager: Shared SettingsManager instance
+            process_manager: Optional ProcessManager instance for VAD check
         """
         self.parent = parent
         self.settings_manager = settings_manager
+        self.process_manager = process_manager
         self.result = None
 
         # Use provided base_dir
@@ -229,11 +237,45 @@ class DatasetDialog:
                 self.settings_manager.settings, "export_include_intensity", True
             )
         )
+        options_frame = ttk.Frame(output_frame)
+        options_frame.grid(row=3, column=1, columnspan=2, sticky=tk.W, pady=2)
+
         ttk.Checkbutton(
-            output_frame,
+            options_frame,
             text="Include intensity levels in index.tsv",
             variable=self.include_intensity_var,
-        ).grid(row=3, column=1, sticky=tk.W, pady=2)
+        ).pack(anchor=tk.W)
+
+        # VAD support checkbox
+        self.include_vad_var = tk.BooleanVar(
+            value=getattr(self.settings_manager.settings, "export_include_vad", False)
+        )
+        self.vad_checkbox = ttk.Checkbutton(
+            options_frame,
+            text="Include VAD analysis",
+            variable=self.include_vad_var,
+        )
+        self.vad_checkbox.pack(anchor=tk.W, pady=(2, 0))
+
+        # Enable/disable VAD checkbox based on availability
+        vad_available = (
+            self.process_manager.is_vad_available() if self.process_manager else False
+        )
+        if vad_available:
+            self.vad_checkbox.configure(state="normal")
+            # Add tooltip
+            self._create_tooltip(
+                self.vad_checkbox,
+                "Voice Activity Detection provides speech segment timestamps",
+            )
+        else:
+            self.vad_checkbox.configure(state="disabled")
+            self.include_vad_var.set(False)
+            # Add different tooltip for disabled state
+            self._create_tooltip(
+                self.vad_checkbox,
+                "VAD not available - install Revoxx with '[vad]' option to enable",
+            )
 
         output_frame.columnconfigure(1, weight=1)
 
@@ -577,6 +619,9 @@ class DatasetDialog:
         self.settings_manager.update_setting(
             "export_include_intensity", self.include_intensity_var.get()
         )
+        self.settings_manager.update_setting(
+            "export_include_vad", self.include_vad_var.get()
+        )
 
     def _run_export(
         self, session_paths: List[Path], output_dir: Path, dataset_name: Optional[str]
@@ -592,15 +637,24 @@ class DatasetDialog:
 
         try:
             # Create exporter
+            vad_enabled = self.include_vad_var.get() and (
+                self.process_manager.is_vad_available()
+                if self.process_manager
+                else False
+            )
             exporter = DatasetExporter(
                 output_dir=output_dir,
                 audio_format=self.format_var.get(),
                 include_intensity=self.include_intensity_var.get(),
+                include_vad=vad_enabled,
             )
 
             # Export sessions
-            def progress_callback(count):
-                progress_dialog.update(count, f"Processing utterance {count}")
+            def progress_callback(count, message=None):
+                if message:
+                    progress_dialog.update(count, message)
+                else:
+                    progress_dialog.update(count, f"Processing utterance {count}")
 
             dataset_paths, statistics = exporter.export_sessions(
                 session_paths,
@@ -684,6 +738,20 @@ class DatasetDialog:
             summary += "\n" + "-" * 50 + "\n"
             summary += f"⚠ Warning: {statistics['missing_recordings']} recordings were missing\n"
 
+        # Add VAD statistics if available
+        if "vad_statistics" in statistics and statistics["vad_statistics"]:
+            vad_stats = statistics["vad_statistics"]
+            summary += "\n" + "-" * 50 + "\n"
+            summary += (
+                f"VAD Analysis: {vad_stats.get('total_files', 0)} files processed\n"
+            )
+
+            # Add warnings if any
+            if vad_stats.get("warnings"):
+                summary += "\nWarnings:\n"
+                for warning in vad_stats["warnings"]:
+                    summary += f"{warning}\n"
+
         # Insert text and make read-only
         text_widget.insert("1.0", summary)
         text_widget.configure(state="disabled")
@@ -713,6 +781,41 @@ class DatasetDialog:
     def _cancel(self):
         """Cancel dialog."""
         self.dialog.destroy()
+
+    @staticmethod
+    def _create_tooltip(widget, text) -> None:
+        """Create a tooltip for a widget.
+
+        Args:
+            widget: The widget to attach the tooltip to
+            text: The tooltip text
+        """
+        tooltip = None
+
+        def on_enter(event):
+            nonlocal tooltip
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            label = ttk.Label(
+                tooltip,
+                text=text,
+                justify=tk.LEFT,
+                background="#ffffe0",
+                relief=tk.SOLID,
+                borderwidth=1,
+                font=("TkDefaultFont", "9", "normal"),
+            )
+            label.pack()
+
+        def on_leave(event):
+            nonlocal tooltip
+            if tooltip:
+                tooltip.destroy()
+                tooltip = None
+
+        widget.bind("<Enter>", on_enter)
+        widget.bind("<Leave>", on_leave)
 
     def show(self) -> Optional[Path]:
         """Show dialog and return result.

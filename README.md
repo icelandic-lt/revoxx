@@ -28,8 +28,10 @@ This repository provides **Revoxx**, a graphical recording application for recor
 
 ## System Requirements
 - **Operating System:** Linux/OS-X, should work on Windows
+- **Python:** 3.9 - 3.13 with Tkinter support
 - **Recording:** Audio Interface, good voice microphone and headphones
 - **Linux:** Requires PortAudio library (`sudo apt-get install portaudio19-dev` on Ubuntu/Debian)
+- **GUI:** Tkinter (usually included with Python, see installation notes below)
 
 ## Description
 
@@ -66,14 +68,48 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
   - Dedicated **Monitoring mode** for precise input calibration
 - **Multi-Screen Support**
   - You can use multiple monitors to **separate recording view from speaker view**
-  - We support Apple's "Continuity" feature for a **convenient dual screen setup with an external iPad**
+  - We support Apple's [Sidecar](https://support.apple.com/en-us/102597) feature for a **convenient dual screen setup with an external iPad**
   - Each screen appearance can be individually configured
-  - All screen layouts, placement & configuration is preserved at exit
+  - All screen layouts, placement & configuration are preserved at exit
 - Export Dataset
   - Facilitates **batch export of multiple sessions** into T3 (Talrómur3) dataset format
   - Groups different recording sessions of the same speaker into a common dataset
+  - **Add voice timestamps, if VAD is enabled**
 
 ## Installation
+
+<details>
+<summary><b>Prerequisites</b></summary>
+
+### Tkinter
+
+Revoxx requires Tkinter for its graphical user interface. Tkinter is usually included with Python, but may need separate installation on some systems:
+
+**macOS**: Tkinter should be included with Python.org installers and Homebrew Python, but integration issues can occur. If you encounter problems:
+- For Homebrew Python: Try `brew install python-tk`
+- For Python.org installers: Reinstall Python with the official installer
+- Consider using a virtual environment with a fresh Python installation
+
+**Linux**:
+```bash
+# Ubuntu/Debian
+sudo apt-get install python3-tk
+
+# Fedora
+sudo dnf install python3-tkinter
+
+# Arch Linux
+sudo pacman -S tk
+```
+
+**Windows**: Tkinter is included with the standard Python installer.
+
+**Verify Tkinter installation**:
+```bash
+python3 -c "import tkinter; print('Tkinter is installed')"
+```
+
+</details>
 
 <details>
 <summary><b>Basic Installation</b></summary>
@@ -233,7 +269,7 @@ revoxx --session path/to/session # Open specific session
 
 Before you start recording, you need to prepare an utterance script with the utterances you want to record. This can be simplified by using the "Import Text to Script" Dialog:
 
-<img src="https://raw.githubusercontent.com/icelandic-lt/revoxx/main/doc/import_raw_text.png" alt="Raw text import dialog" width="30%"/>
+<img src="https://raw.githubusercontent.com/icelandic-lt/revoxx/main/doc/import_raw_text.png" alt="Raw text import dialog" width="50%"/>
 
 This dialog takes an input script of raw text and converts it into an utterance script. You can redo this for the same input text as many times you want, e.g. if you want to use separate emotional levels for different speakers.
 
