@@ -173,7 +173,9 @@ class OpenSessionDialog:
         )
 
         if new_dir:
-            self._load_directory(Path(new_dir))
+            new_path = Path(new_dir)
+            # Always load the directory, even if it's a .revoxx session
+            self._load_directory(new_path)
 
     def _go_to_parent(self):
         """Navigate to parent directory."""
@@ -200,6 +202,27 @@ class OpenSessionDialog:
         if not self.current_dir.exists():
             self.info_label.config(text="Directory does not exist")
             return
+
+        # Check if current directory itself is a .revoxx session
+        if self._is_valid_session(self.current_dir):
+            session_info = self._get_session_info(self.current_dir)
+            if session_info:
+                # Show this directory as the only session
+                self.tree.insert(
+                    "",
+                    "end",
+                    text=self.current_dir.name,
+                    values=(
+                        "Session",
+                        session_info.get("speaker", ""),
+                        session_info.get("emotion", ""),
+                        session_info.get("utterances", ""),
+                        session_info.get("recordings", ""),
+                    ),
+                    tags=("session", "current"),
+                )
+                self.info_label.config(text="Current directory is a Revoxx session")
+                return
 
         # Find sessions and subdirectories
         sessions = []
@@ -374,10 +397,31 @@ class OpenSessionDialog:
             # Open the session
             self._on_open()
 
+    def _is_valid_session(self, path: Path) -> bool:
+        """Check if a path is a valid Revoxx session.
+
+        Args:
+            path: Path to check
+
+        Returns:
+            True if the path is a valid session, False otherwise
+        """
+        return (
+            path.suffix == ".revoxx"
+            and path.is_dir()
+            and (path / "session.json").exists()
+        )
+
     def _on_open(self):
         """Handle Open button click."""
         selection = self.tree.selection()
+
+        # If no selection, check if current directory is a .revoxx session
         if not selection:
+            if self._is_valid_session(self.current_dir):
+                self.result = self.current_dir
+                self.dialog.destroy()
+                return
             messagebox.showwarning(
                 "No Selection", "Please select a session to open.", parent=self.dialog
             )
@@ -385,6 +429,7 @@ class OpenSessionDialog:
 
         item = self.tree.item(selection[0])
         item_type = item["values"][0] if item["values"] else ""
+        item_tags = item.get("tags", [])
 
         if item_type != "Session":
             messagebox.showwarning(
@@ -394,12 +439,15 @@ class OpenSessionDialog:
             )
             return
 
-        # Get the selected session path
-        session_name = item["text"]
-        self.result = self.current_dir / session_name
+        # Determine the session path
+        if "current" in item_tags:
+            self.result = self.current_dir
+        else:
+            session_name = item["text"]
+            self.result = self.current_dir / session_name
 
-        # Verify it's a valid session
-        if not self.result.exists() or not self.result.suffix == ".revoxx":
+        # Final validation
+        if not self._is_valid_session(self.result):
             messagebox.showerror(
                 "Invalid Session",
                 "The selected directory is not a valid Revoxx session.",
