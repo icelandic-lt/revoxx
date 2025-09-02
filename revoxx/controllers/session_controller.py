@@ -147,10 +147,7 @@ class SessionController:
         self.reload_script_and_recordings()
 
         # Then apply saved sort settings from session (after data is loaded)
-        if session:
-            self.app.active_recordings.set_sort(
-                session.sort_column, session.sort_reverse
-            )
+        self.app.active_recordings.set_sort(session.sort_column, session.sort_reverse)
 
         self.app.window.window.title(f"Revoxx - {session.name}")
         self.app.menu.update_recent_sessions()
