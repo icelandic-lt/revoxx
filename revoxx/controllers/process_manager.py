@@ -77,6 +77,9 @@ class ProcessManager:
         self.set_audio_queue_active(False)
         self.set_save_path(None)
 
+        # Check for VAD availability
+        self._check_vad_availability()
+
     def start_processes(self) -> None:
         """Start background recording and playback processes."""
         if self.app.debug:
@@ -322,3 +325,34 @@ class ProcessManager:
             and self.playback_process is not None
             and self.playback_process.is_alive()
         )
+
+    def _check_vad_availability(self) -> None:
+        """Check if VAD support is available and store in manager_dict."""
+        try:
+            # Try to import the VAD module from scripts_module
+            from scripts_module import vadiate  # noqa: F401
+            from silero_vad import load_silero_vad  # noqa: F401
+
+            vad_available = True
+            if self.app.debug:
+                print("[ProcessManager] VAD support is available")
+        except ImportError:
+            vad_available = False
+            if self.app.debug:
+                print("[ProcessManager] VAD support is not available")
+
+        if self.manager_dict is not None:
+            self.manager_dict["vad_available"] = vad_available
+
+    def is_vad_available(self) -> bool:
+        """Check if VAD support is available.
+
+        Returns:
+            True if VAD is available
+        """
+        if self.manager_dict:
+            try:
+                return self.manager_dict.get("vad_available", False)
+            except (AttributeError, KeyError):
+                return False
+        return False
