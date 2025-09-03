@@ -75,5 +75,4 @@ exports/
 
 # PyPI Publishing
 .secrets
-publish-*.sh
 setup-pypi-tokens.sh
