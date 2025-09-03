@@ -688,6 +688,12 @@ class Revoxx:
         # Tkinter might have changed it during setup
         self.cleanup_manager.refresh_sigint_handler()
 
+        # Show user guide dialog if configured
+        if self.settings_manager.get_setting("show_user_guide_at_startup", True):
+            from .ui.dialogs.user_guide_dialog import UserGuideDialog
+
+            UserGuideDialog(self.window.window, self.settings_manager)
+
         self.window.focus_window()
         self.window.window.mainloop()
 

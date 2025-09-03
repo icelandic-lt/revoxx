@@ -464,6 +464,10 @@ class ApplicationMenu:
             command=self.app.dialog_controller.show_help,
             accelerator=KeyBindings.SHOW_HELP,
         )
+        help_menu.add_command(
+            label="User Guide",
+            command=self._show_user_guide,
+        )
         help_menu.add_separator()
         help_menu.add_command(label="About", command=self._show_about)
 
@@ -597,6 +601,12 @@ class ApplicationMenu:
         """Set level meter preset."""
         self.app.display_controller.set_level_meter_preset(preset)
         self.app.settings_manager.update_setting("level_meter_preset", preset)
+
+    def _show_user_guide(self) -> None:
+        """Show the user guide dialog."""
+        from ..dialogs.user_guide_dialog import UserGuideDialog
+
+        UserGuideDialog(self.root, self.app.settings_manager)
 
     def _show_about(self) -> None:
         """Show about dialog."""

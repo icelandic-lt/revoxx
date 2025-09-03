@@ -61,6 +61,9 @@ class UserSettings:
     # Session settings
     last_session_path: Optional[str] = None
 
+    # User guide settings
+    show_user_guide_at_startup: bool = True
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert settings to dictionary."""
         return asdict(self)
