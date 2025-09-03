@@ -1,6 +1,7 @@
 include README.md
 include LICENSE
 include requirements.txt
+recursive-include doc *.md *.png
 recursive-include revoxx/resources *
 recursive-include revoxx/resources/templates *
 global-exclude __pycache__

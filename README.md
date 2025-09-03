@@ -267,7 +267,7 @@ revoxx --session path/to/session # Open specific session
 
 ## Usage
 
-For a guide on using Revoxx, please see the [User Guide](USER_GUIDE.md).
+For a guide on using Revoxx, please see the [User Guide](https://github.com/icelandic-lt/revoxx/blob/main/doc/USER_GUIDE.md).
 
 ## Prepare recordings
 
@@ -293,13 +293,28 @@ For a script without emotion levels. This format was used for recording our non-
 ( <unique id> "<utterance>" )
 ```
 
-You can see for both formats an example in the directory [t3_scripts](t3_scripts).
+You can see for both formats an example in the directory [t3_scripts](https://github.com/icelandic-lt/revoxx/tree/main/t3_scripts).
 
 The emotion levels can be from any monotonic numerical value range you want. If you want to follow Talrómur 3 conventions, you can use emotion intensity levels 1-5 and 6 emotions: neutral, happy, sad, angry, surprised, and helpful.
 The emotion intensity levels are used to control the emotion intensity of the speech in combination with the specific emotion.
 Neutral speech is treated as intensity level 0 at dataset export.
 
 ## Known Issues
+
+### macOS: System Python 3.9 Icon Loading Issue
+
+On macOS with the system-provided Python 3.9 (3.9.6), the application icon may fail to load with the error:
+- "couldn't recognize data in image file"
+- "Error: too many values to unpack (expected 2)"
+
+**Affected versions:**
+- macOS system Python 3.9.6 (default installation)
+
+**Solution:**
+- Use Python 3.9.23 or newer (available via Homebrew, uv or python.org)
+- Alternatively, use Python 3.10 or newer
+
+This issue is related to Tkinter's PNG handling in the macOS system Python 3.9.6 and does not affect newer Python versions.
 
 ### Linux: USB Audio Output Devices
 

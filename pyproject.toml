@@ -81,6 +81,7 @@ revoxx = [
     "resources/*.png",
     "resources/templates/*.txt",
 ]
+"" = ["doc/*.md", "doc/*.png"]
 
 [tool.black]
 line-length = 88

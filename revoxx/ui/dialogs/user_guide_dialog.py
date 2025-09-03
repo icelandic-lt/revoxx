@@ -75,8 +75,19 @@ class UserGuideDialog:
 
     def _load_user_guide(self):
         """Load and display the user guide content."""
-        # Find the USER_GUIDE.md file
-        guide_path = Path(__file__).parent.parent.parent.parent / "USER_GUIDE.md"
+        # Try development path first (4 levels up from this file then into doc/)
+        guide_path = (
+            Path(__file__).parent.parent.parent.parent / "doc" / "USER_GUIDE.md"
+        )
+
+        # If not found in development location, try installed package location
+        if not guide_path.exists():
+            # In installed package, doc/ folder is in site-packages root
+            import revoxx
+
+            package_path = Path(revoxx.__file__).parent.parent / "doc" / "USER_GUIDE.md"
+            if package_path.exists():
+                guide_path = package_path
 
         if not guide_path.exists():
             error_msg = f"User Guide not found.\n\nExpected at: {guide_path}"
