@@ -80,7 +80,9 @@ class UserGuideDialog:
 
         if not guide_path.exists():
             error_msg = f"User Guide not found at: {guide_path}"
-            error_html = f"<html><body><p style='color: red;'>{error_msg}</p></body></html>"
+            error_html = (
+                f"<html><body><p style='color: red;'>{error_msg}</p></body></html>"
+            )
             self.text_widget.load_html(error_html)
             raise FileNotFoundError(error_msg)
 
