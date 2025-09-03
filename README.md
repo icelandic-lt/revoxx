@@ -265,6 +265,10 @@ revoxx --show-devices            # List available audio devices
 revoxx --session path/to/session # Open specific session
 ```
 
+## Usage
+
+For a guide on using Revoxx, please see the [User Guide](USER_GUIDE.md).
+
 ## Prepare recordings
 
 Before you start recording, you need to prepare an utterance script with the utterances you want to record. This can be simplified by using the "Import Text to Script" Dialog:
