@@ -40,12 +40,17 @@ class ProcessCleanupManager:
             print("[ProcessCleanup] Registering signal handlers...")
 
         # Store and replace signal handlers
+        # Always available signals
         signals = {
             signal.SIGINT: "SIGINT",  # Ctrl+C, PyCharm "Stop"
             signal.SIGTERM: "SIGTERM",  # Terminate
-            signal.SIGQUIT: "SIGQUIT",  # Quit
-            signal.SIGHUP: "SIGHUP",  # Hangup
         }
+
+        # Unix-only signals
+        if hasattr(signal, "SIGQUIT"):
+            signals[signal.SIGQUIT] = "SIGQUIT"  # Quit (Unix only)
+        if hasattr(signal, "SIGHUP"):
+            signals[signal.SIGHUP] = "SIGHUP"  # Hangup (Unix only)
 
         for sig, name in signals.items():
             original = signal.signal(sig, self._signal_handler)
@@ -83,12 +88,15 @@ class ProcessCleanupManager:
             frame: Current stack frame
         """
         _ = frame
+        # Build signal name mapping based on platform
         signal_names = {
-            signal.SIGHUP: "SIGHUP",
             signal.SIGINT: "SIGINT",
-            signal.SIGQUIT: "SIGQUIT",
             signal.SIGTERM: "SIGTERM",
         }
+        if hasattr(signal, "SIGHUP"):
+            signal_names[signal.SIGHUP] = "SIGHUP"
+        if hasattr(signal, "SIGQUIT"):
+            signal_names[signal.SIGQUIT] = "SIGQUIT"
 
         signal_name = signal_names.get(signum, f"UNKNOWN({signum})")
 

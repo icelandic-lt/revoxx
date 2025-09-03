@@ -3,6 +3,7 @@
 try:
     # Try to use versioningit for dynamic version detection
     from versioningit import get_version
+
     __version__ = get_version(root="../", config={})
 except (ImportError, Exception):
     # Fallback if versioningit is not installed or fails
