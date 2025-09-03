@@ -75,25 +75,14 @@ class UserGuideDialog:
 
     def _load_user_guide(self):
         """Load and display the user guide content."""
-        # Try development path first (4 levels up from this file then into doc/)
-        guide_path = (
-            Path(__file__).parent.parent.parent.parent / "doc" / "USER_GUIDE.md"
-        )
-
-        # If not found in development location, try installed package location
-        if not guide_path.exists():
-            # In installed package, doc/ folder is in site-packages root
-            import revoxx
-
-            package_path = Path(revoxx.__file__).parent.parent / "doc" / "USER_GUIDE.md"
-            if package_path.exists():
-                guide_path = package_path
+        # User guide should be in package doc folder
+        guide_path = Path(__file__).parent.parent.parent / "doc" / "USER_GUIDE.md"
 
         if not guide_path.exists():
-            error_msg = f"User Guide not found.\n\nExpected at: {guide_path}"
-            error_html = f"<html><body><p>{error_msg}</p></body></html>"
+            error_msg = f"User Guide not found at: {guide_path}"
+            error_html = f"<html><body><p style='color: red;'>{error_msg}</p></body></html>"
             self.text_widget.load_html(error_html)
-            return
+            raise FileNotFoundError(error_msg)
 
         try:
             # Read user guide content & convert markdown to HTML

@@ -72,7 +72,7 @@ revoxx-vadiate = "scripts_module.vadiate:main"
 
 [tool.setuptools]
 packages = ["revoxx", "revoxx.audio", "revoxx.audio.processors", "revoxx.controllers",
-           "revoxx.dataset", "revoxx.resources", "revoxx.resources.templates",
+           "revoxx.dataset", "revoxx.doc", "revoxx.resources", "revoxx.resources.templates",
            "revoxx.session", "revoxx.ui", "revoxx.ui.dialogs", "revoxx.ui.level_meter",
            "revoxx.ui.menus", "revoxx.ui.spectrogram", "revoxx.ui.spectrogram.controllers",
            "revoxx.utils", "scripts_module"]
@@ -82,6 +82,7 @@ include-package-data = true
 revoxx = [
     "resources/*.png",
     "resources/templates/*.txt",
+    "doc/*.md",
 ]
 
 [tool.black]

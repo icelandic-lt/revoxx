@@ -267,7 +267,7 @@ revoxx --session path/to/session # Open specific session
 
 ## Usage
 
-For a guide on using Revoxx, please see the [User Guide](https://github.com/icelandic-lt/revoxx/blob/main/doc/USER_GUIDE.md).
+For a guide on using Revoxx, please see the [User Guide](https://github.com/icelandic-lt/revoxx/blob/main/revoxx/doc/USER_GUIDE.md).
 
 ## Prepare recordings
 
