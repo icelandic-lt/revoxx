@@ -2,14 +2,14 @@
 
 This repository provides **Revoxx**, a graphical recording application for recording raw speech and generating datasets.
 
-![Version](https://img.shields.io/badge/Version-main-darkgreen)
+[![PyPI version](https://img.shields.io/pypi/v/revoxx)](https://pypi.org/project/revoxx/)
 ![Python](https://img.shields.io/badge/python-3.9-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.10-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.13-blue?logo=python&logoColor=white)
 [![CI Status](https://github.com/icelandic-lt/revoxx/actions/workflows/build.yml/badge.svg)](https://github.com/icelandic-lt/revoxx/actions/workflows/build.yml)
-![Docker](https://img.shields.io/badge/Docker-[unavailable]-red)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/icelandic-lt/revoxx)
 
 ## Overview
 
