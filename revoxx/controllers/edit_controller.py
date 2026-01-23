@@ -10,6 +10,7 @@ from ..constants import MsgType, FileConstants
 from ..audio.editor import AudioEditor
 
 if TYPE_CHECKING:
+    import numpy as np
     from ..app import Revoxx
 
 
@@ -234,14 +235,14 @@ class EditController:
 
             # Save
             subtype = self._get_audio_subtype()
-            self.app.file_manager.save_audio(filepath, edited_audio, original_sr, subtype)
+            self.app.file_manager.save_audio(
+                filepath, edited_audio, original_sr, subtype
+            )
 
             # Clear pending state
             self._pending_insert_position = None
 
-            self.app.display_controller.set_status(
-                "Audio inserted", MsgType.TEMPORARY
-            )
+            self.app.display_controller.set_status("Audio inserted", MsgType.TEMPORARY)
             return (True, insert_start, insert_end)
 
         except (OSError, ValueError) as e:
@@ -300,14 +301,14 @@ class EditController:
 
             # Save
             subtype = self._get_audio_subtype()
-            self.app.file_manager.save_audio(filepath, edited_audio, original_sr, subtype)
+            self.app.file_manager.save_audio(
+                filepath, edited_audio, original_sr, subtype
+            )
 
             # Clear pending state
             self._pending_replace_range = None
 
-            self.app.display_controller.set_status(
-                "Audio replaced", MsgType.TEMPORARY
-            )
+            self.app.display_controller.set_status("Audio replaced", MsgType.TEMPORARY)
             return (True, replace_start, replace_end)
 
         except (OSError, ValueError) as e:

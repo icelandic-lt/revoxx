@@ -46,10 +46,7 @@ class SelectionState:
     @property
     def has_selection(self) -> bool:
         """Check if a selection range is set."""
-        return (
-            self._selection_start is not None
-            and self._selection_end is not None
-        )
+        return self._selection_start is not None and self._selection_end is not None
 
     def set_marker(self, time_seconds: float) -> None:
         """Set marker position and clear any selection.

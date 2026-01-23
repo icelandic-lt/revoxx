@@ -7,7 +7,6 @@ and manages the overall audio workflow.
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Callable
-import sounddevice as sd
 
 from ..constants import UIConstants, MsgType
 from ..utils.device_manager import get_device_manager
@@ -196,10 +195,7 @@ class AudioController:
         Returns:
             SelectionState or None if not available
         """
-        if (
-            self.app.window
-            and self.app.window.mel_spectrogram
-        ):
+        if self.app.window and self.app.window.mel_spectrogram:
             return self.app.window.mel_spectrogram.selection_state
         return None
 
@@ -689,9 +685,7 @@ class AudioController:
 
         except (OSError, ValueError) as e:
             self.app.edit_controller.cancel_pending_edit()
-            self.app.display_controller.set_status(
-                f"Edit failed: {e}", MsgType.ERROR
-            )
+            self.app.display_controller.set_status(f"Edit failed: {e}", MsgType.ERROR)
 
     def start_audio_queue_processing(self) -> None:
         """Start processing audio queue for real-time display.

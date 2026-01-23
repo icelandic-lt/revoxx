@@ -170,7 +170,9 @@ class PlaybackHandler:
                 self.zoom_controller.view_offset = initial_view_offset
 
                 if self.on_update_time_axis:
-                    self.on_update_time_axis(initial_view_offset, initial_view_offset + visible_seconds)
+                    self.on_update_time_axis(
+                        initial_view_offset, initial_view_offset + visible_seconds
+                    )
 
                 if self.on_update_display:
                     self.on_update_display()
@@ -472,7 +474,9 @@ class PlaybackHandler:
 
         # In STATIC mode, keep the view unchanged and position line at selection end
         if self.playback_controller.viewport_mode == ViewportMode.STATIC:
-            end_position = self._end_position if self._end_position else self.total_duration
+            end_position = (
+                self._end_position if self._end_position else self.total_duration
+            )
             self.playback_controller.playback_position = end_position
             view_offset = self.zoom_controller.view_offset
             time_from_view_start = end_position - view_offset
@@ -496,7 +500,9 @@ class PlaybackHandler:
         # Only update time axis and display in SCROLL mode (view changed)
         if self.playback_controller.viewport_mode != ViewportMode.STATIC:
             if self.on_update_time_axis:
-                self.on_update_time_axis(end_view_offset, end_view_offset + visible_seconds)
+                self.on_update_time_axis(
+                    end_view_offset, end_view_offset + visible_seconds
+                )
             if end_view_offset > 0 and self.on_update_display:
                 self.on_update_display()
 

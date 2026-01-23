@@ -49,7 +49,11 @@ class AudioEditor:
         before = audio[:start_sample]
         after = audio[end_sample:]
 
-        if fade_samples > 0 and len(before) >= fade_samples and len(after) >= fade_samples:
+        if (
+            fade_samples > 0
+            and len(before) >= fade_samples
+            and len(after) >= fade_samples
+        ):
             # Apply cross-fade between the end of 'before' and start of 'after'
             before_fade = before[-fade_samples:]
             after_fade = after[:fade_samples]
@@ -59,11 +63,9 @@ class AudioEditor:
             )
 
             # Construct result: before (minus fade region) + crossfade + after (minus fade region)
-            result = np.concatenate([
-                before[:-fade_samples],
-                crossfaded,
-                after[fade_samples:]
-            ])
+            result = np.concatenate(
+                [before[:-fade_samples], crossfaded, after[fade_samples:]]
+            )
         else:
             # No cross-fade possible, just concatenate
             result = np.concatenate([before, after])
@@ -110,7 +112,9 @@ class AudioEditor:
             if len(before) >= fade_samples:
                 # Fade out the end of 'before' and fade in start of 'insert'
                 before_fade = before[-fade_samples:]
-                insert_start_fade = insert[:fade_samples] if len(insert) >= fade_samples else insert
+                insert_start_fade = (
+                    insert[:fade_samples] if len(insert) >= fade_samples else insert
+                )
 
                 if len(insert_start_fade) == fade_samples:
                     crossfaded_start = AudioEditor._equal_power_crossfade(

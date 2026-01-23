@@ -398,7 +398,9 @@ class Revoxx:
         )
 
         # Clear selection with Escape
-        self.window.window.bind("<Escape>", lambda e: self._clear_spectrogram_selection())
+        self.window.window.bind(
+            "<Escape>", lambda e: self._clear_spectrogram_selection()
+        )
 
         # Second window shortcuts (Shift + key)
         self.window.window.bind(

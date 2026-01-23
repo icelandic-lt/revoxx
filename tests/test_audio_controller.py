@@ -124,6 +124,7 @@ class TestAudioController(unittest.TestCase):
 
     def test_start_recording_calls_start_audio_capture(self):
         """Test that start_recording calls _start_audio_capture with 'recording' mode."""
+        self.mock_app.state.recording.get_current_take = Mock(return_value=0)
         with patch.object(self.controller, "_start_audio_capture") as mock_capture:
             self.controller.start_recording()
             mock_capture.assert_called_once_with("recording")
@@ -134,8 +135,7 @@ class TestAudioController(unittest.TestCase):
             self.controller.stop_recording()
             mock_capture.assert_called_once_with("recording")
 
-    @patch("revoxx.controllers.audio_controller.sd")
-    def test_play_current_with_no_recordings(self, mock_sd):
+    def test_play_current_with_no_recordings(self):
         """Test play_current when no recordings are available."""
         self.mock_app.state.is_ready_to_play = Mock(return_value=False)
 
@@ -144,11 +144,9 @@ class TestAudioController(unittest.TestCase):
         self.mock_app.display_controller.set_status.assert_called_once_with(
             "No recording available", MsgType.TEMPORARY
         )
-        mock_sd.stop.assert_not_called()
 
-    @patch("revoxx.controllers.audio_controller.sd")
     @patch("revoxx.controllers.audio_controller.get_device_manager")
-    def test_play_current_with_recording(self, mock_get_dm, mock_sd):
+    def test_play_current_with_recording(self, mock_get_dm):
         """Test play_current when a recording is available."""
         import numpy as np
 
@@ -169,11 +167,16 @@ class TestAudioController(unittest.TestCase):
         mock_buffer.close = Mock()
         self.mock_app.buffer_manager.create_buffer = Mock(return_value=mock_buffer)
 
+        # Mock selection_state to return no selection
+        mock_selection_state = Mock()
+        mock_selection_state.has_selection = False
+        mock_selection_state.has_marker = False
+        self.mock_app.window.mel_spectrogram.selection_state = mock_selection_state
+
         # Execute
         self.controller.play_current()
 
         # Verify
-        mock_sd.stop.assert_called_once()
         self.mock_app.queue_manager.stop_playback.assert_called_once()
         self.mock_app.display_controller.stop_spectrogram_playback.assert_called_once()
         self.mock_app.shared_state.reset_level_meter.assert_called()

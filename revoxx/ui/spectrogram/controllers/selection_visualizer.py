@@ -177,9 +177,7 @@ class SelectionVisualizer:
         relative_pos = (time_seconds - view_start) / visible_seconds
         return relative_pos * (ctx.spec_frames - 1)
 
-    def update_marker(
-        self, time_seconds: Optional[float], ctx: "ViewContext"
-    ) -> None:
+    def update_marker(self, time_seconds: Optional[float], ctx: "ViewContext") -> None:
         """Update marker position display.
 
         Args:
