@@ -76,6 +76,9 @@ class AudioConstants:
     CLIPPING_THRESHOLD = 0.99  # 99% of maximum value
     AUDIO_CHUNK_SIZE = 1024
     MIN_CLIPPING_MARKER_DISTANCE = 5  # Frames between markers
+
+    # Audio editing
+    CROSSFADE_MS = 25  # Fixed cross-fade duration for edit operations
     FREQUENCY_NOISE_FLOOR_DB = (
         -50
     )  # dB threshold for max frequency detection (-60 = more sensitive, -40 = less sensitive)
@@ -171,6 +174,15 @@ class UIConstants:
     EDGE_INDICATOR_WIDTH = 2
     EDGE_INDICATOR_ALPHA = 0.8
     EDGE_INDICATOR_TIMEOUT_MS = 350
+
+    # Selection and marker display
+    COLOR_POSITION_MARKER = "#00FFFF"  # Cyan
+    COLOR_SELECTION_FILL = (1.0, 1.0, 1.0, 0.15)  # Semi-transparent white (RGBA)
+    COLOR_SELECTION_BORDER = "#FFFFFF"  # White
+    SELECTION_BORDER_WIDTH = 1
+    POSITION_MARKER_WIDTH = 2
+    SELECTION_DRAG_THRESHOLD = 5  # Pixels
+    MARKER_HOVER_THRESHOLD = 8  # Pixels - distance for resize cursor activation
 
     # Timing (milliseconds)
     ANIMATION_UPDATE_MS = 20
@@ -295,6 +307,7 @@ class KeyBindings:
 
     RECORD = "space"
     PLAY = "p"
+    STOP = "s"
     NAVIGATE_UP = "Up"
     NAVIGATE_DOWN = "Down"
     BROWSE_TAKES_LEFT = "Left"

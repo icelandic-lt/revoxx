@@ -11,7 +11,7 @@ import time
 from matplotlib.lines import Line2D
 
 from ...constants import UIConstants
-from .controllers import PlaybackController, ZoomController
+from .controllers import PlaybackController, ViewportMode, ZoomController
 
 from ...audio.shared_state import (
     SHARED_STATUS_INVALID,
@@ -62,15 +62,20 @@ class PlaybackHandler:
         self.playback_line: Optional[Line2D] = None
         self.animation_id: Optional[str] = None
         self._fade_id: Optional[str] = None
+        self._fade_steps: int = UIConstants.PLAYBACK_FADEOUT_STEPS
+        self._fade_interval: int = 1
 
         # Store total duration for calculations
         self.total_duration = 0.0
         self.sample_rate = 48000
+        self._start_position = 0.0
+        self._end_position: Optional[float] = None
 
         # Callbacks
         self.on_update_display = None
         self.on_update_time_axis = None
         self.on_draw_idle = None
+        self.on_playback_finished = None
 
         # Progress watchdog
         self._last_sample_position: int = 0
@@ -78,74 +83,163 @@ class PlaybackHandler:
         self._end_visualized: bool = False
 
     def start_playback(
-        self, duration: float, recording_duration: float, sample_rate: int
+        self,
+        duration: float,
+        recording_duration: float,
+        sample_rate: int,
+        start_position: float = 0.0,
+        end_position: Optional[float] = None,
     ) -> None:
         """Start playback animation.
 
         Args:
-            duration: Playback duration in seconds
+            duration: Playback duration in seconds (full recording duration)
             recording_duration: Total recording duration (for zoom calculations)
             sample_rate: Sample rate of the audio being played
+            start_position: Start position in seconds (default 0.0)
+            end_position: End position in seconds (default None = play to end)
         """
+        self._cancel_pending_animations()
+        self._init_playback_state(
+            duration, recording_duration, sample_rate, start_position, end_position
+        )
 
-        # Clear any pending animation
+        visible_seconds = self._calculate_visible_seconds(recording_duration)
+        initial_view_offset = self._calculate_initial_view_offset(
+            start_position, end_position, recording_duration, visible_seconds
+        )
+        self._apply_view_offset_if_needed(initial_view_offset, visible_seconds)
+        self._setup_playback_line(start_position, initial_view_offset, visible_seconds)
+
+        self.parent.after(
+            UIConstants.PLAYBACK_INITIAL_CHECK_MS, self._update_playback_position
+        )
+
+    def _cancel_pending_animations(self) -> None:
+        """Cancel any pending animation or fade callbacks."""
         if self.animation_id:
             self.parent.after_cancel(self.animation_id)
             self.animation_id = None
 
-        self.playback_controller.start(duration)
-        self.playback_controller.recording_duration = recording_duration
-        self.total_duration = duration
-        self.sample_rate = sample_rate
-
-        # Reset view offset for playback
-        self.zoom_controller.view_offset = 0.0
-
-        # Reset fade/progress state
         if self._fade_id:
             try:
                 self.parent.after_cancel(self._fade_id)
             except Exception:
                 pass
             self._fade_id = None
+
+    def _init_playback_state(
+        self,
+        duration: float,
+        recording_duration: float,
+        sample_rate: int,
+        start_position: float,
+        end_position: Optional[float],
+    ) -> None:
+        """Initialize playback controller and state variables."""
+        self.playback_controller.start(duration, start_position, end_position)
+        self.playback_controller.recording_duration = recording_duration
+        self.total_duration = duration
+        self.sample_rate = sample_rate
+        self._start_position = start_position
+        self._end_position = end_position
+
         self._last_sample_position = 0
         self._last_progress_ts = time.monotonic()
         self._end_visualized = False
 
-        # Update time axis for current zoom
+    def _calculate_visible_seconds(self, recording_duration: float) -> float:
+        """Calculate visible time range based on zoom level."""
         if recording_duration > 0:
-            visible_seconds = recording_duration / self.zoom_controller.zoom_level
-        else:
-            visible_seconds = (
-                UIConstants.SPECTROGRAM_DISPLAY_SECONDS
-                / self.zoom_controller.zoom_level
+            return recording_duration / self.zoom_controller.zoom_level
+        return UIConstants.SPECTROGRAM_DISPLAY_SECONDS / self.zoom_controller.zoom_level
+
+    def _calculate_initial_view_offset(
+        self,
+        start_position: float,
+        end_position: Optional[float],
+        recording_duration: float,
+        visible_seconds: float,
+    ) -> float:
+        """Calculate initial view offset based on start/end position.
+
+        Returns:
+            The view offset to use for playback start
+        """
+        current_view_offset = self.zoom_controller.view_offset
+        has_selection = end_position is not None
+
+        if has_selection:
+            self.playback_controller.set_static_viewport(current_view_offset)
+            return current_view_offset
+
+        current_view_end = current_view_offset + visible_seconds
+        start_is_visible = (
+            start_position >= current_view_offset and start_position <= current_view_end
+        )
+
+        if start_is_visible:
+            return current_view_offset
+
+        if start_position > 0:
+            return self._center_view_on_position(
+                start_position, recording_duration, visible_seconds
             )
 
-        if self.on_update_time_axis:
-            self.on_update_time_axis(0, visible_seconds)
+        return 0.0
 
-        # Update spectrogram view if zoomed
-        if self.zoom_controller.zoom_level > 1.0 and self.on_update_display:
+    def _center_view_on_position(
+        self, position: float, recording_duration: float, visible_seconds: float
+    ) -> float:
+        """Calculate view offset to center a position in the viewport."""
+        half_visible = visible_seconds / 2
+        if position < half_visible:
+            return 0.0
+        if position > recording_duration - half_visible:
+            return max(0.0, recording_duration - visible_seconds)
+        return position - half_visible
+
+    def _apply_view_offset_if_needed(
+        self, initial_view_offset: float, visible_seconds: float
+    ) -> None:
+        """Apply view offset and trigger display update if changed."""
+        current_view_offset = self.zoom_controller.view_offset
+        view_changed = abs(initial_view_offset - current_view_offset) > 0.001
+
+        if not view_changed:
+            return
+
+        self.zoom_controller.view_offset = initial_view_offset
+
+        if self.on_update_time_axis:
+            self.on_update_time_axis(
+                initial_view_offset, initial_view_offset + visible_seconds
+            )
+
+        if self.on_update_display:
             self.on_update_display()
 
-        # Create playback line if needed
+    def _setup_playback_line(
+        self, start_position: float, initial_view_offset: float, visible_seconds: float
+    ) -> None:
+        """Create or update the playback position line."""
+        initial_x_pos = 0
+        if start_position > 0 and visible_seconds > 0:
+            relative_pos = (start_position - initial_view_offset) / visible_seconds
+            initial_x_pos = relative_pos * (self.spec_frames - 1)
+
         if self.playback_line is None:
             self.playback_line = self.ax.axvline(
-                x=0,
+                x=initial_x_pos,
                 color=UIConstants.COLOR_PLAYBACK_LINE,
                 linewidth=UIConstants.PLAYBACK_LINE_WIDTH,
             )
         else:
-            self.playback_line.set_xdata([0])
+            self.playback_line.set_xdata([initial_x_pos])
             self.playback_line.set_visible(True)
-        # Ensure fully opaque on start
+
         if self.playback_line is not None:
             self.playback_line.set_alpha(1.0)
-
-        # Start animation with small delay to ensure player is ready
-        self.parent.after(
-            UIConstants.PLAYBACK_INITIAL_CHECK_MS, self._update_playback_position
-        )
 
     def stop_playback(self) -> None:
         """Stop playback animation."""
@@ -203,8 +297,8 @@ class PlaybackHandler:
         """Check if playback is stalled near the end.
 
         Args:
-            current_sample: Current sample position
-            total_samples: Total number of samples
+            current_sample: Current sample position (relative to playback range start)
+            total_samples: Total number of samples in playback range
 
         Returns:
             True if stalled and should finish, False otherwise
@@ -216,24 +310,26 @@ class PlaybackHandler:
 
         elapsed = time.monotonic() - self._last_progress_ts
 
-        # Calculate ratios
+        # Calculate sample ratio (already relative to playback range)
         sample_ratio = (current_sample / total_samples) if total_samples > 0 else 0.0
+
+        # Calculate time ratio relative to the playback range, not the full recording
         time_ratio = 0.0
-        if self.playback_controller.playback_duration > 0:
-            time_ratio = min(
-                1.0,
-                self.playback_controller.playback_position
-                / self.playback_controller.playback_duration,
-            )
+        effective_start = self.playback_controller.start_offset
+        effective_end = (
+            self.playback_controller.end_position
+            if self.playback_controller.end_position is not None
+            else self.playback_controller.playback_duration
+        )
+        effective_duration = effective_end - effective_start
+
+        if effective_duration > 0:
+            progress = self.playback_controller.playback_position - effective_start
+            time_ratio = min(1.0, progress / effective_duration)
 
         near_end = (sample_ratio >= 0.95) or (time_ratio >= 0.95)
 
         if elapsed > 0.20 and near_end and not self._end_visualized:
-            # Debug: watchdog detected stalled playback near end
-            print(
-                f"[DEBUG] watchdog: stalled {elapsed*1000:.0f}ms, ratios sample={sample_ratio:.3f}, time={time_ratio:.3f} → finish visual",
-                file=sys.stderr,
-            )
             self._finish_playback_visual()
             return True
 
@@ -277,20 +373,24 @@ class PlaybackHandler:
         """Calculate playback position in seconds.
 
         Args:
-            current_sample: Current sample position
-            total_samples: Total number of samples
+            current_sample: Current sample position (relative to start_sample)
+            total_samples: Total number of samples in playback range
             status: Current playback status
 
         Returns:
-            Position in seconds
+            Absolute position in seconds within the full recording
         """
-        position_seconds = 0.0
+        # current_sample is relative to start position, so add start_position
+        position_seconds = self._start_position
         if total_samples > 0:
-            position_seconds = current_sample / self.sample_rate
+            position_seconds += current_sample / self.sample_rate
 
         # Handle FINISHING status - override position to animate to end
         if status == PLAYBACK_STATUS_FINISHING:
-            position_seconds = self.total_duration
+            if self._end_position is not None:
+                position_seconds = self._end_position
+            else:
+                position_seconds = self.total_duration
 
         return position_seconds
 
@@ -312,21 +412,29 @@ class PlaybackHandler:
         if self.playback_controller.playback_duration <= 0:
             return
 
+        previous_view_offset = self.zoom_controller.view_offset
+
         x_pos, view_offset, visible_seconds = (
             self.playback_controller.calculate_animation_phase(
-                self.zoom_controller.zoom_level, self.spec_frames
+                self.zoom_controller.zoom_level,
+                self.spec_frames,
+                self.zoom_controller.view_offset,
             )
         )
+
+        # Check if viewport has changed
+        view_changed = abs(view_offset - previous_view_offset) > 0.001
 
         self.zoom_controller.view_offset = view_offset
         self.playback_line.set_xdata([x_pos])
 
-        if self.on_update_time_axis:
-            self.on_update_time_axis(view_offset, view_offset + visible_seconds)
+        # Only update time axis and spectrogram if view actually changed
+        if view_changed:
+            if self.on_update_time_axis:
+                self.on_update_time_axis(view_offset, view_offset + visible_seconds)
 
-        # Update spectrogram if scrolling
-        if view_offset > 0 and self.on_update_display:
-            self.on_update_display()
+            if self.on_update_display:
+                self.on_update_display()
 
         if self.on_draw_idle:
             self.on_draw_idle()
@@ -340,8 +448,12 @@ class PlaybackHandler:
             self._schedule_next_frame()
             return
 
-        if current_sample >= total_samples - 1 or status == PLAYBACK_STATUS_COMPLETED:
+        # Check if we've reached end_position (for partial playback)
+        if self._end_position is not None and position_seconds >= self._end_position:
+            self._finish_playback_visual()
+            return
 
+        if current_sample >= total_samples - 1 or status == PLAYBACK_STATUS_COMPLETED:
             self._finish_playback_visual()
         else:
             # Schedule next update
@@ -363,13 +475,37 @@ class PlaybackHandler:
         )
 
     def _finish_playback_visual(self) -> None:
-        """Snap the playback line to the end and fade it out smoothly."""
+        """Snap the playback line to the end and fade it out smoothly.
+
+        This method is called when playback completes. It positions the
+        playback line at the final position and initiates a fade-out animation.
+        """
         if self._end_visualized:
-            # Avoid double-trigger
             return
         self._end_visualized = True
 
-        # Cancel further position updates
+        self._cancel_animation_only()
+        self._ensure_playback_line_exists()
+
+        visible_seconds = self._calculate_visible_seconds(
+            self.playback_controller.recording_duration
+        )
+
+        if self.playback_controller.viewport_mode == ViewportMode.STATIC:
+            x_pos = self._finish_static_mode(visible_seconds)
+        else:
+            x_pos = self._finish_scroll_mode(visible_seconds)
+
+        self.playback_line.set_xdata([x_pos])
+        self.playback_line.set_visible(True)
+
+        if self.on_draw_idle:
+            self.on_draw_idle()
+
+        self._start_fade_out()
+
+    def _cancel_animation_only(self) -> None:
+        """Cancel animation callback without touching fade callback."""
         if self.animation_id:
             try:
                 self.parent.after_cancel(self.animation_id)
@@ -377,7 +513,8 @@ class PlaybackHandler:
                 pass
             self.animation_id = None
 
-        # Ensure we have a visible line
+    def _ensure_playback_line_exists(self) -> None:
+        """Create playback line if it doesn't exist."""
         if self.playback_line is None:
             self.playback_line = self.ax.axvline(
                 x=0,
@@ -385,50 +522,77 @@ class PlaybackHandler:
                 linewidth=UIConstants.PLAYBACK_LINE_WIDTH,
             )
 
-        # Snap to end visually using display coordinates
-        # Place the line exactly at the rightmost pixel of the spectrogram area
-        self.playback_controller.playback_position = self.total_duration
-        x_pos = self.spec_frames - 1
-        # Compute end view based on recording duration to align with the spectrogram data
-        if self.playback_controller.recording_duration > 0:
-            visible_seconds = (
-                self.playback_controller.recording_duration
-                / self.zoom_controller.zoom_level
-            )
-        else:
-            visible_seconds = (
-                UIConstants.SPECTROGRAM_DISPLAY_SECONDS
-                / self.zoom_controller.zoom_level
-            )
-        end_view_offset = max(
-            0.0,
-            (self.playback_controller.recording_duration or self.total_duration)
-            - visible_seconds,
-        )
+    def _finish_static_mode(self, visible_seconds: float) -> float:
+        """Calculate final line position for static viewport mode.
 
+        In static mode, the view stays fixed and the line moves to the
+        selection end position.
+
+        Returns:
+            X position for the playback line
+        """
+        end_position = self._end_position if self._end_position else self.total_duration
+        self.playback_controller.playback_position = end_position
+
+        view_offset = self.zoom_controller.view_offset
+        time_from_view_start = end_position - view_offset
+        x_pos_ratio = time_from_view_start / visible_seconds
+        x_pos = x_pos_ratio * (self.spec_frames - 1)
+        return max(0, min(x_pos, self.spec_frames - 1))
+
+    def _finish_scroll_mode(self, visible_seconds: float) -> float:
+        """Calculate final line position for scroll viewport mode.
+
+        In scroll mode, the view scrolls to show the end and the line
+        snaps to the right edge.
+
+        Returns:
+            X position for the playback line (always spec_frames - 1)
+        """
+        self.playback_controller.playback_position = self.total_duration
+
+        recording_duration = (
+            self.playback_controller.recording_duration or self.total_duration
+        )
+        end_view_offset = max(0.0, recording_duration - visible_seconds)
         self.zoom_controller.view_offset = end_view_offset
-        self.playback_line.set_xdata([x_pos])
-        self.playback_line.set_visible(True)
+
         if self.on_update_time_axis:
             self.on_update_time_axis(end_view_offset, end_view_offset + visible_seconds)
         if end_view_offset > 0 and self.on_update_display:
             self.on_update_display()
-        if self.on_draw_idle:
-            self.on_draw_idle()
 
-        # Start fade-out
-        self._start_fade_out()
+        return self.spec_frames - 1
 
     def _start_fade_out(self, duration_ms: int = None, steps: int = None) -> None:
-        """Fade out the playback line over duration_ms in given steps."""
+        """Start fading out the playback line.
+
+        Initiates a gradual fade-out animation for the playback line over the
+        specified duration. The fade uses linear alpha interpolation across
+        the given number of steps.
+
+        Args:
+            duration_ms: Total duration of the fade in milliseconds.
+                        Defaults to UIConstants.PLAYBACK_FADEOUT_MS.
+            steps: Number of animation steps for the fade.
+                   Defaults to UIConstants.PLAYBACK_FADEOUT_STEPS.
+        """
         if not self.playback_line:
             return
+
         duration_ms = (
             duration_ms if duration_ms is not None else UIConstants.PLAYBACK_FADEOUT_MS
         )
         steps = steps if steps is not None else UIConstants.PLAYBACK_FADEOUT_STEPS
+        self._cancel_existing_fade()
 
-        # Cancel existing fade if any
+        # Store parameters for the step function
+        self._fade_steps = steps
+        self._fade_interval = max(1, duration_ms // steps)
+        self._execute_fade_step(0)
+
+    def _cancel_existing_fade(self) -> None:
+        """Cancel any currently running fade animation."""
         if self._fade_id:
             try:
                 self.parent.after_cancel(self._fade_id)
@@ -436,23 +600,44 @@ class PlaybackHandler:
                 pass
             self._fade_id = None
 
-        def step(i: int) -> None:
-            if not self.playback_line:
-                return
-            alpha = max(0.0, 1.0 - (i / steps))
-            self.playback_line.set_alpha(alpha)
-            if self.on_draw_idle:
-                self.on_draw_idle()
-            if i < steps:
-                self._fade_id = self.parent.after(
-                    max(1, duration_ms // steps), lambda: step(i + 1)
-                )
-            else:
-                # Hide and restore alpha for next playback
-                self.playback_line.set_visible(False)
-                self.playback_line.set_alpha(1.0)
-                if self.on_draw_idle:
-                    self.on_draw_idle()
-                self._fade_id = None
+    def _execute_fade_step(self, step_index: int) -> None:
+        """Execute a single step of the fade-out animation.
 
-        step(0)
+        Updates the playback line alpha value and schedules the next step
+        or completes the fade when all steps are done.
+
+        Args:
+            step_index: Current step number (0-based).
+        """
+        if not self.playback_line:
+            return
+
+        alpha = max(0.0, 1.0 - (step_index / self._fade_steps))
+        self.playback_line.set_alpha(alpha)
+        self._request_canvas_update()
+
+        if step_index < self._fade_steps:
+            self._fade_id = self.parent.after(
+                self._fade_interval, lambda: self._execute_fade_step(step_index + 1)
+            )
+        else:
+            self._complete_fade_out()
+
+    def _complete_fade_out(self) -> None:
+        """Complete the fade-out animation.
+
+        Hides the playback line, resets its alpha for the next playback,
+        and triggers the playback finished callback.
+        """
+        self.playback_line.set_visible(False)
+        self.playback_line.set_alpha(1.0)
+        self._request_canvas_update()
+        self._fade_id = None
+
+        if self.on_playback_finished:
+            self.on_playback_finished()
+
+    def _request_canvas_update(self) -> None:
+        """Request a canvas redraw if the callback is available."""
+        if self.on_draw_idle:
+            self.on_draw_idle()

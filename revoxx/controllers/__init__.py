@@ -12,6 +12,7 @@ from .display_controller import DisplayController
 from .file_operations_controller import FileOperationsController
 from .dialog_controller import DialogController
 from .process_manager import ProcessManager
+from .edit_controller import EditController
 
 __all__ = [
     "AudioController",
@@ -22,4 +23,5 @@ __all__ = [
     "FileOperationsController",
     "DialogController",
     "ProcessManager",
+    "EditController",
 ]

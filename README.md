@@ -66,6 +66,12 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 - **Real-time monitoring** including toggable recording levels, mel spectrograms, maximum frequency detection, and more
   - Customizable **industry-standard presets for Peak/RMS levels**
   - Dedicated **Monitoring mode** for precise input calibration
+- **Audio Editing** directly in the spectrogram view
+  - Set position markers to play from any point in the recording
+  - Create selection ranges for partial playback
+  - Delete ranges with automatic crossfade
+  - Insert new audio at marker position
+  - Replace selected ranges with new recordings
 - **Multi-Screen Support**
   - You can use multiple monitors to **separate recording view from speaker view**
   - We support Apple's [Sidecar](https://support.apple.com/en-us/102597) feature for a **convenient dual screen setup with an external iPad**
@@ -196,11 +202,13 @@ pip install -e .[dev,vad]
 ```
 
 Development dependencies include:
-- **black**: Code formatter
+- **black**: Code formatter (pinned to 25.x for Python 3.9 compatibility)
 - **isort**: Import statement organizer
 - **flake8**: Code linter
 - **pytest**: Testing framework
 - **pytest-cov**: Code coverage reporting
+
+> **Note**: Black is pinned to version 25.x because Black 26+ requires Python 3.10+ and introduces the "2026 stable style" with different formatting rules. This ensures consistent formatting across all supported Python versions (3.9-3.13).
 
 ### Running code quality checks
 

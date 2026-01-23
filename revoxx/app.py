@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 import traceback
 
-from .constants import KeyBindings, FileConstants, MsgType
+from .constants import KeyBindings, FileConstants, MsgType, UIConstants
 from .utils.config import RecorderConfig, load_config
 from .utils.state import AppState
 from .utils.file_manager import RecordingFileManager, ScriptFileManager
@@ -29,6 +29,7 @@ from .session import SessionManager, Session
 # Import all controllers
 from .controllers import (
     AudioController,
+    EditController,
     NavigationController,
     SessionController,
     DeviceController,
@@ -168,8 +169,6 @@ class Revoxx:
                 theme_manager.set_theme(ThemePreset.CYAN)
 
         # Refresh UI constants with theme colors
-        from .constants import UIConstants
-
         UIConstants.refresh()
 
         # Initialize WindowManager
@@ -239,6 +238,7 @@ class Revoxx:
         self.display_controller = DisplayController(self, self.window_manager)
         self.file_operations_controller = FileOperationsController(self)
         self.dialog_controller = DialogController(self)
+        self.edit_controller = EditController(self)
 
     def _populate_app_callbacks(self):
         """Populate app_callbacks dictionary with controller methods."""
@@ -309,12 +309,16 @@ class Revoxx:
             f"<{KeyBindings.PLAY}>", lambda e: self.audio_controller.play_current()
         )
         self.window.window.bind(
+            f"<{KeyBindings.STOP}>",
+            lambda e: self.audio_controller.stop_all_playback_activities(),
+        )
+        self.window.window.bind(
             "<Control-d>",
-            lambda e: self.file_operations_controller.delete_current_recording(),
+            lambda e: self._handle_delete(),
         )
         self.window.window.bind(
             "<Control-D>",
-            lambda e: self.file_operations_controller.delete_current_recording(),
+            lambda e: self._handle_delete(),
         )
 
         # Navigation keys
@@ -379,7 +383,7 @@ class Revoxx:
             modifier = "Control"
         self.window.window.bind(
             f"<{modifier}-{KeyBindings.DELETE_RECORDING}>",
-            lambda e: self.file_operations_controller.delete_current_recording(),
+            lambda e: self._handle_delete(),
         )
 
         # Help and info
@@ -389,6 +393,11 @@ class Revoxx:
         self.window.window.bind(
             f"<{KeyBindings.SHOW_INFO}>",
             lambda e: self.display_controller.toggle_info_panel(),
+        )
+
+        # Clear selection with Escape
+        self.window.window.bind(
+            "<Escape>", lambda e: self._clear_spectrogram_selection()
         )
 
         # Second window shortcuts (Shift + key)
@@ -593,6 +602,22 @@ class Revoxx:
 
         # Exit
         sys.exit(0)
+
+    def _clear_spectrogram_selection(self) -> None:
+        """Clear marker and selection in spectrogram."""
+        if self.window and self.window.mel_spectrogram:
+            self.window.mel_spectrogram.clear_selection()
+
+    def _handle_delete(self) -> None:
+        """Handle delete action - deletes selection if active, otherwise recording."""
+        if (
+            self.window
+            and self.window.mel_spectrogram
+            and self.window.mel_spectrogram.selection_state.has_selection
+        ):
+            self.edit_controller.delete_selection()
+        else:
+            self.file_operations_controller.delete_current_recording()
 
     def _toggle_fullscreen(self):
         """Toggle fullscreen mode.

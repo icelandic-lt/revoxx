@@ -42,6 +42,8 @@ class TestAudioQueueManager(unittest.TestCase):
                 "action": "play",
                 "buffer_metadata": buffer_metadata,
                 "sample_rate": sample_rate,
+                "start_sample": 0,
+                "end_sample": None,
             },
             block=False,
         )
@@ -50,7 +52,9 @@ class TestAudioQueueManager(unittest.TestCase):
         """Test stopping playback."""
         self.queue_manager.stop_playback()
 
-        self.mock_playback_queue.put.assert_called_once_with({"action": "stop"})
+        self.mock_playback_queue.put.assert_called_once_with(
+            {"action": "stop"}, block=False
+        )
 
     def test_set_output_device_success(self):
         """Test setting output device successfully."""
@@ -123,7 +127,9 @@ class TestAudioQueueManager(unittest.TestCase):
         """Test stopping recording."""
         self.queue_manager.stop_recording()
 
-        self.mock_record_queue.put.assert_called_once_with({"action": "stop"})
+        self.mock_record_queue.put.assert_called_once_with(
+            {"action": "stop"}, block=False
+        )
 
     def test_set_input_device_success(self):
         """Test setting input device successfully."""

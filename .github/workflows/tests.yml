@@ -62,7 +62,7 @@ jobs:
     - name: Run tests (non-Linux)
       if: runner.os != 'Linux'
       run: |
-        pytest tests/ -v --cov=revoxx --cov-report=xml --cov-report=term -k "not test_new_session_dialog"
+        pytest tests/ -v --cov=revoxx --cov-report=xml --cov-report=term -k "not test_new_session_dialog and not test_utterance_list_dialog_sorting"
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'

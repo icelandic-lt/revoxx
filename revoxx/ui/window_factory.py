@@ -10,6 +10,7 @@ import tkinter as tk
 
 from .window_base import WindowBase
 from .icon import AppIcon
+from ..constants import UIConstants
 from ..utils.config import RecorderConfig
 from ..utils.state import UIState, RecordingState
 from ..utils.settings_manager import SettingsManager
@@ -165,8 +166,6 @@ class WindowFactory:
         Args:
             window: Window to setup
         """
-        from ..constants import UIConstants
-
         window.main_frame = tk.Frame(window.window, bg=UIConstants.COLOR_BACKGROUND)
         window.main_frame.pack(
             fill=tk.BOTH,

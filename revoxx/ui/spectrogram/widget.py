@@ -23,7 +23,10 @@ from .controllers import (
     PlaybackController,
     ClippingVisualizer,
     EdgeIndicator,
+    SelectionVisualizer,
 )
+from .selection_state import SelectionState
+from .view_context import ViewContext, SavedViewState
 
 
 class MelSpectrogramWidget(SpectrogramDisplayBase):
@@ -93,6 +96,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
 
         # Initialize visualizers (need axes)
         self.clipping_visualizer = ClippingVisualizer(self.ax)
+        self.selection_visualizer = SelectionVisualizer(self.ax)
 
         # Initialize handlers
         self.recording_handler = RecordingHandler(
@@ -125,6 +129,7 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         self.playback_handler.on_update_display = self._update_spectrogram_view
         self.playback_handler.on_update_time_axis = self._update_time_axis_labels
         self.playback_handler.on_draw_idle = self.draw_idle
+        self.playback_handler.on_playback_finished = self._on_playback_finished
 
         # Initialize state
         self._init_state()
@@ -163,6 +168,16 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         """Get recording duration."""
         return self.recording_display.recording_duration
 
+    @property
+    def _view_context(self) -> ViewContext:
+        """Get current view context for visualization updates."""
+        return ViewContext(
+            spec_frames=self.spec_frames,
+            n_mels=self._recording_n_mels,
+            zoom_controller=self.zoom_controller,
+            recording_duration=self.recording_display.recording_duration,
+        )
+
     def _init_state(self) -> None:
         """Initialize widget state."""
         self.zoom_indicator = None
@@ -171,6 +186,19 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         self._pan_active = False
         self._pan_last_x = 0
         self.edge_indicator: EdgeIndicator | None = None
+
+        # Selection state
+        self.selection_state = SelectionState()
+        self._drag_start_x: Optional[float] = None
+        self._drag_start_time: Optional[float] = None
+
+        # Marker drag state
+        self._resize_target: Optional[str] = None  # "start", "end", "position", or None
+        self._resize_active: bool = False
+        self._default_cursor: str = ""
+
+        # View state for playback restoration
+        self._saved_view_state = SavedViewState()
 
     @staticmethod
     def _clear_queue(queue_to_clear: queue.Queue) -> None:
@@ -219,6 +247,14 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         self.canvas_widget.bind("<ButtonPress-3>", self._on_middle_press)
         self.canvas_widget.bind("<B3-Motion>", self._on_middle_drag)
         self.canvas_widget.bind("<ButtonRelease-3>", self._on_middle_release)
+
+        # Left mouse button for marker/selection
+        self.canvas_widget.bind("<ButtonPress-1>", self._on_left_click)
+        self.canvas_widget.bind("<B1-Motion>", self._on_left_drag)
+
+        # Mouse motion for hover detection (resize cursor)
+        self.canvas_widget.bind("<Motion>", self._on_mouse_motion)
+        self.canvas_widget.bind("<ButtonRelease-1>", self._on_left_release)
 
     def _update_mel_processor(self, sample_rate: int) -> None:
         """Update mel processor if sample rate has changed.
@@ -410,15 +446,31 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             self.draw_idle()
 
     # Playback methods
-    def start_playback(self, duration: float, sample_rate: int) -> None:
+    def start_playback(
+        self,
+        duration: float,
+        sample_rate: int,
+        start_position: float = 0.0,
+        end_position: Optional[float] = None,
+    ) -> None:
         """Start playback animation.
 
         Args:
             duration: Playback duration in seconds
             sample_rate: Sample rate of the audio being played
+            start_position: Start position in seconds (default 0.0)
+            end_position: End position in seconds (default None = play to end)
         """
         # Hide NO DATA message if visible
         self._hide_no_data_message()
+
+        # Save marker position info to restore view after playback
+        self._save_playback_view_state()
+
+        # Hide position marker during playback (playback marker takes over)
+        # Keep selection visible so user can see what range is being played
+        if self.selection_state.has_marker and not self.selection_state.has_selection:
+            self.selection_visualizer.hide()
 
         recording_duration = self.recording_display.recording_duration
         if recording_duration <= 0:
@@ -426,11 +478,93 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
                 "Cannot start playback: No recording loaded (recording_duration <= 0)"
             )
 
-        self.playback_handler.start_playback(duration, recording_duration, sample_rate)
+        self.playback_handler.start_playback(
+            duration, recording_duration, sample_rate, start_position, end_position
+        )
 
     def stop_playback(self) -> None:
         """Stop playback animation."""
         self.playback_handler.stop_playback()
+        # Restore selection visualization after playback stops
+        self._restore_selection_visualization()
+
+    def _on_playback_finished(self) -> None:
+        """Called when playback finishes naturally."""
+        self._restore_selection_visualization()
+
+    def _save_playback_view_state(self) -> None:
+        """Save the current view state before playback starts.
+
+        Saves the marker/selection position and its relative position in the
+        viewport so we can restore the view after playback finishes.
+        """
+        self._saved_view_state.clear()
+
+        # Determine the target time (marker or selection start)
+        target_time = None
+        if self.selection_state.has_marker:
+            target_time = self.selection_state.marker_position
+        elif self.selection_state.has_selection:
+            target_time = self.selection_state.selection_start
+
+        if target_time is None:
+            return
+
+        # Calculate relative position of target in current viewport (0.0 to 1.0)
+        visible_seconds = self.zoom_controller.get_visible_seconds()
+        if visible_seconds <= 0:
+            return
+
+        view_start = self.zoom_controller.view_offset
+        relative_pos = (target_time - view_start) / visible_seconds
+
+        # Only save if target is currently visible
+        if 0.0 <= relative_pos <= 1.0:
+            self._saved_view_state.save(target_time, relative_pos)
+
+    def _restore_playback_view_state(self) -> None:
+        """Restore the view to show marker/selection at its original relative position."""
+        saved = self._saved_view_state.get()
+        if saved is None:
+            return
+
+        target_time, relative_pos = saved
+
+        recording_duration = self.recording_display.recording_duration
+        if recording_duration <= 0:
+            return
+
+        visible_seconds = self.zoom_controller.get_visible_seconds()
+
+        # Calculate the view_offset needed to place target at relative_pos
+        desired_offset = target_time - (relative_pos * visible_seconds)
+
+        # Clamp to valid range (no negative offset, no empty space at end)
+        max_offset = max(0.0, recording_duration - visible_seconds)
+        new_offset = max(0.0, min(desired_offset, max_offset))
+
+        # Only update if offset changed
+        if abs(new_offset - self.zoom_controller.view_offset) > 0.001:
+            self.zoom_controller.view_offset = new_offset
+            self._update_after_zoom()
+
+        self._saved_view_state.clear()
+
+    def _restore_selection_visualization(self) -> None:
+        """Restore marker visualization and view position after playback."""
+        # Restore view position first
+        self._restore_playback_view_state()
+
+        # Only restore marker visuals if it was set (selection stays visible)
+        if not self.selection_state.has_marker:
+            return
+
+        ctx = self._view_context
+        if ctx.has_recording:
+            self.selection_visualizer.update_marker(
+                self.selection_state.marker_position, ctx
+            )
+            self.draw_idle()
 
     # Display methods
     def show_recording(self, audio_data: np.ndarray, sample_rate: int) -> None:
@@ -516,6 +650,8 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         self.recording_display.clear()
         self.zoom_controller.set_recording_duration(0)
         self.clipping_visualizer.clear()
+        self.selection_state.clear_all()
+        self.selection_visualizer.clear()
 
         # Reset recording-specific parameters to defaults from current audio config
         self._recording_sample_rate = self.audio_config.sample_rate
@@ -648,6 +784,12 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             + self.zoom_controller.get_visible_seconds(),
         )
         self._update_spectrogram_view()
+
+        # Update selection/marker display for pan
+        ctx = self._view_context
+        if ctx.has_recording:
+            self.selection_visualizer.update_for_zoom(self.selection_state, ctx)
+
         self.draw_idle()
 
     def _on_middle_release(self, event) -> None:
@@ -663,7 +805,25 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             + self.zoom_controller.get_visible_seconds(),
         )
         self._update_spectrogram_view()
+
+        # Update selection/marker display for new zoom
+        self._update_selection_display()
+
         self.draw_idle()
+
+    def _update_selection_for_resize(self) -> None:
+        """Update selection/marker display after window resize."""
+        self._update_selection_display()
+
+    def _update_selection_display(self) -> None:
+        """Update selection and marker visualization.
+
+        Called after zoom changes or window resize to recalculate
+        marker positions based on current spec_frames and view offset.
+        """
+        ctx = self._view_context
+        if ctx.has_recording:
+            self.selection_visualizer.update_for_zoom(self.selection_state, ctx)
 
     def _update_zoom_indicator(self) -> None:
         """Update or create zoom indicator text."""
@@ -898,6 +1058,10 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         # Update time axis to ensure full time range is shown
         self._update_time_axis_for_current_state()
         self._refresh_display()
+
+        # Update selection/marker positions for new spec_frames
+        self._update_selection_for_resize()
+
         # Also apply current zoom-level
         if self.zoom_controller.zoom_level > 1.0:
             self._update_after_zoom()
@@ -1006,3 +1170,315 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             self.no_data_text.set_visible(False)
             # Force redraw to ensure text is gone
             self.draw_idle()
+
+    # --- Mouse motion for hover detection ---
+    def _on_mouse_motion(self, event) -> None:
+        """Handle mouse motion for marker hover detection."""
+        if self._resize_active:
+            return
+
+        mouse_rel_x = self._get_mouse_position_in_axes(event)
+        if mouse_rel_x is None:
+            self._set_cursor_default()
+            self._resize_target = None
+            return
+
+        marker = self._get_marker_at_position(event.x)
+        if marker:
+            self._resize_target = marker
+            self._set_cursor_resize()
+        else:
+            self._resize_target = None
+            self._set_cursor_default()
+
+    def _get_marker_at_position(self, pixel_x: float) -> Optional[str]:
+        """Check if pixel position is near a marker (selection or position).
+
+        Args:
+            pixel_x: X position in pixels
+
+        Returns:
+            "start", "end", "position", or None
+        """
+        recording_duration = self.recording_display.recording_duration
+        if recording_duration <= 0:
+            return None
+
+        threshold = UIConstants.MARKER_HOVER_THRESHOLD
+
+        # Check selection markers first
+        if self.selection_state.has_selection:
+            start_pixel = self._time_to_pixel_x(self.selection_state.selection_start)
+            if start_pixel is not None and abs(pixel_x - start_pixel) <= threshold:
+                return "start"
+
+            end_pixel = self._time_to_pixel_x(self.selection_state.selection_end)
+            if end_pixel is not None and abs(pixel_x - end_pixel) <= threshold:
+                return "end"
+
+        # Check position marker
+        if self.selection_state.has_marker:
+            marker_pixel = self._time_to_pixel_x(self.selection_state.marker_position)
+            if marker_pixel is not None and abs(pixel_x - marker_pixel) <= threshold:
+                return "position"
+
+        return None
+
+    def _time_to_pixel_x(self, time_seconds: float) -> Optional[float]:
+        """Convert time in seconds to pixel X position.
+
+        Args:
+            time_seconds: Time position in seconds
+
+        Returns:
+            Pixel X position, or None if outside visible range
+        """
+        recording_duration = self.recording_display.recording_duration
+        if recording_duration <= 0:
+            return None
+
+        visible_seconds = self.zoom_controller.get_visible_seconds()
+        view_start = self.zoom_controller.view_offset
+        view_end = view_start + visible_seconds
+
+        if time_seconds < view_start or time_seconds > view_end:
+            return None
+
+        rel_x = (time_seconds - view_start) / visible_seconds
+
+        bbox = self.ax.get_position()
+        fig_width = self.fig.get_figwidth() * self.fig.dpi
+        ax_left = bbox.x0 * fig_width
+        ax_width = bbox.width * fig_width
+
+        return ax_left + rel_x * ax_width
+
+    def _set_cursor_resize(self) -> None:
+        """Set cursor to horizontal resize cursor."""
+        self.canvas_widget.config(cursor="sb_h_double_arrow")
+
+    def _set_cursor_default(self) -> None:
+        """Reset cursor to default."""
+        self.canvas_widget.config(cursor="")
+
+    # --- Left mouse button marker/selection ---
+    def _on_left_click(self, event) -> None:
+        """Handle left mouse button press for marker/selection or resize."""
+        if event.type == "4":  # ButtonPress
+            mouse_rel_x = self._get_mouse_position_in_axes(event)
+            if mouse_rel_x is None:
+                self.clear_selection()
+                return
+
+            # Check if starting a resize operation
+            if self._resize_target:
+                self._resize_active = True
+                self._drag_start_x = event.x
+                return
+
+            # Store drag start position for new selection
+            self._drag_start_x = event.x
+            self._drag_start_time = self._pixel_to_time(mouse_rel_x)
+
+    def _on_left_drag(self, event) -> None:
+        """Handle left mouse button drag for selection preview or resize."""
+        # Handle marker drag (selection resize or position marker move)
+        if self._resize_active and self._resize_target:
+            self._handle_marker_drag(event)
+            return
+
+        if self._drag_start_x is None or self._drag_start_time is None:
+            return
+
+        # Check if drag exceeds threshold
+        dx = abs(event.x - self._drag_start_x)
+        if dx < UIConstants.SELECTION_DRAG_THRESHOLD:
+            return
+
+        # Clear any existing marker when starting a new selection
+        ctx = self._view_context
+        if self.selection_state.has_marker:
+            self.selection_state.clear_marker()
+            self.selection_visualizer.update_marker(None, ctx)
+
+        # Get current mouse position
+        mouse_rel_x = self._get_mouse_position_in_axes(event)
+        if mouse_rel_x is None:
+            return
+
+        current_time = self._pixel_to_time(mouse_rel_x)
+        if current_time is None:
+            return
+
+        # Update selection preview
+        if ctx.has_recording:
+            # Clamp current_time to recording bounds
+            current_time = max(0.0, min(current_time, ctx.recording_duration))
+
+            # Normalize start/end so start <= end
+            start_time = min(self._drag_start_time, current_time)
+            end_time = max(self._drag_start_time, current_time)
+
+            self.selection_visualizer.update_selection(start_time, end_time, ctx)
+            self.draw_idle()
+
+    def _handle_marker_drag(self, event) -> None:
+        """Handle dragging a marker (selection or position).
+
+        Args:
+            event: Mouse event
+        """
+        mouse_rel_x = self._get_mouse_position_in_axes(event)
+        if mouse_rel_x is None:
+            return
+
+        new_time = self._pixel_to_time(mouse_rel_x)
+        if new_time is None:
+            return
+
+        recording_duration = self.recording_display.recording_duration
+        if recording_duration <= 0:
+            return
+
+        # Handle position marker drag
+        ctx = self._view_context
+
+        if self._resize_target == "position":
+            # Clamp to recording bounds
+            new_position = max(0.0, min(new_time, recording_duration))
+            self.selection_state.set_marker(new_position)
+
+            # Update visualization
+            self.selection_visualizer.update_marker(new_position, ctx)
+            self.draw_idle()
+            return
+
+        # Handle selection marker drag (resize)
+        start = self.selection_state.selection_start
+        end = self.selection_state.selection_end
+
+        if start is None or end is None:
+            return
+
+        # Apply bounds based on which marker is being dragged
+        min_selection_gap = 0.001  # Minimum 1ms selection
+
+        if self._resize_target == "start":
+            # Start marker: can't go past end marker or below 0
+            new_start = max(0.0, min(new_time, end - min_selection_gap))
+            self.selection_state.set_selection(new_start, end)
+        elif self._resize_target == "end":
+            # End marker: can't go before start marker or past recording end
+            new_end = max(start + min_selection_gap, min(new_time, recording_duration))
+            self.selection_state.set_selection(start, new_end)
+
+        # Update visualization
+        self.selection_visualizer.update_selection(
+            self.selection_state.selection_start,
+            self.selection_state.selection_end,
+            ctx,
+        )
+        self.draw_idle()
+
+    def _on_left_release(self, event) -> None:
+        """Handle left mouse button release to finalize marker, selection, or resize."""
+        # Handle resize completion
+        if self._resize_active:
+            self._resize_active = False
+            self._resize_target = None
+            self._set_cursor_default()
+            self._drag_start_x = None
+            return
+
+        if self._drag_start_x is None:
+            return
+
+        # Check if this was a drag or a click
+        dx = abs(event.x - self._drag_start_x)
+
+        if dx < UIConstants.SELECTION_DRAG_THRESHOLD:
+            # This was a click - set marker
+            mouse_rel_x = self._get_mouse_position_in_axes(event)
+            if mouse_rel_x is not None:
+                time_seconds = self._pixel_to_time(mouse_rel_x)
+                if time_seconds is not None:
+                    self._set_marker(time_seconds)
+        else:
+            # This was a drag - finalize selection
+            mouse_rel_x = self._get_mouse_position_in_axes(event)
+            if mouse_rel_x is not None and self._drag_start_time is not None:
+                end_time = self._pixel_to_time(mouse_rel_x)
+                if end_time is not None:
+                    self._set_selection(self._drag_start_time, end_time)
+
+        # Clear drag state
+        self._drag_start_x = None
+        self._drag_start_time = None
+
+    def _pixel_to_time(self, rel_x: float) -> Optional[float]:
+        """Convert relative X position (0-1) to time in seconds.
+
+        Args:
+            rel_x: Relative position in axes (0-1)
+
+        Returns:
+            Time in seconds, or None if no recording loaded
+        """
+        recording_duration = self.recording_display.recording_duration
+        if recording_duration <= 0:
+            return None
+
+        visible_seconds = self.zoom_controller.get_visible_seconds()
+        view_start = self.zoom_controller.view_offset
+
+        return view_start + rel_x * visible_seconds
+
+    def _set_marker(self, time_seconds: float) -> None:
+        """Set marker at the specified time position.
+
+        Args:
+            time_seconds: Position in seconds
+        """
+        ctx = self._view_context
+        if not ctx.has_recording:
+            return
+
+        # Clamp to recording bounds
+        time_seconds = max(0.0, min(time_seconds, ctx.recording_duration))
+
+        self.selection_state.set_marker(time_seconds)
+        self.selection_visualizer.update_marker(time_seconds, ctx)
+        self.selection_visualizer._hide_selection()
+        self.draw_idle()
+
+    def _set_selection(self, start_time: float, end_time: float) -> None:
+        """Set selection range.
+
+        Args:
+            start_time: Selection start in seconds
+            end_time: Selection end in seconds
+        """
+        ctx = self._view_context
+        if not ctx.has_recording:
+            return
+
+        # Clamp to recording bounds
+        start_time = max(0.0, min(start_time, ctx.recording_duration))
+        end_time = max(0.0, min(end_time, ctx.recording_duration))
+
+        self.selection_state.set_selection(start_time, end_time)
+        self.selection_visualizer.update_selection(
+            self.selection_state.selection_start,
+            self.selection_state.selection_end,
+            ctx,
+        )
+        # Hide marker when setting selection
+        if self.selection_visualizer._marker_line:
+            self.selection_visualizer._marker_line.set_visible(False)
+        self.draw_idle()
+
+    def clear_selection(self) -> None:
+        """Clear marker and selection."""
+        self.selection_state.clear_all()
+        self.selection_visualizer.clear()
+        self.draw_idle()

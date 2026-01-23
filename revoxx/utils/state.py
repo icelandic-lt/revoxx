@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, List
 import threading
 
+from ..constants import UIConstants
+
 
 @dataclass
 class RecordingState:
@@ -154,8 +156,6 @@ class UIState:
             base_size: Base font size from configuration
             scale_factor: Scaling factor based on window size
         """
-        from ..constants import UIConstants
-
         self.font_size_large = max(
             int(base_size * scale_factor), UIConstants.MIN_FONT_SIZE_LARGE
         )

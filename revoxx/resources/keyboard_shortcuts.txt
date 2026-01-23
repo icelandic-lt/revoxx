@@ -3,7 +3,20 @@ KEYBOARD SHORTCUTS
 RECORDING
   Space        Toggle recording
   P            Play current recording
+  S            Stop playback
   O            Toggle monitoring
+
+SELECTION & PLAYBACK
+  Click        Set position marker (cyan line)
+  Drag         Create selection range
+  Drag marker  Resize selection or move position marker
+  P            Play from marker or play selection
+  Escape       Clear marker/selection
+
+AUDIO EDITING
+  Ctrl+D       With selection: Delete selected range
+  Space        With marker: Insert recording at position
+  Space        With selection: Replace selection with recording
 
 NAVIGATION
   Up/Down      Navigate utterances

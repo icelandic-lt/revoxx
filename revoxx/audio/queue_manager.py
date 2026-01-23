@@ -43,8 +43,17 @@ class AudioQueueManager:
 
     # ========== Playback Control Methods ==========
 
-    def start_playback(self, buffer_metadata: Dict[str, Any], sample_rate: int) -> bool:
+    def start_playback(
+        self,
+        buffer_metadata: Dict[str, Any],
+        sample_rate: int,
+        start_sample: int = 0,
+        end_sample: Optional[int] = None,
+    ) -> bool:
         """Start audio playback with the given buffer.
+
+        The playback process uses a state machine, so redundant commands
+        are safely ignored. No queue clearing needed.
 
         Args:
             buffer_metadata: Metadata for the shared memory buffer containing:
@@ -52,27 +61,43 @@ class AudioQueueManager:
                 - shape: Shape of the numpy array
                 - dtype: Data type of the array
             sample_rate: Sample rate of the audio in Hz
+            start_sample: Starting sample position (default 0)
+            end_sample: Ending sample position (default None = play to end)
 
         Returns:
             True if command was queued, False if queue was full
         """
+        command = {
+            "action": "play",
+            "buffer_metadata": buffer_metadata,
+            "sample_rate": sample_rate,
+            "start_sample": start_sample,
+            "end_sample": end_sample,
+        }
+        return self._send_playback_command(command)
+
+    def _send_playback_command(self, command: Dict[str, Any]) -> bool:
+        """Send a command to the playback queue.
+
+        Args:
+            command: Command dictionary to send
+
+        Returns:
+            True if sent successfully, False if queue was full
+        """
         try:
-            self._playback_queue.put(
-                {
-                    "action": "play",
-                    "buffer_metadata": buffer_metadata,
-                    "sample_rate": sample_rate,
-                },
-                block=False,
-            )
+            self._playback_queue.put(command, block=False)
             return True
         except queue.Full:
             return False
 
     def stop_playback(self) -> None:
-        """Stop audio playback immediately."""
-        # Stop command should block to ensure it gets through
-        self._playback_queue.put({"action": "stop"})
+        """Stop audio playback.
+
+        The playback process uses a state machine, so sending stop
+        when already stopped is safely ignored.
+        """
+        self._send_playback_command({"action": "stop"})
 
     def set_output_device(self, device_name: Optional[str]) -> bool:
         """Set the output device for playback.
@@ -135,22 +160,39 @@ class AudioQueueManager:
 
     # ========== Recording Control Methods ==========
 
-    def start_recording(self) -> bool:
-        """Start audio recording.
+    def _send_record_command(self, command: Dict[str, Any]) -> bool:
+        """Send a command to the record queue.
+
+        Args:
+            command: Command dictionary to send
 
         Returns:
-            True if command was queued, False if queue was full
+            True if sent successfully, False if queue was full
         """
         try:
-            self._record_queue.put({"action": "start"}, block=False)
+            self._record_queue.put(command, block=False)
             return True
         except queue.Full:
             return False
 
+    def start_recording(self) -> bool:
+        """Start audio recording.
+
+        The record process uses a state machine, so redundant commands
+        are safely ignored.
+
+        Returns:
+            True if command was queued, False if queue was full
+        """
+        return self._send_record_command({"action": "start"})
+
     def stop_recording(self) -> None:
-        """Stop audio recording."""
-        # Stop command should block to ensure it gets through
-        self._record_queue.put({"action": "stop"})
+        """Stop audio recording.
+
+        The record process uses a state machine, so sending stop
+        when already stopped is safely ignored.
+        """
+        self._send_record_command({"action": "stop"})
 
     def set_input_device(self, device_name: Optional[str]) -> bool:
         """Set the input device for recording.

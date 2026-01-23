@@ -101,11 +101,13 @@ It's important to calibrate your input levels before starting the recording sess
 | Key          | Action                                                          |
 |--------------|-----------------------------------------------------------------|
 | **SPACE**    | Start/Stop recording                                            |
-| **P**        | Play the current take                                           |
+| **P**        | Play the current take (or selection/from marker if set)         |
+| **S**        | Stop playback                                                   |
 | **⌘/Ctrl+D** | Delete the current take (it moves to trash folder subdirectory) |
 | **↑/↓**      | Navigate between utterances in the list                         |
 | **←/→**      | Navigate between different takes of the current utterance       |
 | **⌘/Ctrl+U** | Change the utterance ordering method                            |
+| **Escape**   | Clear position marker or selection                              |
 | **F1**       | Show all keyboard shortcuts                                     |
 
 **Important:** When multiple takes exist for an utterance, the system always uses the most recent take for export. You can navigate through all takes using the left/right arrow keys to review them, but only the last recorded take will be included in the final dataset.
@@ -148,7 +150,51 @@ When recording each utterance, follow these steps:
 The spectrograms provide visual feedback of your recordings. You can interact with them using:
 
 - **Mouse wheel**: Scroll up to zoom in for more detail, scroll down to zoom out.
-- **Right-click + drag**: When zoomed in, hold the right mouse button and drag to pan left or right through the spectrogram.
+- **Middle-click + drag**: When zoomed in, hold the middle mouse button and drag to pan left or right through the spectrogram.
+
+### Selection and Partial Playback
+
+You can set markers and create selections to play back specific portions of a recording:
+
+- **Single click**: Places a cyan position marker at the clicked location. Pressing **P** will start playback from this position.
+- **Click and drag**: Creates a selection range (highlighted area with white borders). Pressing **P** will play only the selected portion.
+- **Drag selection edges**: When hovering over a selection border, the cursor changes to a resize cursor. Drag to adjust the selection start or end position.
+- **Escape**: Clears the current marker or selection.
+
+**Tips:**
+- You can zoom and pan while a selection is active - the selection remains at the same time positions.
+- During playback of a selection, the view stays fixed so you can observe the playback progress without the display jumping around.
+- Creating a new selection automatically clears any existing position marker.
+
+### Audio Editing
+
+Revoxx allows you to edit recordings directly without leaving the application. This is useful for fixing small mistakes without re-recording the entire utterance.
+
+#### Delete a Range
+
+1. Create a selection by clicking and dragging over the portion you want to remove.
+2. Press **⌘/Ctrl+D** to delete the selected range.
+3. The audio before and after the selection will be joined with a smooth crossfade.
+
+**Tip:** After deleting a range, a marker is placed at the deletion point so you can press **P** to review the edit.
+
+#### Insert Recording
+
+1. Click to place a position marker where you want to insert new audio.
+2. Press **Space** to start recording.
+3. Record the new audio and press **Space** again to stop.
+4. The new recording will be inserted at the marker position with crossfades.
+
+#### Replace Selection
+
+1. Create a selection over the portion you want to replace.
+2. Press **Space** to start recording.
+3. Record the replacement audio and press **Space** again to stop.
+4. The selection will be replaced with your new recording, using crossfades for smooth transitions.
+
+**Note:** All editing operations are applied directly to the current take. The original audio is modified, so use these features carefully. If you make a mistake, you can delete the take and re-record.
+
+**Tip:** After inserting or replacing audio, the new portion is automatically selected so you can immediately press **P** to review it.
 
 ## 4. Multi-Screen Setup
 
