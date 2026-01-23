@@ -34,6 +34,7 @@ class AudioPlayer:
             config: Audio configuration
             shared_state_name: Name of shared memory block
         """
+        self._playback_output_channel_index = None
         self.config = config
 
         # Attach to existing shared state
@@ -78,90 +79,149 @@ class AudioPlayer:
             start_sample: Starting sample position (default 0)
             end_sample: Ending sample position (default None = play to end)
         """
-        # Stop any current playback first (only if actually playing)
+        self._stop_if_active()
+        self._prepare_playback_state(audio_data, audio_buffer, start_sample, end_sample)
+        self._init_level_calculator(sample_rate)
+        self._init_shared_state(sample_rate)
+
+        target_channel, num_channels = self._calculate_channel_mapping()
+        self._playback_output_channel_index = target_channel
+
+        device_index = self._get_output_device_index()
+        if not self._open_output_stream(sample_rate, num_channels, device_index):
+            return
+
+        self.stream.start()
+        self._state = WorkerState.ACTIVE
+
+    def _stop_if_active(self) -> None:
+        """Stop any current playback if player is in active state.
+
+        Ensures clean transition by stopping the stream and allowing
+        time for audio resources to be released before starting new playback.
+        """
         if self._state == WorkerState.ACTIVE:
             self._stop_stream()
-            # Give the audio system time to release resources
             time.sleep(UIConstants.AUDIO_PROCESS_SLEEP)
 
-        # Use provided SHM buffer with normalized data
-        self.audio_buffer = audio_buffer
-        self.audio_data = audio_buffer.get_array()  # Zero-copy
+    def _prepare_playback_state(
+        self,
+        audio_data: np.ndarray,
+        audio_buffer: AudioBuffer,
+        start_sample: int,
+        end_sample: Optional[int],
+    ) -> None:
+        """Set up buffer references and playback position bounds.
 
-        # Set start and end positions
+        Attaches to the shared memory buffer and configures the sample
+        range for partial playback support.
+
+        Args:
+            audio_data: Source audio array (used for length calculation)
+            audio_buffer: Shared memory buffer to attach
+            start_sample: First sample to play (clamped to >= 0)
+            end_sample: Last sample to play (None = end of audio)
+        """
+        self.audio_buffer = audio_buffer
+        self.audio_data = audio_buffer.get_array()
         self._start_sample = max(0, start_sample)
         self._end_sample = end_sample if end_sample is not None else len(audio_data)
-
-        # Reset positions
         self.current_position = self._start_sample
 
-        # Update level calculator sample rate if needed
+    def _init_level_calculator(self, sample_rate: int) -> None:
+        """Reset level calculator for new playback session.
+
+        Args:
+            sample_rate: Sample rate of audio to be played
+        """
         self.level_calculator.update_sample_rate(sample_rate)
         self.level_calculator.reset()
 
-        # Update shared state with initial position
+    def _init_shared_state(self, sample_rate: int) -> None:
+        """Initialize shared state for cross-process position synchronization.
+
+        Sets up the shared memory structure so the UI process can read
+        the current playback position in real-time.
+
+        Args:
+            sample_rate: Sample rate for time calculations
+        """
         effective_length = self._end_sample - self._start_sample
         self.shared_state.start_playback(effective_length, sample_rate)
         self.shared_state.update_playback_position(0, 0.0)
 
-        # Create output stream with callback
-        # Optional routing to a specific physical output channel: we emulate mapping
-        # by opening a stream with enough channels and writing only to the target one.
+    def _calculate_channel_mapping(self) -> tuple:
+        """Determine output channel routing configuration.
+
+        Supports routing mono audio to a specific physical output channel
+        on multi-channel interfaces (e.g., channel 3 of an 8-channel device).
+
+        Returns:
+            Tuple of (target_channel_index, num_stream_channels) where
+            target_channel_index is the 0-based output channel and
+            num_stream_channels is the total channels to open.
+        """
         output_mapping = getattr(self, "_output_channel_mapping", None)
-        target_channel_index = 0
-        num_stream_channels = 1
         if isinstance(output_mapping, list) and len(output_mapping) == 1:
             try:
-                target_channel_index = int(output_mapping[0])
-                num_stream_channels = max(1, target_channel_index + 1)
+                target = int(output_mapping[0])
+                return target, max(1, target + 1)
             except (ValueError, TypeError, IndexError):
-                # Invalid channel mapping format
-                target_channel_index = 0
-                num_stream_channels = 1
-
-        # Store for callback use
-        self._playback_output_channel_index = target_channel_index
-
-        # Convert device name to index for current device list
-        device_index = None
-        if self.config.output_device is not None:
-            try:
-                device_manager = get_device_manager()
-                device_index = device_manager.get_device_index_by_name(
-                    self.config.output_device
-                )
-            except (ImportError, RuntimeError):
                 pass
+        return 0, 1
 
-        # Open stream with fallback to default device
+    def _get_output_device_index(self) -> Optional[int]:
+        """Resolve configured device name to sounddevice index.
+
+        Returns:
+            Device index if found, None for system default.
+        """
+        if self.config.output_device is None:
+            return None
         try:
-            self.stream = sd.OutputStream(
-                samplerate=sample_rate,
-                blocksize=self.blocksize,
-                device=device_index,
-                channels=num_stream_channels,
-                dtype="float32",  # Always use float32 for sounddevice
-                callback=self._audio_callback,
-                finished_callback=self._finished_callback,
-            )
-        except (sd.PortAudioError, OSError):
-            try:
-                self.stream = sd.OutputStream(
-                    samplerate=sample_rate,
-                    blocksize=self.blocksize,
-                    device=None,
-                    channels=num_stream_channels,
-                    dtype="float32",
-                    callback=self._audio_callback,
-                    finished_callback=self._finished_callback,
-                )
-            except (sd.PortAudioError, OSError) as e:
-                print(f"Error opening OutputStream: {e}")
-                self._state = WorkerState.IDLE
-                return
+            device_manager = get_device_manager()
+            return device_manager.get_device_index_by_name(self.config.output_device)
+        except (ImportError, RuntimeError):
+            return None
 
-        self.stream.start()
-        self._state = WorkerState.ACTIVE
+    def _open_output_stream(
+        self, sample_rate: int, num_channels: int, device_index: Optional[int]
+    ) -> bool:
+        """Create and open the audio output stream.
+
+        Attempts to open the configured device first, falling back to
+        the system default if that fails.
+
+        Args:
+            sample_rate: Playback sample rate
+            num_channels: Number of output channels to open
+            device_index: Target device index (None for default)
+
+        Returns:
+            True if stream opened successfully, False on failure.
+        """
+        stream_params = {
+            "samplerate": sample_rate,
+            "blocksize": self.blocksize,
+            "channels": num_channels,
+            "dtype": "float32",
+            "callback": self._audio_callback,
+            "finished_callback": self._finished_callback,
+        }
+
+        try:
+            self.stream = sd.OutputStream(device=device_index, **stream_params)
+            return True
+        except (sd.PortAudioError, OSError):
+            pass
+
+        try:
+            self.stream = sd.OutputStream(device=None, **stream_params)
+            return True
+        except (sd.PortAudioError, OSError) as e:
+            print(f"Error opening OutputStream: {e}")
+            self._state = WorkerState.IDLE
+            return False
 
     def _stop_stream(self) -> None:
         """Stop the audio stream without changing state or cleaning up buffers.
@@ -217,60 +277,84 @@ class AudioPlayer:
         action = command.get("action")
 
         if action == "play":
-            # Clean up previous buffer if exists
-            if attached_buffer:
-                attached_buffer.close()
-                attached_buffer = None
-
-            # Get and attach to new buffer
-            buffer_metadata = command.get("buffer_metadata")
-            if buffer_metadata:
-                attached_buffer = AudioBuffer.attach_to_existing(
-                    buffer_metadata["name"],
-                    tuple(buffer_metadata["shape"]),
-                    np.dtype(buffer_metadata["dtype"]),
-                )
-
-                # Start playback with optional start/end positions
-                audio_data = attached_buffer.get_array()
-                sample_rate = command.get("sample_rate", self.config.sample_rate)
-                start_sample = command.get("start_sample", 0)
-                end_sample = command.get("end_sample", None)
-                self.start_playback(
-                    audio_data, sample_rate, attached_buffer, start_sample, end_sample
-                )
-
-                return attached_buffer
-
+            return self._handle_play_command(command, attached_buffer)
         elif action == "stop":
-            # Idempotent: only stop if actually playing
-            if self._state == WorkerState.ACTIVE:
-                self.stop_playback()
-                if attached_buffer:
-                    attached_buffer.close()
-                return None
-            # If already idle, keep the buffer reference
+            return self._handle_stop_command(attached_buffer)
+        elif action == "set_output_device":
+            self.set_output_device(command.get("device_name"))
+        elif action == "set_output_channel_mapping":
+            self._update_channel_mapping(command.get("mapping"))
+        elif action == "refresh_devices":
+            self._refresh_devices()
+
+        return attached_buffer
+
+    def _handle_play_command(
+        self, command: dict, attached_buffer: Optional["AudioBuffer"]
+    ) -> Optional["AudioBuffer"]:
+        """Process play command and start audio playback.
+
+        Cleans up any existing buffer, attaches to the new shared memory
+        buffer from the command, and initiates playback.
+
+        Args:
+            command: Play command with buffer_metadata and playback params
+            attached_buffer: Previous buffer to clean up
+
+        Returns:
+            New attached buffer, or None if no valid metadata provided.
+        """
+        if attached_buffer:
+            attached_buffer.close()
+
+        buffer_metadata = command.get("buffer_metadata")
+        if not buffer_metadata:
+            return None
+
+        attached_buffer = AudioBuffer.attach_to_existing(
+            buffer_metadata["name"],
+            tuple(buffer_metadata["shape"]),
+            np.dtype(buffer_metadata["dtype"]),
+        )
+
+        audio_data = attached_buffer.get_array()
+        sample_rate = command.get("sample_rate", self.config.sample_rate)
+        start_sample = command.get("start_sample", 0)
+        end_sample = command.get("end_sample", None)
+
+        self.start_playback(
+            audio_data, sample_rate, attached_buffer, start_sample, end_sample
+        )
+        return attached_buffer
+
+    def _handle_stop_command(
+        self, attached_buffer: Optional["AudioBuffer"]
+    ) -> Optional["AudioBuffer"]:
+        """Process stop command and halt playback.
+
+        Idempotent: only performs cleanup if actually playing.
+
+        Args:
+            attached_buffer: Buffer to potentially clean up
+
+        Returns:
+            None if stopped and cleaned up, original buffer if already idle.
+        """
+        if self._state != WorkerState.ACTIVE:
             return attached_buffer
 
-        elif action == "set_output_device":
-            device_name = command.get("device_name", None)
-            self.set_output_device(device_name)
+        self.stop_playback()
+        if attached_buffer:
+            attached_buffer.close()
+        return None
 
-        elif action == "set_output_channel_mapping":
-            mapping = command.get("mapping", None)
-            self._update_channel_mapping(mapping)
-
-        elif action == "refresh_devices":
-            try:
-                device_manager = get_device_manager()
-                device_manager.refresh()
-            except (ImportError, RuntimeError):
-                pass
-
-        else:
-            return attached_buffer  # Unknown command, keep buffer
-
-        return attached_buffer  # Keep current buffer for most commands
+    def _refresh_devices(self) -> None:
+        """Refresh the audio device list."""
+        try:
+            device_manager = get_device_manager()
+            device_manager.refresh()
+        except (ImportError, RuntimeError):
+            pass
 
     def _update_channel_mapping(self, mapping: Optional[list]) -> None:
         """Update the output channel mapping configuration.

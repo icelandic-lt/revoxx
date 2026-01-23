@@ -16,7 +16,7 @@ from ..utils.text_utils import extract_emotion_level, get_max_emotion_level
 from .level_meter.led_level_meter import LEDLevelMeter
 from .level_meter.config import RECORDING_STANDARDS, RecordingStandard
 from .spectrogram import MelSpectrogramWidget
-from .themes import theme_manager
+from .themes import theme_manager, ThemePreset
 from ..utils.config import RecorderConfig
 from ..utils.state import UIState, RecordingState
 from ..utils.settings_manager import SettingsManager
@@ -1141,13 +1141,9 @@ class WindowBase:
         Args:
             theme_preset: Theme preset name (e.g., 'classic', 'modern')
         """
-        from .themes import ThemePreset
-
         try:
             preset = ThemePreset(theme_preset)
             theme_manager.set_theme(preset)
-            from ..constants import UIConstants
-
             UIConstants.refresh()
 
             # Save if settings manager available

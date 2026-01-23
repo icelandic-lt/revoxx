@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 import traceback
 
-from .constants import KeyBindings, FileConstants, MsgType
+from .constants import KeyBindings, FileConstants, MsgType, UIConstants
 from .utils.config import RecorderConfig, load_config
 from .utils.state import AppState
 from .utils.file_manager import RecordingFileManager, ScriptFileManager
@@ -169,8 +169,6 @@ class Revoxx:
                 theme_manager.set_theme(ThemePreset.CYAN)
 
         # Refresh UI constants with theme colors
-        from .constants import UIConstants
-
         UIConstants.refresh()
 
         # Initialize WindowManager
