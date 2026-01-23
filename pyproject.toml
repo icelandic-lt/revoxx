@@ -51,7 +51,7 @@ vad = [
 # pip install torch --index-url https://download.pytorch.org/whl/cpu
 # pip install revoxx[vad]
 dev = [
-    "black>=22.0.0",
+    "black>=25.0.0,<26",
     "isort>=5.10.0",
     "flake8>=6.0.0",
     "pytest>=7.0.0",
@@ -87,7 +87,7 @@ revoxx = [
 
 [tool.black]
 line-length = 88
-target-version = ['py39', 'py310', 'py311']
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
 include = '\.pyi?$'
 extend-exclude = '''
 (

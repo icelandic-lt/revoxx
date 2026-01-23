@@ -202,11 +202,13 @@ pip install -e .[dev,vad]
 ```
 
 Development dependencies include:
-- **black**: Code formatter
+- **black**: Code formatter (pinned to 25.x for Python 3.9 compatibility)
 - **isort**: Import statement organizer
 - **flake8**: Code linter
 - **pytest**: Testing framework
 - **pytest-cov**: Code coverage reporting
+
+> **Note**: Black is pinned to version 25.x because Black 26+ requires Python 3.10+ and introduces the "2026 stable style" with different formatting rules. This ensures consistent formatting across all supported Python versions (3.9-3.13).
 
 ### Running code quality checks
 
