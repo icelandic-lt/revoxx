@@ -16,6 +16,7 @@ from .audio_buffer import AudioBuffer
 from .shared_state import SharedState
 from .level_calculator import LevelCalculator
 from .queue_manager import AudioQueueManager
+from .worker_state import WorkerState
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
 from ..utils.process_cleanup import ProcessCleanupManager
@@ -39,12 +40,14 @@ class AudioPlayer:
         self.shared_state = SharedState(create=False)
         self.shared_state.attach_to_existing(shared_state_name)
 
-        # Playback state
+        # Playback state - explicit state machine
+        self._state = WorkerState.IDLE
         self.audio_buffer: Optional[AudioBuffer] = None
         self.audio_data: Optional[np.ndarray] = None
         self.current_position = 0
         self.stream: Optional[sd.OutputStream] = None
-        self._stop_requested = False
+        self._start_sample = 0
+        self._end_sample: Optional[int] = None
 
         # Calculate blocksize from response time setting
         self.blocksize = calculate_blocksize(
@@ -59,7 +62,12 @@ class AudioPlayer:
         self.config.output_device = device_name
 
     def start_playback(
-        self, audio_data: np.ndarray, sample_rate: int, audio_buffer: AudioBuffer
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        audio_buffer: AudioBuffer,
+        start_sample: int = 0,
+        end_sample: Optional[int] = None,
     ) -> None:
         """Start playback.
 
@@ -67,26 +75,33 @@ class AudioPlayer:
             audio_data: Audio samples to play
             sample_rate: Sample rate in Hz
             audio_buffer: Audio buffer containing the shared memory
+            start_sample: Starting sample position (default 0)
+            end_sample: Ending sample position (default None = play to end)
         """
-        # Stop any current playback
-        self.stop_playback()
-        # Give the audio system time to release resources (empirically determined)
-        time.sleep(UIConstants.AUDIO_PROCESS_SLEEP)
+        # Stop any current playback first (only if actually playing)
+        if self._state == WorkerState.ACTIVE:
+            self._stop_stream()
+            # Give the audio system time to release resources
+            time.sleep(UIConstants.AUDIO_PROCESS_SLEEP)
 
         # Use provided SHM buffer with normalized data
         self.audio_buffer = audio_buffer
         self.audio_data = audio_buffer.get_array()  # Zero-copy
 
+        # Set start and end positions
+        self._start_sample = max(0, start_sample)
+        self._end_sample = end_sample if end_sample is not None else len(audio_data)
+
         # Reset positions
-        self.current_position = 0
-        self._stop_requested = False
+        self.current_position = self._start_sample
 
         # Update level calculator sample rate if needed
         self.level_calculator.update_sample_rate(sample_rate)
         self.level_calculator.reset()
 
         # Update shared state with initial position
-        self.shared_state.start_playback(len(audio_data), sample_rate)
+        effective_length = self._end_sample - self._start_sample
+        self.shared_state.start_playback(effective_length, sample_rate)
         self.shared_state.update_playback_position(0, 0.0)
 
         # Create output stream with callback
@@ -142,33 +157,44 @@ class AudioPlayer:
                 )
             except (sd.PortAudioError, OSError) as e:
                 print(f"Error opening OutputStream: {e}")
-                self._stop_requested = True
+                self._state = WorkerState.IDLE
                 return
+
         self.stream.start()
+        self._state = WorkerState.ACTIVE
 
-    def stop_playback(self) -> None:
-        """Stop playback and clean up."""
-        # Set stop flag first
-        self._stop_requested = True
+    def _stop_stream(self) -> None:
+        """Stop the audio stream without changing state or cleaning up buffers.
 
-        # Store stream reference locally to avoid race conditions
+        This is the low-level stream stop used internally.
+        """
         stream = self.stream
         if stream:
             try:
                 stream.stop()
                 stream.close()
             except (sd.PortAudioError, RuntimeError) as e:
-                # Handle sounddevice specific errors
                 print(f"Error stopping audio stream: {e}")
             finally:
                 self.stream = None
+
+    def stop_playback(self) -> None:
+        """Stop playback and clean up.
+
+        This is idempotent - safe to call multiple times.
+        """
+        # Only stop if actually playing
+        if self._state != WorkerState.ACTIVE:
+            return
+
+        self._stop_stream()
+        self._state = WorkerState.IDLE
 
         self.shared_state.stop_playback()
 
         # Clean up shared buffer
         if self.audio_buffer:
             self.audio_buffer.close()
-            # Don't unlink here - the buffer was created by main process
             self.audio_buffer = None
             self.audio_data = None
 
@@ -176,6 +202,10 @@ class AudioPlayer:
         self, command: dict, attached_buffer: Optional["AudioBuffer"] = None
     ) -> Optional["AudioBuffer"]:
         """Handle a command from the control queue.
+
+        State-based command handling ensures idempotent operations:
+        - "stop" when IDLE is ignored
+        - "play" when PLAYING first stops, then starts
 
         Args:
             command: Command dictionary with 'action' key
@@ -190,6 +220,7 @@ class AudioPlayer:
             # Clean up previous buffer if exists
             if attached_buffer:
                 attached_buffer.close()
+                attached_buffer = None
 
             # Get and attach to new buffer
             buffer_metadata = command.get("buffer_metadata")
@@ -200,19 +231,26 @@ class AudioPlayer:
                     np.dtype(buffer_metadata["dtype"]),
                 )
 
-                # Start playback
+                # Start playback with optional start/end positions
                 audio_data = attached_buffer.get_array()
                 sample_rate = command.get("sample_rate", self.config.sample_rate)
-                self.start_playback(audio_data, sample_rate, attached_buffer)
+                start_sample = command.get("start_sample", 0)
+                end_sample = command.get("end_sample", None)
+                self.start_playback(
+                    audio_data, sample_rate, attached_buffer, start_sample, end_sample
+                )
 
                 return attached_buffer
 
         elif action == "stop":
-            self.stop_playback()
-            # Clean up attached buffer
-            if attached_buffer:
-                attached_buffer.close()
-            return None
+            # Idempotent: only stop if actually playing
+            if self._state == WorkerState.ACTIVE:
+                self.stop_playback()
+                if attached_buffer:
+                    attached_buffer.close()
+                return None
+            # If already idle, keep the buffer reference
+            return attached_buffer
 
         elif action == "set_output_device":
             device_name = command.get("device_name", None)
@@ -267,8 +305,8 @@ class AudioPlayer:
         if status:
             print(f"Playback callback status: {status}")
 
-        # Early exit if stop requested
-        if self._stop_requested:
+        # Early exit if not in playing state
+        if self._state != WorkerState.ACTIVE:
             outdata.fill(0)
             raise sd.CallbackStop()
 
@@ -286,7 +324,7 @@ class AudioPlayer:
             # End of audio reached
             outdata.fill(0)
             self.shared_state.stop_playback()
-            self._stop_requested = True
+            self._state = WorkerState.IDLE
             raise sd.CallbackStop()
 
     def _update_playback_state(self, time_info: Any) -> None:
@@ -295,8 +333,10 @@ class AudioPlayer:
         Args:
             time_info: Hardware timing information
         """
+        # Report position relative to start_sample for correct progress display
+        relative_position = self.current_position - self._start_sample
         self.shared_state.update_playback_position(
-            self.current_position, time_info.outputBufferDacTime
+            relative_position, time_info.outputBufferDacTime
         )
         # Explicitly mark PLAYING to avoid early IDLE reads
         self.shared_state.set_playback_state(status=2)
@@ -311,7 +351,11 @@ class AudioPlayer:
         Returns:
             Number of frames actually processed
         """
-        remaining = len(self.audio_data) - self.current_position
+        # Use end_sample instead of full audio length
+        effective_end = (
+            self._end_sample if self._end_sample is not None else len(self.audio_data)
+        )
+        remaining = effective_end - self.current_position
         if remaining <= 0:
             return 0
 
@@ -376,26 +420,45 @@ class AudioPlayer:
 
     def _check_playback_near_end(self) -> None:
         """Check if playback is near the end and update state accordingly."""
+        # Use effective end position
+        effective_end = (
+            self._end_sample if self._end_sample is not None else len(self.audio_data)
+        )
+
         # detect if next callback will exceed audio length
         next_position = self.current_position + self.blocksize
 
-        if self.current_position < len(self.audio_data) <= next_position:
+        if self.current_position < effective_end <= next_position:
             # Signal that we're in the last buffer before completion
             self.shared_state.mark_playback_finishing()
 
-        if self.current_position >= len(self.audio_data):
+        if self.current_position >= effective_end:
             # Signal that playback is completed
             self.shared_state.mark_playback_completed()
-            self._stop_requested = True
+            self._state = WorkerState.IDLE
 
     def _finished_callback(self) -> None:
         """Called when stream finishes."""
+        self._state = WorkerState.IDLE
         self.shared_state.stop_playback()
 
     def cleanup(self) -> None:
-        """Clean up resources."""
-        self.stop_playback()
+        """Clean up resources.
+
+        This forces cleanup regardless of state, used at process exit.
+        """
+        # Force stop stream regardless of state
+        self._stop_stream()
+        self._state = WorkerState.IDLE
+
+        # Clean up buffer
+        if self.audio_buffer:
+            self.audio_buffer.close()
+            self.audio_buffer = None
+            self.audio_data = None
+
         if self.shared_state:
+            self.shared_state.stop_playback()
             self.shared_state.close()
 
 

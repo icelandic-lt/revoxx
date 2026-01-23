@@ -92,6 +92,44 @@ class DisplayController:
                 # OSError for file operations, ValueError for invalid audio data
                 self.set_status(f"Error loading recording: {e}", MsgType.ERROR)
 
+    def refresh_recording_preserving_zoom(self) -> None:
+        """Reload and display the current recording while preserving zoom state.
+
+        This method is used after editing operations (delete, insert, replace)
+        where we want to refresh the display but keep the current zoom level
+        and view position.
+        """
+        # Get zoom state from main spectrogram before reload
+        zoom_state = None
+        if self.app.window and self.app.window.mel_spectrogram:
+            spec = self.app.window.mel_spectrogram
+            zoom_ctrl = spec.zoom_controller
+            zoom_state = {
+                "zoom_level": zoom_ctrl.zoom_level,
+                "current_zoom_index": zoom_ctrl.current_zoom_index,
+                "view_offset": zoom_ctrl.view_offset,
+            }
+
+        # Load the recording (this will reset zoom)
+        self.show_saved_recording()
+
+        # Restore zoom state and update view
+        if zoom_state and self.app.window and self.app.window.mel_spectrogram:
+            spec = self.app.window.mel_spectrogram
+            zoom_ctrl = spec.zoom_controller
+
+            zoom_ctrl.zoom_level = zoom_state["zoom_level"]
+            zoom_ctrl.current_zoom_index = zoom_state["current_zoom_index"]
+
+            # Clamp view offset to new recording duration
+            new_duration = zoom_ctrl.recording_duration
+            visible_seconds = zoom_ctrl.get_visible_seconds()
+            max_offset = max(0.0, new_duration - visible_seconds)
+            zoom_ctrl.view_offset = min(zoom_state["view_offset"], max_offset)
+
+            # Update display with restored zoom
+            spec._update_after_zoom()
+
     def toggle_meters(self, window_id: Optional[str] = None) -> None:
         """Toggle both mel spectrogram and level meter visualization.
 
@@ -406,15 +444,25 @@ class DisplayController:
         """Stop playback in all spectrograms."""
         self._for_each_spectrogram(lambda spec: spec.stop_playback())
 
-    def start_spectrogram_playback(self, duration: float, sample_rate: int) -> None:
+    def start_spectrogram_playback(
+        self,
+        duration: float,
+        sample_rate: int,
+        start_position: float = 0.0,
+        end_position: Optional[float] = None,
+    ) -> None:
         """Start playback in all spectrograms.
 
         Args:
             duration: Duration of the playback in seconds
             sample_rate: Sample rate of the audio
+            start_position: Start position in seconds (default 0.0)
+            end_position: End position in seconds (default None = play to end)
         """
         self._for_each_spectrogram(
-            lambda spec: spec.start_playback(duration, sample_rate)
+            lambda spec: spec.start_playback(
+                duration, sample_rate, start_position, end_position
+            )
         )
 
     def update_info_panels_with_params(self, recording_params: Dict[str, Any]) -> None:

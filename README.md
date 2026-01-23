@@ -66,6 +66,12 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 - **Real-time monitoring** including toggable recording levels, mel spectrograms, maximum frequency detection, and more
   - Customizable **industry-standard presets for Peak/RMS levels**
   - Dedicated **Monitoring mode** for precise input calibration
+- **Audio Editing** directly in the spectrogram view
+  - Set position markers to play from any point in the recording
+  - Create selection ranges for partial playback
+  - Delete ranges with automatic crossfade
+  - Insert new audio at marker position
+  - Replace selected ranges with new recordings
 - **Multi-Screen Support**
   - You can use multiple monitors to **separate recording view from speaker view**
   - We support Apple's [Sidecar](https://support.apple.com/en-us/102597) feature for a **convenient dual screen setup with an external iPad**

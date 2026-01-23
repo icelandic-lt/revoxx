@@ -17,6 +17,7 @@ import soundfile as sf
 from .shared_state import SharedState, SHARED_STATUS_INVALID
 from .level_calculator import LevelCalculator
 from .queue_manager import AudioQueueManager
+from .worker_state import WorkerState
 from ..utils.config import AudioConfig
 from ..utils.audio_utils import calculate_blocksize
 from ..utils.process_cleanup import ProcessCleanupManager
@@ -49,8 +50,8 @@ class AudioRecorder:
         self.shared_state = SharedState(create=False)
         self.shared_state.attach_to_existing(shared_state_name)
 
-        # Recording state
-        self.is_recording = False
+        # Recording state - explicit state machine
+        self._state = WorkerState.IDLE
         self.audio_chunks = []
         self.stream: Optional[sd.InputStream] = None
         self.current_position = 0
@@ -70,9 +71,16 @@ class AudioRecorder:
     def start_recording(self) -> bool:
         """Start synchronized recording.
 
+        This is idempotent - if already recording, returns True without
+        starting a new recording.
+
         Returns:
             bool: True if stream started successfully, False otherwise
         """
+        # Already recording - ignore duplicate start
+        if self._state == WorkerState.ACTIVE:
+            return True
+
         if not self._validate_and_prepare():
             return False
 
@@ -80,9 +88,11 @@ class AudioRecorder:
 
         self.stream = self._create_stream(self.config.sample_rate, open_channels)
         if not self.stream:
+            self._state = WorkerState.IDLE
             return False
 
         self.stream.start()
+        self._state = WorkerState.ACTIVE
         return True
 
     def _validate_and_prepare(self) -> bool:
@@ -116,8 +126,7 @@ class AudioRecorder:
                 self.config.sync_response_time_ms, sample_rate
             )
 
-        # Reset recording state
-        self.is_recording = True
+        # Reset recording buffers
         self.audio_chunks = []
         self.current_position = 0
 
@@ -264,7 +273,6 @@ class AudioRecorder:
             return sd.InputStream(**stream_params)
         except (sd.PortAudioError, OSError) as e:
             print(f"Error opening InputStream: {e}", file=sys.stderr)
-            self.is_recording = False
             # Signal error to main process
             if self.manager_dict is not None:
                 try:
@@ -304,14 +312,32 @@ class AudioRecorder:
 
         return picked.copy()
 
-    def stop_recording(self) -> np.ndarray:
-        """Stop recording and return audio data."""
-        self.is_recording = False
+    def _stop_stream(self) -> None:
+        """Stop the audio stream without changing state.
 
+        This is the low-level stream stop used internally.
+        """
         if self.stream:
-            self.stream.stop()
-            self.stream.close()
-            self.stream = None
+            try:
+                self.stream.stop()
+                self.stream.close()
+            except (sd.PortAudioError, RuntimeError) as e:
+                print(f"Error stopping audio stream: {e}", file=sys.stderr)
+            finally:
+                self.stream = None
+
+    def stop_recording(self) -> np.ndarray:
+        """Stop recording and return audio data.
+
+        This is idempotent - safe to call multiple times.
+        Returns empty array if not recording.
+        """
+        # Only stop if actually recording
+        if self._state != WorkerState.ACTIVE:
+            return np.array([])
+
+        self._stop_stream()
+        self._state = WorkerState.IDLE
 
         self.shared_state.stop_recording()
 
@@ -360,6 +386,10 @@ class AudioRecorder:
     def handle_command(self, command: dict) -> Optional[Any]:
         """Handle a command from the control queue.
 
+        State-based command handling ensures idempotent operations:
+        - "start" when RECORDING is ignored
+        - "stop" when IDLE is ignored
+
         Args:
             command: Command dictionary with 'action' key
 
@@ -369,9 +399,14 @@ class AudioRecorder:
         action = command.get("action")
 
         if action == "start":
+            # Idempotent: start_recording handles duplicate calls
             return self.start_recording()
 
         elif action == "stop":
+            # Idempotent: only stop if actually recording
+            if self._state != WorkerState.ACTIVE:
+                return np.array([])
+
             audio_data = self.stop_recording()
 
             # Save if path provided (compatibility with current architecture)
@@ -475,7 +510,8 @@ class AudioRecorder:
             # Log any callback issues (e.g., InputOverflow means data was lost)
             print(f"Recording callback status: {status}", file=sys.stderr)
 
-        if self.is_recording:
+        # Only process if in recording state
+        if self._state == WorkerState.ACTIVE:
             # Store audio chunk
             try:
                 processed_audio = self._process_input_channels(indata)
@@ -512,11 +548,16 @@ class AudioRecorder:
             self.current_position += frames
 
     def cleanup(self) -> None:
-        """Clean up resources."""
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
+        """Clean up resources.
+
+        This forces cleanup regardless of state, used at process exit.
+        """
+        # Force stop stream regardless of state
+        self._stop_stream()
+        self._state = WorkerState.IDLE
+
         if self.shared_state:
+            self.shared_state.stop_recording()
             self.shared_state.close()
 
 

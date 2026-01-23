@@ -125,7 +125,7 @@ class AudioController:
         if self.is_monitoring:
             self.stop_monitoring_mode()
 
-        sd.stop()  # Immediate stop in main process
+        # Stop via queue to audio process (non-blocking)
         self.stop_synchronized_playback()
         self.app.display_controller.stop_spectrogram_playback()
 
@@ -161,12 +161,47 @@ class AudioController:
             self.start_recording()
 
     def start_recording(self) -> None:
-        """Start recording."""
+        """Start recording.
+
+        If a selection or marker is active and a recording exists,
+        prepares for insert/replace mode.
+        """
+        # Check for insert/replace mode based on selection state
+        # Only if there's an existing recording to edit
+        selection_state = self._get_selection_state()
+        current_label = self.app.state.recording.current_label
+        has_existing_take = False
+
+        if current_label:
+            current_take = self.app.state.recording.get_current_take(current_label)
+            has_existing_take = current_take > 0
+
+        if selection_state and has_existing_take:
+            if selection_state.has_selection:
+                # Selection active: prepare for replace recording
+                self.app.edit_controller.prepare_replace_recording()
+            elif selection_state.has_marker:
+                # Marker active: prepare for insert recording
+                self.app.edit_controller.prepare_insert_recording()
+
         self._start_audio_capture("recording")
 
     def stop_recording(self) -> None:
         """Stop recording."""
         self._stop_audio_capture("recording")
+
+    def _get_selection_state(self):
+        """Get selection state from spectrogram widget.
+
+        Returns:
+            SelectionState or None if not available
+        """
+        if (
+            self.app.window
+            and self.app.window.mel_spectrogram
+        ):
+            return self.app.window.mel_spectrogram.selection_state
+        return None
 
     def _execute_playback(self, filepath: Path) -> None:
         """Execute playback of audio file.
@@ -183,17 +218,44 @@ class AudioController:
 
         self.app.display_controller.reset_level_meters()
 
+        # Determine playback range from selection state
+        start_sample = 0
+        end_sample = None
+        start_position = 0.0
+        end_position = None
+
+        selection_state = self._get_selection_state()
+        if selection_state:
+            if selection_state.has_selection:
+                # Play selection only
+                sample_range = selection_state.get_selection_samples(sr)
+                if sample_range:
+                    start_sample, end_sample = sample_range
+                    start_position = selection_state.selection_start
+                    end_position = selection_state.selection_end
+            elif selection_state.has_marker:
+                # Play from marker position
+                start_sample = int(selection_state.marker_position * sr)
+                start_position = selection_state.marker_position
+
         # Create shared audio buffer using buffer manager
         audio_buffer = self.app.buffer_manager.create_buffer(audio_data)
         metadata = audio_buffer.get_metadata()
 
-        # Send play command with buffer metadata
-        self.app.queue_manager.start_playback(buffer_metadata=metadata, sample_rate=sr)
+        # Send play command with buffer metadata and start/end positions
+        self.app.queue_manager.start_playback(
+            buffer_metadata=metadata,
+            sample_rate=sr,
+            start_sample=start_sample,
+            end_sample=end_sample,
+        )
 
         # Close our reference but don't unlink - buffer manager handles lifecycle
         audio_buffer.close()
 
-        self.app.display_controller.start_spectrogram_playback(duration, sr)
+        self.app.display_controller.start_spectrogram_playback(
+            duration, sr, start_position, end_position
+        )
 
         # Note: Level meter updates during playback happen automatically
         # via shared memory from the playback process (AudioPlayer._update_level_meter)
@@ -516,7 +578,8 @@ class AudioController:
 
         This method is called after the audio file has been successfully saved.
         It updates the UI to show the newly saved recording and refreshes the
-        file list to include it.
+        file list to include it. If an insert/replace edit is pending, it
+        finalizes that operation instead of creating a new take.
 
         Args:
             label: The label of the recording that was saved
@@ -524,7 +587,12 @@ class AudioController:
         if not self.app.active_recordings:
             return
 
-        # Invalidate cache since we have a new recording
+        # Check if we need to finalize an insert/replace operation
+        if self.app.edit_controller.has_pending_edit():
+            self._finalize_edit_recording(label)
+            return
+
+        # Normal recording: invalidate cache since we have a new recording
         if self.app.active_recordings:
             self.app.active_recordings.on_recording_completed(label)
             self.app.state.recording.takes = self.app.active_recordings.get_all_takes()
@@ -547,6 +615,83 @@ class AudioController:
             self.app.display_controller.show_saved_recording()
 
             self.app.navigation_controller.update_take_status()
+
+    def _finalize_edit_recording(self, label: str) -> None:
+        """Finalize an insert or replace recording operation.
+
+        The new recording was saved as a new take. This method:
+        1. Loads the new take audio
+        2. Applies it as insert/replace to the previous take
+        3. Deletes the temporary new take file
+
+        Args:
+            label: The label of the recording
+        """
+        # Invalidate cache to ensure the new take is recognized
+        self.app.active_recordings.invalidate_cache()
+
+        # Get the new take that was just recorded
+        new_take = self.app.active_recordings.get_highest_take(label)
+        new_take_path = self.app.file_manager.get_recording_path(label, new_take)
+
+        # Get the previous take (the one we're editing)
+        previous_take = new_take - 1
+        if previous_take < 1:
+            # No previous take to edit - cancel the edit
+            self.app.edit_controller.cancel_pending_edit()
+            self.app.display_controller.set_status(
+                "No previous take to edit", MsgType.TEMPORARY
+            )
+            return
+
+        # Get the path to the file we're editing
+        target_path = self.app.file_manager.get_recording_path(label, previous_take)
+
+        try:
+            # Load the newly recorded audio
+            new_audio, sr = self.app.file_manager.load_audio(new_take_path)
+
+            # Finalize the edit (insert or replace) on the previous take
+            # Returns (success, start_time, end_time) tuple
+            if self.app.edit_controller._pending_insert_position is not None:
+                success, start_time, end_time = (
+                    self.app.edit_controller.finalize_insert_recording(
+                        new_audio, sr, target_path
+                    )
+                )
+            else:
+                success, start_time, end_time = (
+                    self.app.edit_controller.finalize_replace_recording(
+                        new_audio, sr, target_path
+                    )
+                )
+
+            if success:
+                # Delete the temporary new take file
+                if new_take_path.exists():
+                    new_take_path.unlink()
+
+                # Refresh the file list
+                self.app.active_recordings.on_recording_completed(label)
+                self.app.state.recording.takes = (
+                    self.app.active_recordings.get_all_takes()
+                )
+
+                # Set displayed take back to the edited one
+                self.app.state.recording.set_displayed_take(label, previous_take)
+
+                # Refresh display to show the edited recording
+                self.app.display_controller.refresh_recording_preserving_zoom()
+
+                # Select the newly inserted/replaced range AFTER the refresh
+                if start_time is not None and end_time is not None:
+                    self.app.edit_controller._select_range(start_time, end_time)
+
+        except (OSError, ValueError) as e:
+            self.app.edit_controller.cancel_pending_edit()
+            self.app.display_controller.set_status(
+                f"Edit failed: {e}", MsgType.ERROR
+            )
 
     def start_audio_queue_processing(self) -> None:
         """Start processing audio queue for real-time display.
