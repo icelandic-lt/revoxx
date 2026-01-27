@@ -445,12 +445,22 @@ class Revoxx:
             self.window.window.bind("<Command-Q>", lambda e: self._handle_cmd_q())
             # Also try to catch it with createcommand
             self.window.window.createcommand("::tk::mac::Quit", self._handle_cmd_q)
+            # Undo/Redo
+            self.window.window.bind("<Command-z>", lambda e: self._undo())
+            self.window.window.bind("<Command-Z>", lambda e: self._undo())
+            self.window.window.bind("<Shift-Command-z>", lambda e: self._redo())
+            self.window.window.bind("<Shift-Command-Z>", lambda e: self._redo())
 
         # Session keys
         self.window.window.bind("<Control-n>", lambda e: self._new_session())
         self.window.window.bind("<Control-N>", lambda e: self._new_session())
         self.window.window.bind("<Control-o>", lambda e: self._open_session())
         self.window.window.bind("<Control-O>", lambda e: self._open_session())
+        # Undo/Redo (Control for Linux/Windows)
+        self.window.window.bind("<Control-z>", lambda e: self._undo())
+        self.window.window.bind("<Control-Z>", lambda e: self._undo())
+        self.window.window.bind("<Shift-Control-z>", lambda e: self._redo())
+        self.window.window.bind("<Shift-Control-Z>", lambda e: self._redo())
 
         # Window close event
         self.window.window.protocol("WM_DELETE_WINDOW", self._quit)
@@ -533,6 +543,16 @@ class Revoxx:
             print("[App] Cmd+Q intercepted - calling _quit()")
         self._quit()
         return "break"  # Prevent default handling
+
+    def _undo(self):
+        """Handle undo keyboard shortcut."""
+        self.edit_controller.undo()
+        return "break"
+
+    def _redo(self):
+        """Handle redo keyboard shortcut."""
+        self.edit_controller.redo()
+        return "break"
 
     def _perform_cleanup(self):
         """Perform cleanup when signals are received or on emergency exit."""

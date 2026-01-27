@@ -8,6 +8,12 @@ from typing import TYPE_CHECKING, Optional
 
 from ..constants import MsgType, FileConstants
 from ..audio.editor import AudioEditor
+from ..audio.undo_stack import UndoStack
+from ..audio.edit_commands import (
+    AudioSnapshotCommand,
+    TrashClipCommand,
+    RestoreFromTrashCommand,
+)
 
 if TYPE_CHECKING:
     import numpy as np
@@ -32,6 +38,7 @@ class EditController:
         self.app = app
         self._pending_insert_position: Optional[float] = None
         self._pending_replace_range: Optional[tuple] = None
+        self.undo_stack = UndoStack(max_size=10)
 
     def _get_selection_state(self):
         """Get selection state from spectrogram widget.
@@ -84,8 +91,8 @@ class EditController:
             return False
 
         try:
-            # Load audio
-            audio_data, sr = self.app.file_manager.load_audio(filepath)
+            # Load audio (this is audio_before)
+            audio_before, sr = self.app.file_manager.load_audio(filepath)
 
             # Get selection range in samples
             sample_range = selection_state.get_selection_samples(sr)
@@ -94,17 +101,34 @@ class EditController:
 
             start_sample, end_sample = sample_range
 
-            # Save the deletion position before clearing selection
-            deletion_position = selection_state.selection_start
+            # Save selection info before clearing
+            sel_start = selection_state.selection_start
+            sel_end = selection_state.selection_end
+            deletion_position = sel_start
 
-            # Delete the range
-            edited_audio = AudioEditor.delete_range(
-                audio_data, start_sample, end_sample, sr
+            # Delete the range (this creates audio_after with cross-fade)
+            audio_after = AudioEditor.delete_range(
+                audio_before, start_sample, end_sample, sr
             )
 
             # Save the edited audio
             subtype = self._get_audio_subtype()
-            self.app.file_manager.save_audio(filepath, edited_audio, sr, subtype)
+            self.app.file_manager.save_audio(filepath, audio_after, sr, subtype)
+
+            # Create and push undo command with complete snapshots
+            duration = (end_sample - start_sample) / sr
+            cmd = AudioSnapshotCommand(
+                filepath=filepath,
+                sample_rate=sr,
+                audio_before=audio_before.copy(),
+                audio_after=audio_after.copy(),
+                subtype=subtype,
+                selection_start_time=sel_start,
+                selection_end_time=sel_end,
+                marker_after_edit=deletion_position,
+                operation_description=f"Delete Range ({duration:.2f}s)",
+            )
+            self.undo_stack.push(cmd)
 
             # Clear selection
             selection_state.clear_all()
@@ -217,15 +241,15 @@ class EditController:
             return (False, None, None)
 
         try:
-            # Load original audio
-            original_audio, original_sr = self.app.file_manager.load_audio(filepath)
+            # Load original audio (audio_before)
+            audio_before, original_sr = self.app.file_manager.load_audio(filepath)
 
             # Convert insert position to samples
             insert_sample = int(self._pending_insert_position * original_sr)
 
-            # Insert the new audio
-            edited_audio = AudioEditor.insert_at_position(
-                original_audio, new_audio, insert_sample, original_sr
+            # Insert the new audio (creates audio_after with cross-fade)
+            audio_after = AudioEditor.insert_at_position(
+                audio_before, new_audio, insert_sample, original_sr
             )
 
             # Calculate the range of newly inserted audio
@@ -236,8 +260,19 @@ class EditController:
             # Save
             subtype = self._get_audio_subtype()
             self.app.file_manager.save_audio(
-                filepath, edited_audio, original_sr, subtype
+                filepath, audio_after, original_sr, subtype
             )
+
+            # Create and push undo command with complete snapshots
+            cmd = AudioSnapshotCommand(
+                filepath=filepath,
+                sample_rate=original_sr,
+                audio_before=audio_before.copy(),
+                audio_after=audio_after.copy(),
+                subtype=subtype,
+                operation_description=f"Insert ({insert_duration:.2f}s)",
+            )
+            self.undo_stack.push(cmd)
 
             # Clear pending state
             self._pending_insert_position = None
@@ -281,17 +316,17 @@ class EditController:
             return (False, None, None)
 
         try:
-            # Load original audio
-            original_audio, original_sr = self.app.file_manager.load_audio(filepath)
+            # Load original audio (audio_before)
+            audio_before, original_sr = self.app.file_manager.load_audio(filepath)
 
             # Convert range to samples
             start_time, end_time = self._pending_replace_range
             start_sample = int(start_time * original_sr)
             end_sample = int(end_time * original_sr)
 
-            # Replace the range
-            edited_audio = AudioEditor.replace_range(
-                original_audio, new_audio, start_sample, end_sample, original_sr
+            # Replace the range (creates audio_after with cross-fade)
+            audio_after = AudioEditor.replace_range(
+                audio_before, new_audio, start_sample, end_sample, original_sr
             )
 
             # Calculate the range of newly inserted audio
@@ -302,8 +337,20 @@ class EditController:
             # Save
             subtype = self._get_audio_subtype()
             self.app.file_manager.save_audio(
-                filepath, edited_audio, original_sr, subtype
+                filepath, audio_after, original_sr, subtype
             )
+
+            # Create and push undo command with complete snapshots
+            original_duration = (end_sample - start_sample) / original_sr
+            cmd = AudioSnapshotCommand(
+                filepath=filepath,
+                sample_rate=original_sr,
+                audio_before=audio_before.copy(),
+                audio_after=audio_after.copy(),
+                subtype=subtype,
+                operation_description=f"Replace Range ({original_duration:.2f}s)",
+            )
+            self.undo_stack.push(cmd)
 
             # Clear pending state
             self._pending_replace_range = None
@@ -425,6 +472,148 @@ class EditController:
         # Force immediate redraw
         if spec.canvas:
             spec.canvas.draw()
+
+    def undo(self) -> bool:
+        """Undo the last edit operation.
+
+        Returns:
+            True if undo was successful, False otherwise
+        """
+        if not self.undo_stack.can_undo():
+            self._beep()
+            return False
+
+        cmd = self.undo_stack.undo(self.app.file_manager)
+        if cmd:
+            if self._is_clip_command(cmd):
+                self._refresh_after_clip_change(cmd)
+            else:
+                self.app.display_controller.refresh_recording_preserving_zoom()
+                self._restore_selection_from_command(cmd)
+            self.app.display_controller.set_status(
+                f"Undo: {cmd.description()}", MsgType.TEMPORARY
+            )
+            return True
+
+        self.app.display_controller.set_status("Undo failed", MsgType.ERROR)
+        return False
+
+    def redo(self) -> bool:
+        """Redo the last undone operation.
+
+        Returns:
+            True if redo was successful, False otherwise
+        """
+        if not self.undo_stack.can_redo():
+            self._beep()
+            return False
+
+        cmd = self.undo_stack.redo(self.app.file_manager)
+        if cmd:
+            if self._is_clip_command(cmd):
+                self._refresh_after_clip_change(cmd)
+            else:
+                self.app.display_controller.refresh_recording_preserving_zoom()
+                self._restore_marker_from_command(cmd)
+            self.app.display_controller.set_status(
+                f"Redo: {cmd.description()}", MsgType.TEMPORARY
+            )
+            return True
+
+        self.app.display_controller.set_status("Redo failed", MsgType.ERROR)
+        return False
+
+    def clear_undo_history(self) -> None:
+        """Clear the undo/redo history.
+
+        Call this when switching to a different audio clip.
+        """
+        self.undo_stack.clear()
+
+    def can_undo(self) -> bool:
+        """Check if undo is available."""
+        return self.undo_stack.can_undo()
+
+    def can_redo(self) -> bool:
+        """Check if redo is available."""
+        return self.undo_stack.can_redo()
+
+    def _restore_selection_from_command(self, cmd) -> None:
+        """Restore selection boundaries from a command if available.
+
+        Args:
+            cmd: The command that may contain selection boundaries
+        """
+        start = getattr(cmd, "selection_start_time", None)
+        end = getattr(cmd, "selection_end_time", None)
+        if start is not None and end is not None:
+            self._select_range(start, end)
+        else:
+            self._clear_selection()
+
+    def _restore_marker_from_command(self, cmd) -> None:
+        """Restore marker position from a command if available.
+
+        Args:
+            cmd: The command that may contain a marker position
+        """
+        marker = getattr(cmd, "marker_after_edit", None)
+        if marker is not None:
+            self._clear_selection()
+            self._set_marker(marker)
+        else:
+            self._clear_selection()
+
+    def _is_clip_command(self, cmd) -> bool:
+        """Check if command is a clip-level operation (trash/restore)."""
+        return isinstance(cmd, (TrashClipCommand, RestoreFromTrashCommand))
+
+    def _refresh_after_clip_change(self, cmd) -> None:
+        """Refresh UI after a clip was trashed or restored.
+
+        Args:
+            cmd: The clip command that was executed
+        """
+        label = cmd.label
+        take = cmd.take
+
+        # Update active_recordings cache
+        if self.app.active_recordings:
+            if isinstance(cmd, TrashClipCommand):
+                # Clip was trashed - remove from cache
+                self.app.active_recordings.on_recording_deleted(label, take)
+            else:
+                # Clip was restored - refresh cache
+                self.app.active_recordings.on_recording_restored(label)
+
+            # Update takes from active recordings
+            self.app.state.recording.takes = self.app.active_recordings.get_all_takes()
+            existing_takes = self.app.active_recordings.get_existing_takes(label)
+        else:
+            existing_takes = []
+
+        # Update displayed take
+        if isinstance(cmd, RestoreFromTrashCommand):
+            # Show the restored take
+            self.app.state.recording.set_displayed_take(label, take)
+        elif existing_takes:
+            # Show highest remaining take
+            self.app.state.recording.set_displayed_take(label, existing_takes[-1])
+        else:
+            # No takes left
+            self.app.state.recording.set_displayed_take(label, 0)
+
+        # Update display
+        self.app.display_controller.show_saved_recording()
+        self.app.navigation_controller.update_take_status()
+
+        if self.app.window.info_panel_visible:
+            self.app.display_controller.update_info_panel()
+
+    def _beep(self) -> None:
+        """Play system beep sound."""
+        if self.app.window:
+            self.app.window.window.bell()
 
     def _get_audio_subtype(self) -> str:
         """Get audio subtype based on current config.
