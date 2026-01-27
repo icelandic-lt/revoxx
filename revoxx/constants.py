@@ -175,12 +175,19 @@ class UIConstants:
     EDGE_INDICATOR_ALPHA = 0.8
     EDGE_INDICATOR_TIMEOUT_MS = 350
 
+    # Tkinter event types
+    TK_EVENT_BUTTON_PRESS = "4"
+    TK_EVENT_SCROLL_UP = 4  # Linux mouse wheel scroll up
+    TK_EVENT_SCROLL_DOWN = 5  # Linux mouse wheel scroll down
+
     # Selection and marker display
     COLOR_POSITION_MARKER = "#00FFFF"  # Cyan
     COLOR_SELECTION_FILL = (1.0, 1.0, 1.0, 0.15)  # Semi-transparent white (RGBA)
     COLOR_SELECTION_BORDER = "#FFFFFF"  # White
     SELECTION_BORDER_WIDTH = 1
     POSITION_MARKER_WIDTH = 2
+    SELECTION_LINE_OFFSET = 0.5  # spec_frames offset for edge visibility
+    POSITION_MARKER_OFFSET = 1.0  # spec_frames offset for thicker marker
     SELECTION_DRAG_THRESHOLD = 5  # Pixels
     MARKER_HOVER_THRESHOLD = 8  # Pixels - distance for resize cursor activation
 

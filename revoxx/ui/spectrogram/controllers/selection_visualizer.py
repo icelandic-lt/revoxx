@@ -200,12 +200,23 @@ class SelectionVisualizer:
                 self._marker_time_text.set_visible(False)
             return
 
-        line.set_xdata([x_pos])
+        # Offset only at absolute edges (time 0.0 or recording end)
+        offset = UIConstants.POSITION_MARKER_OFFSET
+        at_absolute_start = time_seconds <= 0
+        at_absolute_end = time_seconds >= ctx.recording_duration
+        if at_absolute_start:
+            x_pos_draw = x_pos + offset
+        elif at_absolute_end:
+            x_pos_draw = x_pos - offset
+        else:
+            x_pos_draw = x_pos
+
+        line.set_xdata([x_pos_draw])
         line.set_visible(True)
 
         # Update time text below the marker
         if self._marker_time_text:
-            self._marker_time_text.set_position((x_pos, -2))
+            self._marker_time_text.set_position((x_pos_draw, -2))
             self._marker_time_text.set_text(_format_time(time_seconds))
             self._marker_time_text.set_visible(True)
 
@@ -253,14 +264,31 @@ class SelectionVisualizer:
         self._selection_patch.set_height(ctx.n_mels)
         self._selection_patch.set_visible(True)
 
-        # Only show border lines if they are within visible range
-        self._selection_start_line.set_xdata([x_start])
-        start_visible = visible_start <= start_seconds <= visible_end
-        self._selection_start_line.set_visible(start_visible)
+        # Show border lines only if they are within the visible range
+        # Apply offset only at absolute edges (time 0.0 or recording end)
+        offset = UIConstants.SELECTION_LINE_OFFSET
+        start_visible = start_seconds >= visible_start
+        end_visible = end_seconds <= visible_end
 
-        end_visible = visible_start <= end_seconds <= visible_end
-        self._selection_end_line.set_data([x_end, x_end], [0, ctx.n_mels - 8])
-        self._selection_end_line.set_visible(end_visible)
+        if start_visible:
+            # Offset only if at absolute start (time 0.0)
+            at_absolute_start = start_seconds <= 0
+            x_start_draw = x_start + offset if at_absolute_start else x_start
+            self._selection_start_line.set_xdata([x_start_draw])
+            self._selection_start_line.set_visible(True)
+        else:
+            self._selection_start_line.set_visible(False)
+
+        if end_visible:
+            # Offset only if at absolute end (end of recording)
+            at_absolute_end = end_seconds >= ctx.recording_duration
+            x_end_draw = x_end - offset if at_absolute_end else x_end
+            self._selection_end_line.set_data(
+                [x_end_draw, x_end_draw], [0, ctx.n_mels - 8]
+            )
+            self._selection_end_line.set_visible(True)
+        else:
+            self._selection_end_line.set_visible(False)
 
         # Show duration text in horizontal center, vertically near top
         if self._selection_duration_text:
@@ -271,15 +299,22 @@ class SelectionVisualizer:
             self._selection_duration_text.set_visible(True)
 
         # Show time labels at selection boundaries (start at bottom, end at top)
+        # Only show labels if the corresponding marker is within visible range
         if self._selection_start_text:
-            self._selection_start_text.set_position((x_start, -2))
-            self._selection_start_text.set_text(_format_time(start_seconds))
-            self._selection_start_text.set_visible(start_visible)
+            if start_visible:
+                self._selection_start_text.set_position((x_start, -2))
+                self._selection_start_text.set_text(_format_time(start_seconds))
+                self._selection_start_text.set_visible(True)
+            else:
+                self._selection_start_text.set_visible(False)
 
         if self._selection_end_text:
-            self._selection_end_text.set_position((x_end, ctx.n_mels - 2))
-            self._selection_end_text.set_text(_format_time(end_seconds))
-            self._selection_end_text.set_visible(end_visible)
+            if end_visible:
+                self._selection_end_text.set_position((x_end, ctx.n_mels - 2))
+                self._selection_end_text.set_text(_format_time(end_seconds))
+                self._selection_end_text.set_visible(True)
+            else:
+                self._selection_end_text.set_visible(False)
 
     def _hide_selection(self) -> None:
         """Hide all selection visual elements."""
