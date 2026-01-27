@@ -7,6 +7,7 @@ import re
 from enum import Enum
 
 from .dialog_utils import setup_dialog_window
+from revoxx.utils.tk_compat import trace_var_write
 
 
 class SortDirection(Enum):
@@ -324,7 +325,7 @@ class UtteranceListDialog:
         )
 
         self.search_var = tk.StringVar()
-        self.search_var.trace("w", self._on_search_changed)
+        trace_var_write(self.search_var, self._on_search_changed)
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 

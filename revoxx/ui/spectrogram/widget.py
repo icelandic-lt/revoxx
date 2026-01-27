@@ -9,6 +9,7 @@ from matplotlib.image import AxesImage
 
 from ...constants import AudioConstants
 from ...constants import UIConstants
+from ...utils.adaptive_frame_rate import get_adaptive_frame_rate, DEBUG_FPS
 from ..themes import theme_manager
 from ...audio.processors import ClippingDetector
 from ...audio.processors import MelSpectrogramProcessor, MEL_CONFIG
@@ -394,10 +395,8 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
         Args:
             sample_rate: Sample rate for the recording
         """
-        # Hide NO DATA message if visible
         self._hide_no_data_message()
-
-        # Clear the audio queue first
+        get_adaptive_frame_rate().reset()
         self._clear_queue(self.audio_queue)
 
         # Update mel processor if sample rate has changed
@@ -499,10 +498,8 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             start_position: Start position in seconds (default 0.0)
             end_position: End position in seconds (default None = play to end)
         """
-        # Hide NO DATA message if visible
         self._hide_no_data_message()
-
-        # Save marker position info to restore view after playback
+        get_adaptive_frame_rate().reset()
         self._save_playback_view_state()
 
         # Hide position marker during playback (playback marker takes over)
@@ -1152,13 +1149,19 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             self.recording_update_id = None
 
     def _recording_update_loop(self) -> None:
-        """Periodic update loop for recording display."""
+        """Periodic update loop for recording display with adaptive timing."""
         if self.recording_handler.is_recording:
+            afr = get_adaptive_frame_rate()
+            afr.frame_start()
             self._update_display()
-
-            # Schedule next update
+            update_interval = afr.frame_end()
+            if DEBUG_FPS:
+                print(
+                    f"[REC] overshoot={afr.get_overshoot():.1f}ms "
+                    f"interval={update_interval}ms fps={afr.get_current_fps():.1f}"
+                )
             self.recording_update_id = self.parent.after(
-                UIConstants.ANIMATION_UPDATE_MS, self._recording_update_loop
+                update_interval, self._recording_update_loop
             )
 
     def _show_no_data_message(self) -> None:
