@@ -3,10 +3,15 @@
 Automatically adjusts update frequency based on actual achieved frame rate,
 providing smooth performance on fast hardware while gracefully degrading
 on slower systems (e.g., x86 Macs with Tcl/Tk 9's CoreGraphics rendering).
+
+Set environment variable REVOXX_DEBUG_FPS=1 to enable frame rate logging.
 """
 
+import os
 import time
 from typing import Optional
+
+DEBUG_FPS = os.environ.get("REVOXX_DEBUG_FPS", "").lower() in ("1", "true", "yes")
 
 
 class AdaptiveFrameRate:

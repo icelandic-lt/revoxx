@@ -11,7 +11,7 @@ import time
 from matplotlib.lines import Line2D
 
 from ...constants import UIConstants
-from ...utils.adaptive_frame_rate import get_adaptive_frame_rate
+from ...utils.adaptive_frame_rate import get_adaptive_frame_rate, DEBUG_FPS
 from .controllers import PlaybackController, ViewportMode, ZoomController
 
 from ...audio.shared_state import (
@@ -471,10 +471,11 @@ class PlaybackHandler:
 
         afr = get_adaptive_frame_rate()
         update_interval = afr.frame_end()
-        fps = afr.get_current_fps()
-        print(
-            f"[PLAY] overshoot={afr.get_overshoot():.1f}ms interval={update_interval}ms fps={fps:.1f}"
-        )
+        if DEBUG_FPS:
+            print(
+                f"[PLAY] overshoot={afr.get_overshoot():.1f}ms "
+                f"interval={update_interval}ms fps={afr.get_current_fps():.1f}"
+            )
 
         self.animation_id = self.parent.after(
             update_interval, self._update_playback_position

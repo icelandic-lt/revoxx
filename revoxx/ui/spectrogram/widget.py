@@ -9,7 +9,7 @@ from matplotlib.image import AxesImage
 
 from ...constants import AudioConstants
 from ...constants import UIConstants
-from ...utils.adaptive_frame_rate import get_adaptive_frame_rate
+from ...utils.adaptive_frame_rate import get_adaptive_frame_rate, DEBUG_FPS
 from ..themes import theme_manager
 from ...audio.processors import ClippingDetector
 from ...audio.processors import MelSpectrogramProcessor, MEL_CONFIG
@@ -1155,10 +1155,11 @@ class MelSpectrogramWidget(SpectrogramDisplayBase):
             afr.frame_start()
             self._update_display()
             update_interval = afr.frame_end()
-            fps = afr.get_current_fps()
-            print(
-                f"[REC] overshoot={afr.get_overshoot():.1f}ms interval={update_interval}ms fps={fps:.1f}"
-            )
+            if DEBUG_FPS:
+                print(
+                    f"[REC] overshoot={afr.get_overshoot():.1f}ms "
+                    f"interval={update_interval}ms fps={afr.get_current_fps():.1f}"
+                )
             self.recording_update_id = self.parent.after(
                 update_interval, self._recording_update_loop
             )
