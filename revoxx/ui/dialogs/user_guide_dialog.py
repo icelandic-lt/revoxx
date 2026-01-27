@@ -2,10 +2,19 @@
 
 import tkinter as tk
 from tkinter import ttk
+from tkinter.scrolledtext import ScrolledText
 from pathlib import Path
 import re
 import markdown2
-from tkinterweb import HtmlFrame
+
+# Try to import tkinterweb for HTML rendering, fall back to plain text if unavailable
+# (tkinterweb requires Tkhtml which may not be available for Tcl/Tk 9)
+try:
+    from tkinterweb import HtmlFrame
+
+    TKINTERWEB_AVAILABLE = True
+except (ImportError, Exception):
+    TKINTERWEB_AVAILABLE = False
 
 from .dialog_utils import setup_dialog_window
 
@@ -62,7 +71,26 @@ class UserGuideDialog:
         )
         self.checkbox.pack(side=tk.LEFT)
 
-        self.text_widget = HtmlFrame(main_frame, messages_enabled=False)
+        # Use HtmlFrame if available, otherwise fall back to ScrolledText
+        # Note: HtmlFrame import may succeed but instantiation can fail if Tkhtml
+        # binaries are not available (e.g., on Tcl/Tk 9 without compiled Tkhtml)
+        self.use_html = False
+        if TKINTERWEB_AVAILABLE:
+            try:
+                self.text_widget = HtmlFrame(main_frame, messages_enabled=False)
+                self.use_html = True
+            except Exception:
+                # Tkhtml not available - fall through to ScrolledText fallback
+                pass
+
+        if not self.use_html:
+            self.text_widget = ScrolledText(
+                main_frame,
+                wrap=tk.WORD,
+                font=("Helvetica", 12),
+                padx=20,
+                pady=20,
+            )
         self.text_widget.pack(fill=tk.BOTH, expand=True)
 
         bottom_frame = ttk.Frame(main_frame)
@@ -80,29 +108,100 @@ class UserGuideDialog:
 
         if not guide_path.exists():
             error_msg = f"User Guide not found at: {guide_path}"
+            self._display_error(error_msg)
+            raise FileNotFoundError(error_msg)
+
+        try:
+            # Read user guide content
+            with open(guide_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if self.use_html:
+                # Convert markdown to HTML for HtmlFrame
+                html_body = markdown2.markdown(
+                    content, extras=["tables", "fenced-code-blocks", "code-friendly"]
+                )
+                html_body = self._remove_links(html_body)
+                html_content = self._wrap_html_with_css(html_body)
+                self.text_widget.load_html(html_content)
+            else:
+                # Display as formatted plain text in ScrolledText
+                self._display_markdown_as_text(content)
+
+        except Exception as e:
+            error_msg = f"Error loading guide: {e}"
+            self._display_error(error_msg)
+
+    def _display_error(self, error_msg: str):
+        """Display an error message in the text widget."""
+        if self.use_html:
             error_html = (
                 f"<html><body><p style='color: red;'>{error_msg}</p></body></html>"
             )
             self.text_widget.load_html(error_html)
-            raise FileNotFoundError(error_msg)
+        else:
+            self.text_widget.insert(tk.END, f"Error: {error_msg}")
 
-        try:
-            # Read user guide content & convert markdown to HTML
-            with open(guide_path, "r", encoding="utf-8") as f:
-                content = f.read()
+    def _display_markdown_as_text(self, content: str):
+        """Display markdown content as formatted plain text.
 
-            html_body = markdown2.markdown(
-                content, extras=["tables", "fenced-code-blocks", "code-friendly"]
-            )
+        Args:
+            content: Raw markdown content
+        """
+        # Configure text tags for basic formatting
+        self.text_widget.tag_configure("h1", font=("Helvetica", 18, "bold"))
+        self.text_widget.tag_configure("h2", font=("Helvetica", 16, "bold"))
+        self.text_widget.tag_configure("h3", font=("Helvetica", 14, "bold"))
+        self.text_widget.tag_configure(
+            "code", font=("Courier", 11), background="#f0f0f0"
+        )
+        self.text_widget.tag_configure("bold", font=("Helvetica", 12, "bold"))
 
-            html_body = self._remove_links(html_body)
-            html_content = self._wrap_html_with_css(html_body)
-            self.text_widget.load_html(html_content)
+        # Process markdown line by line
+        lines = content.split("\n")
+        for line in lines:
+            stripped = line.strip()
 
-        except Exception as e:
-            error_msg = f"Error loading guide: {e}"
-            error_html = f"<html><body><p>{error_msg}</p></body></html>"
-            self.text_widget.load_html(error_html)
+            if stripped.startswith("### "):
+                self.text_widget.insert(tk.END, stripped[4:] + "\n", "h3")
+            elif stripped.startswith("## "):
+                self.text_widget.insert(tk.END, "\n" + stripped[3:] + "\n", "h2")
+            elif stripped.startswith("# "):
+                self.text_widget.insert(tk.END, stripped[2:] + "\n\n", "h1")
+            elif stripped.startswith("```"):
+                continue  # Skip code fence markers
+            elif stripped.startswith("`") and stripped.endswith("`"):
+                self.text_widget.insert(tk.END, stripped[1:-1] + "\n", "code")
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                self.text_widget.insert(tk.END, "  • " + stripped[2:] + "\n")
+            elif stripped.startswith("|"):
+                # Simple table handling - just show as text
+                self.text_widget.insert(tk.END, stripped + "\n", "code")
+            else:
+                # Handle inline formatting
+                self._insert_with_inline_formatting(line + "\n")
+
+        self.text_widget.config(state=tk.DISABLED)
+
+    def _insert_with_inline_formatting(self, text: str):
+        """Insert text with basic inline markdown formatting.
+
+        Args:
+            text: Text that may contain inline markdown
+        """
+        # Simple approach: just insert plain text, stripping markdown markers
+        # Remove bold markers
+        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+        text = re.sub(r"__([^_]+)__", r"\1", text)
+        # Remove italic markers
+        text = re.sub(r"\*([^*]+)\*", r"\1", text)
+        text = re.sub(r"_([^_]+)_", r"\1", text)
+        # Remove inline code markers
+        text = re.sub(r"`([^`]+)`", r"\1", text)
+        # Remove links, keep text
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
+        self.text_widget.insert(tk.END, text)
 
     @staticmethod
     def _remove_links(html: str) -> str:

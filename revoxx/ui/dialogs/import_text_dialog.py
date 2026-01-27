@@ -9,6 +9,7 @@ from typing import Optional, List
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from ...utils.text_importer import TextImporter
+from ...utils.tk_compat import trace_var_write
 from .dialog_utils import setup_dialog_window
 
 
@@ -333,7 +334,7 @@ class ImportTextDialog:
                     validatecommand=vcmd_dist,
                 )
                 spinbox.pack(side=tk.LEFT, padx=(self.PADDING_SMALL, 0))
-                var.trace("w", lambda *args: self._on_distribution_change())
+                trace_var_write(var, lambda *args: self._on_distribution_change())
                 self.emotion_spinboxes.append(spinbox)
 
         # Matplotlib plot

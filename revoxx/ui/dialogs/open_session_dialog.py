@@ -7,6 +7,7 @@ from typing import Optional
 import json
 
 from .dialog_utils import setup_dialog_window
+from revoxx.utils.tk_compat import trace_var_write
 
 
 class OpenSessionDialog:
@@ -92,7 +93,7 @@ class OpenSessionDialog:
         ttk.Label(filter_frame, text="Filter:").pack(side=tk.LEFT, padx=(0, 5))
 
         self.filter_var = tk.StringVar()
-        self.filter_var.trace("w", lambda *args: self._apply_filter())
+        trace_var_write(self.filter_var, lambda *args: self._apply_filter())
         filter_entry = ttk.Entry(filter_frame, textvariable=self.filter_var, width=30)
         filter_entry.pack(side=tk.LEFT, padx=(0, 10))
 

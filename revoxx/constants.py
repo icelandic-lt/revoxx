@@ -162,7 +162,9 @@ class UIConstants:
     # Playback display
     PLAYBACK_LINE_WIDTH = 2
     PLAYBACK_LINE_ALPHA = 0.8
-    PLAYBACK_UPDATE_MS = 10
+    PLAYBACK_UPDATE_MS = (
+        16  # Target ~60fps (adaptive frame rate adjusts for slower systems)
+    )
     PLAYBACK_INITIAL_CHECK_MS = 50
     PLAYBACK_IDLE_RETRY_MS = 20
     PLAYBACK_WATCHDOG_NEAR_END_RATIO = 0.95
@@ -192,7 +194,7 @@ class UIConstants:
     MARKER_HOVER_THRESHOLD = 8  # Pixels - distance for resize cursor activation
 
     # Timing (milliseconds)
-    ANIMATION_UPDATE_MS = 20
+    ANIMATION_UPDATE_MS = 100  # ~10fps (TkAgg + Tcl/Tk 9 needs ~100ms per frame on x86)
     PLAYBACK_CHECK_MS = 50
     PLAYBACK_STOP_DELAY_MS = 50  # Delay after stopping playback
     FOCUS_DELAY_MS = 100

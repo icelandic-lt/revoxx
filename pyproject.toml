@@ -38,10 +38,12 @@ dependencies = [
     "soundfile>=0.12.0",
     "tqdm>=4.65.0",
     "markdown2>2.5.1",  # User guide dependencies
-    "tkinterweb>4.4.1"
 ]
 
 [project.optional-dependencies]
+html = [
+    "tkinterweb>4.4.1"  # Requires Tkhtml - may need manual compilation for Tcl/Tk 9
+]
 vad = [
     "torch>=2.0.0",
     "silero-vad>=5.0",

@@ -11,6 +11,7 @@ import time
 from matplotlib.lines import Line2D
 
 from ...constants import UIConstants
+from ...utils.adaptive_frame_rate import get_adaptive_frame_rate
 from .controllers import PlaybackController, ViewportMode, ZoomController
 
 from ...audio.shared_state import (
@@ -337,7 +338,8 @@ class PlaybackHandler:
 
     def _update_playback_position(self) -> None:
         """Update playback position from shared audio state."""
-        # Check if still playing
+        get_adaptive_frame_rate().frame_start()
+
         if not self.shared_audio_state:
             return
 
@@ -460,15 +462,19 @@ class PlaybackHandler:
             self._schedule_next_frame()
 
     def _schedule_next_frame(self) -> None:
-        """Schedule next animation frame."""
+        """Schedule next animation frame with adaptive timing."""
         if self.animation_id:
             try:
                 self.parent.after_cancel(self.animation_id)
             except ValueError:
                 pass
 
-        # Update interval
-        update_interval = UIConstants.PLAYBACK_UPDATE_MS
+        afr = get_adaptive_frame_rate()
+        update_interval = afr.frame_end()
+        fps = afr.get_current_fps()
+        print(
+            f"[PLAY] overshoot={afr.get_overshoot():.1f}ms interval={update_interval}ms fps={fps:.1f}"
+        )
 
         self.animation_id = self.parent.after(
             update_interval, self._update_playback_position
