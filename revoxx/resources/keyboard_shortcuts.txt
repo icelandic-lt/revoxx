@@ -17,6 +17,8 @@ AUDIO EDITING
   Ctrl+D       With selection: Delete selected range
   Space        With marker: Insert recording at position
   Space        With selection: Replace selection with recording
+  Ctrl+Z       Undo last edit operation
+  Shift+Ctrl+Z Redo last undone operation
 
 NAVIGATION
   Up/Down      Navigate utterances

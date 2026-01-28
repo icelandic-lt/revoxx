@@ -173,8 +173,28 @@ class ApplicationMenu:
             activebackground=UIConstants.COLOR_ACCENT,
             activeforeground=UIConstants.COLOR_BACKGROUND,
             selectcolor=UIConstants.COLOR_ACCENT,
+            postcommand=self._update_edit_menu_states,
         )
         self.menubar.add_cascade(label="Edit", menu=edit_menu)
+        self.edit_menu = edit_menu
+
+        # Undo (index 0)
+        undo_accel = "Cmd+Z" if platform.system() == "Darwin" else "Ctrl+Z"
+        edit_menu.add_command(
+            label="Undo",
+            command=self.app.edit_controller.undo,
+            accelerator=undo_accel,
+        )
+
+        # Redo (index 1)
+        redo_accel = "Shift+Cmd+Z" if platform.system() == "Darwin" else "Shift+Ctrl+Z"
+        edit_menu.add_command(
+            label="Redo",
+            command=self.app.edit_controller.redo,
+            accelerator=redo_accel,
+        )
+
+        edit_menu.add_separator()
 
         # Find utterance
         find_accel = "Cmd+F" if platform.system() == "Darwin" else "Ctrl+F"
@@ -472,6 +492,15 @@ class ApplicationMenu:
         help_menu.add_command(label="About", command=self._show_about)
 
     # ============= Menu Callbacks =============
+
+    def _update_edit_menu_states(self) -> None:
+        """Update Undo/Redo menu item states based on stack contents."""
+        can_undo = self.app.edit_controller.can_undo()
+        can_redo = self.app.edit_controller.can_redo()
+
+        # Index 0 is Undo, index 1 is Redo
+        self.edit_menu.entryconfig(0, state="normal" if can_undo else "disabled")
+        self.edit_menu.entryconfig(1, state="normal" if can_redo else "disabled")
 
     def _new_session(self) -> None:
         """Handle New Session menu item."""

@@ -8,6 +8,7 @@ import soundfile as sf
 from tkinter import messagebox
 
 from ..constants import MsgType
+from ..audio.edit_commands import TrashClipCommand
 
 if TYPE_CHECKING:
     from ..app import Revoxx
@@ -52,10 +53,21 @@ class FileOperationsController:
         if not result:
             return
 
+        # Get filepath before deletion (for undo command)
+        filepath = self.app.file_manager.get_recording_path(current_label, current_take)
+
         # Move file to trash
         success = self.app.file_manager.move_to_trash(current_label, current_take)
 
         if success:
+            # Push undo command (file is already moved, command is for undo/redo)
+            cmd = TrashClipCommand(
+                filepath=filepath,
+                sample_rate=self.app.config.audio.sample_rate,
+                label=current_label,
+                take=current_take,
+            )
+            self.app.edit_controller.undo_stack.push(cmd)
             # Invalidate cache for this label
             if self.app.active_recordings:
                 self.app.active_recordings.on_recording_deleted(

@@ -296,6 +296,63 @@ class RecordingFileManager:
         except Exception:
             return False
 
+    def restore_from_trash(self, label: str, take: int) -> bool:
+        """Restore a recording from the trash directory.
+
+        Args:
+            label: Script label/ID for the utterance
+            take: Take number to restore
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Find the file in trash
+        trash_dir = self.recording_dir.parent / "trash" / label
+        if not trash_dir.exists():
+            return False
+
+        # Look for the take file (could be .wav or .flac)
+        for ext in [".wav", ".flac"]:
+            trash_path = trash_dir / f"take_{take:03d}{ext}"
+            if trash_path.exists():
+                # Restore to recordings directory
+                utterance_dir = self.recording_dir / label
+                utterance_dir.mkdir(exist_ok=True, parents=True)
+                dest_path = utterance_dir / trash_path.name
+                try:
+                    trash_path.rename(dest_path)
+                    return True
+                except Exception:
+                    return False
+
+        return False
+
+    def get_deleted_takes(self, label: str) -> list:
+        """Get list of deleted takes for a label.
+
+        Args:
+            label: Script label/ID for the utterance
+
+        Returns:
+            List of take numbers in trash
+        """
+        trash_dir = self.recording_dir.parent / "trash" / label
+        if not trash_dir.exists():
+            return []
+
+        takes = []
+        for filepath in trash_dir.iterdir():
+            if filepath.name.startswith("take_") and filepath.suffix in [
+                ".wav",
+                ".flac",
+            ]:
+                try:
+                    take_num = int(filepath.stem.split("_")[1])
+                    takes.append(take_num)
+                except (ValueError, IndexError):
+                    pass
+        return sorted(takes)
+
     def get_next_take_number(self, label: str) -> int:
         """Get the next available take number, considering both active and trash files.
 

@@ -40,6 +40,9 @@ class NavigationController:
         # Stop all playback activities (same as when starting new playback)
         self.app.audio_controller.stop_all_playback_activities()
 
+        # Clear undo history when switching clips
+        self.app.edit_controller.clear_undo_history()
+
         # Check if we have a session loaded
         if not self.app.active_recordings:
             # No session loaded, can't navigate
@@ -94,6 +97,9 @@ class NavigationController:
 
         # Stop all playback activities
         self.app.audio_controller.stop_all_playback_activities()
+
+        # Clear undo history when switching takes
+        self.app.edit_controller.clear_undo_history()
 
         # Get current take and all existing takes
         current_take = self.app.state.recording.get_current_take(current_label)

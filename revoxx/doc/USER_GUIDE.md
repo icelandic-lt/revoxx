@@ -98,17 +98,19 @@ It's important to calibrate your input levels before starting the recording sess
 
 ### Recording Controls
 
-| Key          | Action                                                          |
-|--------------|-----------------------------------------------------------------|
-| **SPACE**    | Start/Stop recording                                            |
-| **P**        | Play the current take (or selection/from marker if set)         |
-| **S**        | Stop playback                                                   |
-| **⌘/Ctrl+D** | Delete the current take (it moves to trash folder subdirectory) |
-| **↑/↓**      | Navigate between utterances in the list                         |
-| **←/→**      | Navigate between different takes of the current utterance       |
-| **⌘/Ctrl+U** | Change the utterance ordering method                            |
-| **Escape**   | Clear position marker or selection                              |
-| **F1**       | Show all keyboard shortcuts                                     |
+| Key            | Action                                                          |
+|----------------|-----------------------------------------------------------------|
+| **SPACE**      | Start/Stop recording                                            |
+| **P**          | Play the current take (or selection/from marker if set)         |
+| **S**          | Stop playback                                                   |
+| **⌘/Ctrl+D**   | Delete the current take (it moves to trash folder subdirectory) |
+| **⌘/Ctrl+Z**   | Undo last edit operation                                        |
+| **⇧⌘/⇧Ctrl+Z** | Redo last undone operation                                      |
+| **↑/↓**        | Navigate between utterances in the list                         |
+| **←/→**        | Navigate between different takes of the current utterance       |
+| **⌘/Ctrl+U**   | Change the utterance ordering method                            |
+| **Escape**     | Clear position marker or selection                              |
+| **F1**         | Show all keyboard shortcuts                                     |
 
 **Important:** When multiple takes exist for an utterance, the system always uses the most recent take for export. You can navigate through all takes using the left/right arrow keys to review them, but only the last recorded take will be included in the final dataset.
 
@@ -192,9 +194,19 @@ Revoxx allows you to edit recordings directly without leaving the application. T
 3. Record the replacement audio and press **Space** again to stop.
 4. The selection will be replaced with your new recording, using crossfades for smooth transitions.
 
-**Note:** All editing operations are applied directly to the current take. The original audio is modified, so use these features carefully. If you make a mistake, you can delete the take and re-record.
+**Note:** All editing operations are applied directly to the current take. The original audio is modified, so use these features carefully.
 
 **Tip:** After inserting or replacing audio, the new portion is automatically selected so you can immediately press **P** to review it.
+
+#### Undo and Redo
+
+Revoxx supports multiple undo/redo for all editing operations:
+
+- Press **⌘/Ctrl+Z** to undo the last edit operation.
+- Press **⇧⌘/⇧Ctrl+Z** to redo an undone operation.
+- You can also access these commands from the **Edit** menu.
+
+The undo history is session-based and holds up to 10 operations for the current utterance.
 
 ## 4. Multi-Screen Setup
 

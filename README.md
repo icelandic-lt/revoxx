@@ -72,6 +72,7 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
   - Delete ranges with automatic crossfade
   - Insert new audio at marker position
   - Replace selected ranges with new recordings
+  - Multiple undo/redo for all editing operations
 - **Multi-Screen Support**
   - You can use multiple monitors to **separate recording view from speaker view**
   - We support Apple's [Sidecar](https://support.apple.com/en-us/102597) feature for a **convenient dual screen setup with an external iPad**
