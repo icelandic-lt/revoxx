@@ -111,6 +111,36 @@ class EditController:
                 audio_before, start_sample, end_sample, sr
             )
 
+            # Check if deletion removed all audio
+            if len(audio_after) == 0:
+                # Move the now-empty recording to trash instead of saving a 0-byte file
+                self.app.file_manager.move_to_trash(label, take)
+
+                # Update active recordings cache and take counter
+                if self.app.active_recordings:
+                    self.app.active_recordings.on_recording_deleted(label, take)
+                    self.app.state.recording.takes = (
+                        self.app.active_recordings.get_all_takes()
+                    )
+
+                self.app.state.recording.set_displayed_take(label, 0)
+
+                # Clear selection and display
+                selection_state.clear_all()
+                if self.app.window and self.app.window.mel_spectrogram:
+                    self.app.window.mel_spectrogram.selection_visualizer.clear()
+
+                self.app.display_controller.clear_spectrograms()
+                self.app.navigation_controller.update_take_status()
+
+                if self.app.window.info_panel_visible:
+                    self.app.display_controller.update_info_panel()
+
+                self.app.display_controller.set_status(
+                    "Recording deleted (all audio removed)", MsgType.TEMPORARY
+                )
+                return True
+
             # Save the edited audio
             subtype = self._get_audio_subtype()
             self.app.file_manager.save_audio(filepath, audio_after, sr, subtype)

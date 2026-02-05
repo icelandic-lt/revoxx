@@ -82,6 +82,13 @@ class DisplayController:
         # Load the recording
         filepath = self.app.file_manager.get_recording_path(current_label, current_take)
         if filepath.exists():
+            # Guard against 0-byte / corrupt files (e.g. from a previous crash)
+            if filepath.stat().st_size == 0:
+                filepath.unlink()
+                self.clear_spectrograms()
+                self.update_info_panel()
+                return
+
             try:
                 audio_data, sr = self.app.file_manager.load_audio(filepath)
 
@@ -569,13 +576,16 @@ class DisplayController:
         Args:
             callback: Function to call when spectrograms are ready
         """
-        # Collect windows that need spectrograms
+        # Collect windows that need spectrograms (only if meters are visible)
         windows_needing_spectrograms = [
-            w for w in self._get_active_windows() if not w.mel_spectrogram
+            w for w in self._get_active_windows()
+            if not w.mel_spectrogram and getattr(w, "meters_visible", False)
         ]
 
         if not windows_needing_spectrograms:
             # All ready, execute immediately
+            if self.app.debug:
+                print(f"[DisplayController] when_spectrograms_ready: all ready, executing callback immediately")
             callback()
         else:
             # wait for all spectrograms
@@ -584,6 +594,9 @@ class DisplayController:
                 for w in windows_needing_spectrograms
                 if hasattr(w, "spec_frame")
             ]
+
+            if self.app.debug:
+                print(f"[DisplayController] when_spectrograms_ready: {len(windows_needing_spectrograms)} windows need spectrograms, {len(spec_frames)} have spec_frame")
 
             if spec_frames:
                 WidgetInitializer.fire_when_all_ready(

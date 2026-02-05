@@ -158,6 +158,15 @@ class AudioQueueProcessor:
         if hasattr(self.app, "window_manager") and self.app.window_manager:
             active_windows = self.app.window_manager.get_active_windows()
 
+            if not hasattr(self, "_spec_debug_count"):
+                self._spec_debug_count = 0
+            self._spec_debug_count += 1
+            if self._spec_debug_count == 1 and getattr(self.app, "debug", False):
+                for window in active_windows:
+                    has_spec = hasattr(window, "mel_spectrogram") and window.mel_spectrogram
+                    m_vis = getattr(window, "meters_visible", False)
+                    print(f"[AudioQueueProcessor] window has_spectrogram={has_spec} meters_visible={m_vis}")
+
             for window in active_windows:
                 has_spectrogram = (
                     hasattr(window, "mel_spectrogram") and window.mel_spectrogram

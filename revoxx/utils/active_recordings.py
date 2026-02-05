@@ -151,6 +151,9 @@ class ActiveRecordings:
         elif self.sort_column == "recordings":
             # Sort by takes, then by label for stable ordering
             return lambda item: (item["takes"], item["label"].lower())
+        elif self.sort_column == "text_length":
+            # Sort by text length, then by label for stable ordering
+            return lambda item: (item["text_length"], item["label"].lower())
         else:
             # Default to index (no sort)
             return lambda item: item["index"]
@@ -179,6 +182,9 @@ class ActiveRecordings:
                 elif self.sort_column == "recordings":
                     filenames = self._takes_cache.get(label, [])
                     item["takes"] = len(filenames)
+                elif self.sort_column == "text_length":
+                    clean_text = self._extract_clean_text(self._utterances[i])
+                    item["text_length"] = len(clean_text)
 
                 items.append(item)
 
