@@ -105,51 +105,10 @@ class AudioEditor:
         after = original[position:]
 
         if fade_samples > 0:
-            # Cross-fade at insertion point
-            result_parts = []
-
-            # Before section
-            if len(before) >= fade_samples:
-                # Fade out the end of 'before' and fade in start of 'insert'
-                before_fade = before[-fade_samples:]
-                insert_start_fade = (
-                    insert[:fade_samples] if len(insert) >= fade_samples else insert
-                )
-
-                if len(insert_start_fade) == fade_samples:
-                    crossfaded_start = AudioEditor._equal_power_crossfade(
-                        before_fade, insert_start_fade, fade_samples
-                    )
-                    result_parts.append(before[:-fade_samples])
-                    result_parts.append(crossfaded_start)
-                else:
-                    result_parts.append(before)
-            else:
-                result_parts.append(before)
-
-            # Middle section of insert (if any)
-            if len(insert) > 2 * fade_samples:
-                result_parts.append(insert[fade_samples:-fade_samples])
-            elif len(insert) > fade_samples:
-                result_parts.append(insert[fade_samples:])
-
-            # After section
-            if len(after) >= fade_samples and len(insert) >= fade_samples:
-                # Fade out end of 'insert' and fade in start of 'after'
-                insert_end_fade = insert[-fade_samples:]
-                after_fade = after[:fade_samples]
-
-                crossfaded_end = AudioEditor._equal_power_crossfade(
-                    insert_end_fade, after_fade, fade_samples
-                )
-                result_parts.append(crossfaded_end)
-                result_parts.append(after[fade_samples:])
-            else:
-                result_parts.append(after)
-
-            result = np.concatenate([p for p in result_parts if len(p) > 0])
+            result = AudioEditor._splice_with_crossfade(
+                before, insert, after, fade_samples
+            )
         else:
-            # No cross-fade, simple concatenation
             result = np.concatenate([before, insert, after])
 
         return result
@@ -192,43 +151,10 @@ class AudioEditor:
         after = original[end_sample:]
 
         if fade_samples > 0:
-            result_parts = []
-
-            # Cross-fade at start of replacement
-            if len(before) >= fade_samples and len(replacement) >= fade_samples:
-                before_fade = before[-fade_samples:]
-                replacement_start = replacement[:fade_samples]
-
-                crossfaded_start = AudioEditor._equal_power_crossfade(
-                    before_fade, replacement_start, fade_samples
-                )
-                result_parts.append(before[:-fade_samples])
-                result_parts.append(crossfaded_start)
-            else:
-                result_parts.append(before)
-
-            # Middle of replacement
-            if len(replacement) > 2 * fade_samples:
-                result_parts.append(replacement[fade_samples:-fade_samples])
-            elif len(replacement) > fade_samples:
-                result_parts.append(replacement[fade_samples:])
-
-            # Cross-fade at end of replacement
-            if len(after) >= fade_samples and len(replacement) >= fade_samples:
-                replacement_end = replacement[-fade_samples:]
-                after_start = after[:fade_samples]
-
-                crossfaded_end = AudioEditor._equal_power_crossfade(
-                    replacement_end, after_start, fade_samples
-                )
-                result_parts.append(crossfaded_end)
-                result_parts.append(after[fade_samples:])
-            else:
-                result_parts.append(after)
-
-            result = np.concatenate([p for p in result_parts if len(p) > 0])
+            result = AudioEditor._splice_with_crossfade(
+                before, replacement, after, fade_samples
+            )
         else:
-            # No cross-fade, simple replacement
             result = np.concatenate([before, replacement, after])
 
         return result
@@ -268,6 +194,54 @@ class AudioEditor:
         return result
 
     @staticmethod
+    def _splice_with_crossfade(
+        before: np.ndarray,
+        insert: np.ndarray,
+        after: np.ndarray,
+        fade_samples: int,
+    ) -> np.ndarray:
+        """Splice three audio segments with crossfade at boundaries.
+
+        Combines before + insert + after with equal-power crossfade at
+        the junction points to avoid clicks.
+
+        Args:
+            before: Audio segment before the insert point
+            insert: Audio segment to insert
+            after: Audio segment after the insert point
+            fade_samples: Number of samples for crossfade at each boundary
+
+        Returns:
+            Combined audio array with crossfaded transitions
+        """
+        result_parts = []
+
+        # Crossfade at start (before -> insert)
+        if len(before) >= fade_samples and len(insert) >= fade_samples:
+            crossfaded_start = AudioEditor._equal_power_crossfade(
+                before[-fade_samples:], insert[:fade_samples], fade_samples
+            )
+            result_parts.append(before[:-fade_samples])
+            result_parts.append(crossfaded_start)
+        else:
+            result_parts.append(before)
+
+        # Middle section of insert
+        AudioEditor._append_middle_section(result_parts, insert, fade_samples)
+
+        # Crossfade at end (insert -> after)
+        if len(after) >= fade_samples and len(insert) >= fade_samples:
+            crossfaded_end = AudioEditor._equal_power_crossfade(
+                insert[-fade_samples:], after[:fade_samples], fade_samples
+            )
+            result_parts.append(crossfaded_end)
+            result_parts.append(after[fade_samples:])
+        else:
+            result_parts.append(after)
+
+        return np.concatenate([p for p in result_parts if len(p) > 0])
+
+    @staticmethod
     def _calculate_fade_samples(sample_rate: int, selection_samples: int) -> int:
         """Calculate the number of samples for cross-fade.
 
@@ -291,6 +265,25 @@ class AudioEditor:
         return min(fade_from_config, max_fade)
 
     @staticmethod
+    def _append_middle_section(
+        result_parts: list, audio: np.ndarray, fade_samples: int
+    ) -> None:
+        """Append the middle section of audio, excluding fade regions.
+
+        Used during insert/replace operations to add the portion of audio
+        between the start and end crossfade regions.
+
+        Args:
+            result_parts: List to append the middle section to
+            audio: Audio array to extract middle section from
+            fade_samples: Number of samples used for crossfade at each end
+        """
+        if len(audio) > 2 * fade_samples:
+            result_parts.append(audio[fade_samples:-fade_samples])
+        elif len(audio) > fade_samples:
+            result_parts.append(audio[fade_samples:])
+
+    @staticmethod
     def loop_audio_for_duration(
         audio: np.ndarray, target_samples: int, sample_rate: int
     ) -> np.ndarray:
@@ -310,82 +303,150 @@ class AudioEditor:
         if len(audio) == 0:
             return np.zeros(target_samples, dtype=np.float32)
 
-        # If source is longer than needed, just trim
         if len(audio) >= target_samples:
             return audio[:target_samples].astype(np.float32)
 
-        # Calculate fade samples
-        fade_samples = int(AudioConstants.CROSSFADE_MS * sample_rate / 1000)
-
-        # Cap fade at half the source length
-        max_fade = len(audio) // 2
-        fade_samples = min(fade_samples, max_fade)
+        fade_samples = AudioEditor._calculate_fade_samples(sample_rate, len(audio))
 
         if fade_samples < 2:
-            # Too short for cross-fade, just tile
             repeats = (target_samples // len(audio)) + 1
             return np.tile(audio, repeats)[:target_samples].astype(np.float32)
 
-        # Build result by looping with cross-fade
+        # Build looped audio with crossfades
         result = []
         remaining = target_samples
+        is_first = True
 
         while remaining > 0:
-            if len(result) == 0:
-                # First iteration: add full audio (minus fade region at end)
-                if remaining >= len(audio):
-                    result.append(audio[:-fade_samples].copy())
-                    remaining -= len(audio) - fade_samples
-                else:
-                    result.append(audio[:remaining].copy())
-                    remaining = 0
+            if is_first:
+                remaining = AudioEditor._append_first_segment(
+                    result, audio, fade_samples, remaining
+                )
+                is_first = False
+            elif remaining >= len(audio):
+                remaining = AudioEditor._append_full_loop(
+                    result, audio, fade_samples, remaining
+                )
             else:
-                # Subsequent iterations: cross-fade start with previous end
-                if remaining >= len(audio):
-                    # Cross-fade region
-                    crossfade = AudioEditor._equal_power_crossfade(
-                        audio[-fade_samples:], audio[:fade_samples], fade_samples
-                    )
-                    result.append(crossfade)
-                    remaining -= fade_samples
+                remaining = AudioEditor._append_final_segment(
+                    result, audio, fade_samples, remaining
+                )
 
-                    # Middle section (if any)
-                    middle_samples = len(audio) - 2 * fade_samples
-                    if middle_samples > 0:
-                        if remaining >= middle_samples:
-                            result.append(audio[fade_samples:-fade_samples].copy())
-                            remaining -= middle_samples
-                        else:
-                            result.append(
-                                audio[fade_samples : fade_samples + remaining].copy()
-                            )
-                            remaining = 0
-                else:
-                    # Final partial iteration
-                    crossfade = AudioEditor._equal_power_crossfade(
-                        audio[-fade_samples:], audio[:fade_samples], fade_samples
-                    )
-                    if remaining >= fade_samples:
-                        result.append(crossfade)
-                        remaining -= fade_samples
-                        if remaining > 0:
-                            take = min(remaining, len(audio) - fade_samples)
-                            result.append(
-                                audio[fade_samples : fade_samples + take].copy()
-                            )
-                            remaining -= take
-                    else:
-                        result.append(crossfade[:remaining].copy())
-                        remaining = 0
-
-        # Concatenate all parts
         output = np.concatenate(result)
+        return AudioEditor._ensure_exact_length(output, target_samples)
 
-        # Ensure exact length
-        if len(output) > target_samples:
-            output = output[:target_samples]
-        elif len(output) < target_samples:
-            # Pad with zeros if somehow short
-            output = np.pad(output, (0, target_samples - len(output)))
+    @staticmethod
+    def _append_first_segment(
+        result: list, audio: np.ndarray, fade_samples: int, remaining: int
+    ) -> int:
+        """Append first segment of looped audio.
 
-        return output.astype(np.float32)
+        The first segment excludes the final fade_samples to leave room
+        for crossfading with the next loop iteration.
+
+        Args:
+            result: List to append audio segments to
+            audio: Source audio array to loop
+            fade_samples: Number of samples reserved for crossfade
+            remaining: Number of samples still needed
+
+        Returns:
+            Updated remaining sample count
+        """
+        if remaining >= len(audio):
+            result.append(audio[:-fade_samples].copy())
+            return remaining - (len(audio) - fade_samples)
+        else:
+            result.append(audio[:remaining].copy())
+            return 0
+
+    @staticmethod
+    def _append_full_loop(
+        result: list, audio: np.ndarray, fade_samples: int, remaining: int
+    ) -> int:
+        """Append a full loop iteration with crossfade.
+
+        Creates a seamless loop by crossfading the end of the previous
+        iteration with the beginning of this one, then appends the
+        middle portion of the audio.
+
+        Args:
+            result: List to append audio segments to
+            audio: Source audio array to loop
+            fade_samples: Number of samples for crossfade region
+            remaining: Number of samples still needed
+
+        Returns:
+            Updated remaining sample count
+        """
+        crossfade = AudioEditor._equal_power_crossfade(
+            audio[-fade_samples:], audio[:fade_samples], fade_samples
+        )
+        result.append(crossfade)
+        remaining -= fade_samples
+
+        middle_samples = len(audio) - 2 * fade_samples
+        if middle_samples > 0:
+            if remaining >= middle_samples:
+                result.append(audio[fade_samples:-fade_samples].copy())
+                remaining -= middle_samples
+            else:
+                result.append(audio[fade_samples : fade_samples + remaining].copy())
+                remaining = 0
+
+        return remaining
+
+    @staticmethod
+    def _append_final_segment(
+        result: list, audio: np.ndarray, fade_samples: int, remaining: int
+    ) -> int:
+        """Append the final partial segment with crossfade.
+
+        Handles the case where the remaining samples are less than a full
+        loop iteration. Crossfades at the loop point and takes only the
+        needed portion.
+
+        Args:
+            result: List to append audio segments to
+            audio: Source audio array to loop
+            fade_samples: Number of samples for crossfade region
+            remaining: Number of samples still needed
+
+        Returns:
+            Updated remaining sample count (always 0 after this)
+        """
+        crossfade = AudioEditor._equal_power_crossfade(
+            audio[-fade_samples:], audio[:fade_samples], fade_samples
+        )
+
+        if remaining >= fade_samples:
+            result.append(crossfade)
+            remaining -= fade_samples
+            if remaining > 0:
+                take = min(remaining, len(audio) - fade_samples)
+                result.append(audio[fade_samples : fade_samples + take].copy())
+                remaining -= take
+        else:
+            result.append(crossfade[:remaining].copy())
+            remaining = 0
+
+        return remaining
+
+    @staticmethod
+    def _ensure_exact_length(audio: np.ndarray, target_samples: int) -> np.ndarray:
+        """Ensure audio has exactly the target length.
+
+        Trims if too long, zero-pads if too short.
+
+        Args:
+            audio: Audio array to adjust
+            target_samples: Exact number of samples required
+
+        Returns:
+            Audio array with exactly target_samples length as float32
+        """
+        if len(audio) > target_samples:
+            return audio[:target_samples].astype(np.float32)
+        elif len(audio) < target_samples:
+            return np.pad(audio, (0, target_samples - len(audio))).astype(np.float32)
+        return audio.astype(np.float32)
