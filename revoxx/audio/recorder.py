@@ -85,19 +85,29 @@ class AudioRecorder:
 
         if not self._validate_and_prepare():
             if debug:
-                print(f"[Recorder] _validate_and_prepare() failed", file=sys.stderr)
+                print("[Recorder] _validate_and_prepare() failed", file=sys.stderr)
             return False
 
         open_channels = self._determine_channel_configuration()
 
         if debug:
-            print(f"[Recorder] start_recording: device={self.config.input_device}, sr={self.config.sample_rate}, ch={open_channels}", file=sys.stderr)
+            print(
+                f"[Recorder] start_recording: device={self.config.input_device}, sr={self.config.sample_rate}, ch={open_channels}",
+                file=sys.stderr,
+            )
 
         self.stream = self._create_stream(self.config.sample_rate, open_channels)
         if not self.stream:
             if debug:
-                print(f"[Recorder] _create_stream() returned None - device open FAILED", file=sys.stderr)
-                last_err = self.manager_dict.get("last_input_error", "unknown") if self.manager_dict else "N/A"
+                print(
+                    "[Recorder] _create_stream() returned None - device open FAILED",
+                    file=sys.stderr,
+                )
+                last_err = (
+                    self.manager_dict.get("last_input_error", "unknown")
+                    if self.manager_dict
+                    else "N/A"
+                )
                 print(f"[Recorder]   last_input_error={last_err}", file=sys.stderr)
             self._state = WorkerState.IDLE
             return False
@@ -105,7 +115,10 @@ class AudioRecorder:
         self.stream.start()
         self._state = WorkerState.ACTIVE
         if debug:
-            print(f"[Recorder] stream started successfully, audio_queue_active={self._is_audio_queue_active()}", file=sys.stderr)
+            print(
+                f"[Recorder] stream started successfully, audio_queue_active={self._is_audio_queue_active()}",
+                file=sys.stderr,
+            )
         return True
 
     def _validate_and_prepare(self) -> bool:

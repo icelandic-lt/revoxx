@@ -9,6 +9,7 @@ import soundfile as sf
 
 from ..session.inspector import SessionInspector
 from ..session.script_parser import FestivalScriptParser
+from ..controllers.session_controller import REFERENCE_SILENCE_LABEL
 
 
 class DatasetExporter:
@@ -278,6 +279,10 @@ class DatasetExporter:
                 for utterance_dir in recordings_dir.iterdir():
                     if utterance_dir.is_dir():
                         utterance_id = utterance_dir.name
+
+                        # Skip reference silence - it's not part of the dataset
+                        if utterance_id == REFERENCE_SILENCE_LABEL:
+                            continue
 
                         # Find highest take number
                         takes = list(utterance_dir.glob("take_*.flac"))

@@ -12,6 +12,10 @@ from ..ui.dialogs import NewSessionDialog
 if TYPE_CHECKING:
     from ..app import Revoxx
 
+# Constants for reference silence utterance
+REFERENCE_SILENCE_LABEL = "reference_silence"
+REFERENCE_SILENCE_TEXT = "Reference Silence"
+
 
 class SessionController:
     """Handles session management operations.
@@ -146,6 +150,10 @@ class SessionController:
         # Load script and scan recordings first
         self.reload_script_and_recordings()
 
+        # Start at first real utterance (Index 1), not Reference Silence (Index 0)
+        if len(self.app.state.recording.utterances) > 1:
+            self.app.state.recording.current_index = 1
+
         # Then apply saved sort settings from session (after data is loaded)
         self.app.active_recordings.set_sort(session.sort_column, session.sort_reverse)
 
@@ -198,7 +206,10 @@ class SessionController:
 
         self.reload_script_and_recordings()
 
-        self.app.state.recording.current_index = 0
+        # Start at first real utterance (Index 1), not Reference Silence (Index 0)
+        self.app.state.recording.current_index = (
+            1 if len(self.app.state.recording.utterances) > 1 else 0
+        )
 
     def reload_script_and_recordings(self) -> None:
         """Reload script content and scan for existing recordings.
@@ -218,6 +229,11 @@ class SessionController:
             labels, utterances = self.app.script_manager.load_script(
                 self.app.script_file
             )
+
+            # Insert Reference Silence as first utterance (Index 0)
+            labels.insert(0, REFERENCE_SILENCE_LABEL)
+            utterances.insert(0, REFERENCE_SILENCE_TEXT)
+
             self.app.state.recording.labels = labels
             self.app.state.recording.utterances = utterances
 

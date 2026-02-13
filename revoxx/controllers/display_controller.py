@@ -578,14 +578,17 @@ class DisplayController:
         """
         # Collect windows that need spectrograms (only if meters are visible)
         windows_needing_spectrograms = [
-            w for w in self._get_active_windows()
+            w
+            for w in self._get_active_windows()
             if not w.mel_spectrogram and getattr(w, "meters_visible", False)
         ]
 
         if not windows_needing_spectrograms:
             # All ready, execute immediately
             if self.app.debug:
-                print(f"[DisplayController] when_spectrograms_ready: all ready, executing callback immediately")
+                print(
+                    "[DisplayController] when_spectrograms_ready: all ready, executing callback immediately"
+                )
             callback()
         else:
             # wait for all spectrograms
@@ -596,7 +599,9 @@ class DisplayController:
             ]
 
             if self.app.debug:
-                print(f"[DisplayController] when_spectrograms_ready: {len(windows_needing_spectrograms)} windows need spectrograms, {len(spec_frames)} have spec_frame")
+                print(
+                    f"[DisplayController] when_spectrograms_ready: {len(windows_needing_spectrograms)} windows need spectrograms, {len(spec_frames)} have spec_frame"
+                )
 
             if spec_frames:
                 WidgetInitializer.fire_when_all_ready(

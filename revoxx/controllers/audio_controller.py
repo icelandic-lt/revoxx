@@ -339,13 +339,17 @@ class AudioController:
         if mode == "recording":
             if not self._setup_recording_mode():
                 if self.app.debug:
-                    print(f"[AudioController] _setup_recording_mode() returned False (no current label?)")
+                    print(
+                        "[AudioController] _setup_recording_mode() returned False (no current label?)"
+                    )
                 return  # No current label, can't record
         else:
             self._setup_monitoring_mode()
 
         if self.app.debug:
-            print(f"[AudioController] _start_audio_capture({mode}) waiting for spectrograms...")
+            print(
+                f"[AudioController] _start_audio_capture({mode}) waiting for spectrograms..."
+            )
 
         # Execute the actual audio capture start
         # Ensure spectrograms are ready before starting (especially for monitoring)
@@ -383,6 +387,7 @@ class AudioController:
             True if setup successful, False if no current label
         """
         self.app.state.recording.is_recording = True
+
         current_label = self.app.state.recording.current_label
 
         if not current_label:
@@ -451,9 +456,15 @@ class AudioController:
         4. Updating status message in UI
         """
         if self.app.debug:
-            print(f"[AudioController] _do_start_audio_capture({mode}) - spectrograms ready")
-            print(f"[AudioController]   audio_queue_active={self.app.process_manager.is_audio_queue_active()}")
-            print(f"[AudioController]   record_process alive={self.app.process_manager.record_process and self.app.process_manager.record_process.is_alive()}")
+            print(
+                f"[AudioController] _do_start_audio_capture({mode}) - spectrograms ready"
+            )
+            print(
+                f"[AudioController]   audio_queue_active={self.app.process_manager.is_audio_queue_active()}"
+            )
+            print(
+                f"[AudioController]   record_process alive={self.app.process_manager.record_process and self.app.process_manager.record_process.is_alive()}"
+            )
 
         self.app.display_controller.start_spectrogram_recording(
             self.app.config.audio.sample_rate
@@ -467,7 +478,7 @@ class AudioController:
 
         self.app.queue_manager.start_recording()
         if self.app.debug:
-            print(f"[AudioController]   start_recording command sent to record process")
+            print("[AudioController]   start_recording command sent to record process")
 
         if mode == "recording":
             self.app.display_controller.update_display()

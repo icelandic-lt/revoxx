@@ -4,7 +4,11 @@ import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
 
-from revoxx.controllers.session_controller import SessionController
+from revoxx.controllers.session_controller import (
+    SessionController,
+    REFERENCE_SILENCE_LABEL,
+    REFERENCE_SILENCE_TEXT,
+)
 
 
 class TestSessionController(unittest.TestCase):
@@ -326,10 +330,18 @@ class TestSessionController(unittest.TestCase):
         self.mock_app.script_manager.load_script.assert_called_once_with(
             mock_script_file
         )
-        self.assertEqual(self.mock_app.state.recording.labels, ["label1"])
-        self.assertEqual(self.mock_app.state.recording.utterances, ["utterance1"])
+        # Reference silence is inserted at the beginning (Index 0)
+        self.assertEqual(
+            self.mock_app.state.recording.labels,
+            [REFERENCE_SILENCE_LABEL, "label1"],
+        )
+        self.assertEqual(
+            self.mock_app.state.recording.utterances,
+            [REFERENCE_SILENCE_TEXT, "utterance1"],
+        )
         self.mock_app.active_recordings.set_data.assert_called_once_with(
-            ["label1"], ["utterance1"]
+            [REFERENCE_SILENCE_LABEL, "label1"],
+            [REFERENCE_SILENCE_TEXT, "utterance1"],
         )
         self.mock_app.active_recordings.get_all_takes.assert_called_once()
 

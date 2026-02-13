@@ -395,10 +395,8 @@ class Revoxx:
             lambda e: self.display_controller.toggle_info_panel(),
         )
 
-        # Clear selection with Escape
-        self.window.window.bind(
-            "<Escape>", lambda e: self._clear_spectrogram_selection()
-        )
+        # Escape: clear selection
+        self.window.window.bind("<Escape>", lambda e: self._handle_escape())
 
         # Second window shortcuts (Shift + key)
         self.window.window.bind(
@@ -450,6 +448,10 @@ class Revoxx:
             self.window.window.bind("<Command-Z>", lambda e: self._undo())
             self.window.window.bind("<Shift-Command-z>", lambda e: self._redo())
             self.window.window.bind("<Shift-Command-Z>", lambda e: self._redo())
+            # Replace with reference silence
+            self.window.window.bind(
+                "<Command-0>", lambda e: self._replace_with_reference_silence()
+            )
 
         # Session keys
         self.window.window.bind("<Control-n>", lambda e: self._new_session())
@@ -461,6 +463,10 @@ class Revoxx:
         self.window.window.bind("<Control-Z>", lambda e: self._undo())
         self.window.window.bind("<Shift-Control-z>", lambda e: self._redo())
         self.window.window.bind("<Shift-Control-Z>", lambda e: self._redo())
+        # Replace with reference silence (Control for Linux/Windows)
+        self.window.window.bind(
+            "<Control-0>", lambda e: self._replace_with_reference_silence()
+        )
 
         # Window close event
         self.window.window.protocol("WM_DELETE_WINDOW", self._quit)
@@ -554,6 +560,11 @@ class Revoxx:
         self.edit_controller.redo()
         return "break"
 
+    def _replace_with_reference_silence(self):
+        """Handle replace with reference silence keyboard shortcut."""
+        self.edit_controller.replace_with_reference_silence()
+        return "break"
+
     def _perform_cleanup(self):
         """Perform cleanup when signals are received or on emergency exit."""
         # Only do critical cleanup - no UI interactions
@@ -622,6 +633,10 @@ class Revoxx:
 
         # Exit
         sys.exit(0)
+
+    def _handle_escape(self) -> None:
+        """Handle escape key - clear selection."""
+        self._clear_spectrogram_selection()
 
     def _clear_spectrogram_selection(self) -> None:
         """Clear marker and selection in spectrogram."""
