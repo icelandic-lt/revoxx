@@ -395,10 +395,8 @@ class Revoxx:
             lambda e: self.display_controller.toggle_info_panel(),
         )
 
-        # Clear selection with Escape
-        self.window.window.bind(
-            "<Escape>", lambda e: self._clear_spectrogram_selection()
-        )
+        # Escape: clear selection
+        self.window.window.bind("<Escape>", lambda e: self._handle_escape())
 
         # Second window shortcuts (Shift + key)
         self.window.window.bind(
