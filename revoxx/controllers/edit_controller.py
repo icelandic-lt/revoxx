@@ -6,7 +6,9 @@ inserting, and replacing audio segments within recordings.
 
 from typing import TYPE_CHECKING, Optional
 
-from ..constants import MsgType, FileConstants
+import numpy as np
+
+from ..constants import MsgType, FileConstants, AudioConstants
 from ..audio.editor import AudioEditor
 from ..audio.undo_stack import UndoStack
 from ..audio.edit_commands import (
@@ -14,9 +16,9 @@ from ..audio.edit_commands import (
     TrashClipCommand,
     RestoreFromTrashCommand,
 )
+from .session_controller import REFERENCE_SILENCE_LABEL
 
 if TYPE_CHECKING:
-    import numpy as np
     from ..app import Revoxx
 
 
@@ -160,18 +162,7 @@ class EditController:
             )
             self.undo_stack.push(cmd)
 
-            # Clear selection
-            selection_state.clear_all()
-            if self.app.window and self.app.window.mel_spectrogram:
-                self.app.window.mel_spectrogram.selection_visualizer.clear()
-
-            # Refresh display
-            self.app.display_controller.refresh_recording_preserving_zoom()
-
-            # Set marker at deletion position so user can review the edit
-            if deletion_position is not None:
-                self._set_marker(deletion_position)
-
+            self._finalize_edit(deletion_position)
             self.app.display_controller.set_status(
                 "Selection deleted", MsgType.TEMPORARY
             )
@@ -644,6 +635,144 @@ class EditController:
         """Play system beep sound."""
         if self.app.window:
             self.app.window.window.bell()
+
+    def replace_with_reference_silence(self) -> bool:
+        """Replace the currently selected range with reference silence.
+
+        Reference silence is loaded from the current session (first utterance
+        with label REFERENCE_SILENCE_LABEL). If no reference silence has been
+        recorded, digital silence (zeros) is used and a warning is displayed.
+
+        Returns:
+            True if replacement was successful, False otherwise
+        """
+        selection_state = self._get_selection_state()
+        if not selection_state or not selection_state.has_selection:
+            self.app.display_controller.set_status(
+                "No selection to replace", MsgType.TEMPORARY
+            )
+            return False
+
+        label, take, filepath = self._get_current_recording_info()
+        if not filepath:
+            self.app.display_controller.set_status(
+                "No recording to edit", MsgType.TEMPORARY
+            )
+            return False
+
+        try:
+            audio_before, sr = self.app.file_manager.load_audio(filepath)
+            sample_range = selection_state.get_selection_samples(sr)
+            if not sample_range:
+                return False
+
+            start_sample, end_sample = sample_range
+
+            # Save selection info before clearing
+            sel_start = selection_state.selection_start
+            sel_end = selection_state.selection_end
+
+            # Get reference silence (with crossfade compensation)
+            selection_samples = end_sample - start_sample
+            replacement, has_reference = self._get_reference_silence_for_selection(
+                selection_samples, sr
+            )
+
+            audio_after = AudioEditor.replace_range(
+                audio_before, replacement, start_sample, end_sample, sr
+            )
+
+            # Save and create undo command
+            subtype = self._get_audio_subtype()
+            self.app.file_manager.save_audio(filepath, audio_after, sr, subtype)
+
+            duration_sec = selection_samples / sr
+            cmd = AudioSnapshotCommand(
+                filepath=filepath,
+                sample_rate=sr,
+                audio_before=audio_before.copy(),
+                audio_after=audio_after.copy(),
+                subtype=subtype,
+                selection_start_time=sel_start,
+                selection_end_time=sel_end,
+                marker_after_edit=sel_start,
+                operation_description=f"Replace with Silence ({duration_sec:.2f}s)",
+            )
+            self.undo_stack.push(cmd)
+
+            self._finalize_edit(sel_start)
+            if has_reference:
+                self.app.display_controller.set_status(
+                    "Replaced with reference silence", MsgType.TEMPORARY
+                )
+            else:
+                self.app.display_controller.set_status(
+                    "Warning: No reference silence - using digital silence",
+                    MsgType.TEMPORARY,
+                )
+
+            return True
+
+        except (OSError, ValueError) as e:
+            self.app.display_controller.set_status(
+                f"Error replacing with silence: {e}", MsgType.ERROR
+            )
+            return False
+
+    def _get_reference_silence_for_selection(
+        self, selection_samples: int, sample_rate: int
+    ) -> tuple:
+        """Get reference silence audio to replace a selection.
+
+        Loads the reference silence from the current session, compensates
+        for crossfade sample loss, and loops if necessary.
+
+        Args:
+            selection_samples: Number of samples in the selection
+            sample_rate: Target sample rate
+
+        Returns:
+            Tuple of (audio_array, has_reference) where has_reference is True
+            if actual reference silence was used, False if digital silence
+        """
+        # Compensate for crossfade: replace_range() consumes extra samples
+        fade_samples = int(AudioConstants.CROSSFADE_MS * sample_rate / 1000)
+        target_samples = selection_samples + 2 * fade_samples
+
+        # Check if reference silence recording exists in session
+        ref_take = self.app.state.recording.get_current_take(REFERENCE_SILENCE_LABEL)
+        if ref_take == 0:
+            return np.zeros(target_samples, dtype=np.float32), False
+
+        ref_filepath = self.app.file_manager.get_recording_path(
+            REFERENCE_SILENCE_LABEL, ref_take
+        )
+        if not ref_filepath.exists():
+            return np.zeros(target_samples, dtype=np.float32), False
+
+        try:
+            ref_audio, _ = self.app.file_manager.load_audio(ref_filepath)
+            result = AudioEditor.loop_audio_for_duration(
+                ref_audio, target_samples, sample_rate
+            )
+            return result, True
+        except (OSError, ValueError):
+            return np.zeros(target_samples, dtype=np.float32), False
+
+    def _finalize_edit(self, marker_position: float = None) -> None:
+        """Clear selection and refresh display after an edit operation.
+
+        Args:
+            marker_position: Optional position to set marker at after edit
+        """
+        selection_state = self._get_selection_state()
+        if selection_state:
+            selection_state.clear_all()
+        if self.app.window and self.app.window.mel_spectrogram:
+            self.app.window.mel_spectrogram.selection_visualizer.clear()
+        self.app.display_controller.refresh_recording_preserving_zoom()
+        if marker_position is not None:
+            self._set_marker(marker_position)
 
     def _get_audio_subtype(self) -> str:
         """Get audio subtype based on current config.

@@ -106,6 +106,7 @@ It's important to calibrate your input levels before starting the recording sess
 | **⌘/Ctrl+D**   | Delete the current take (it moves to trash folder subdirectory) |
 | **⌘/Ctrl+Z**   | Undo last edit operation                                        |
 | **⇧⌘/⇧Ctrl+Z** | Redo last undone operation                                      |
+| **⌘/Ctrl+0**   | Replace selection with reference silence                        |
 | **↑/↓**        | Navigate between utterances in the list                         |
 | **←/→**        | Navigate between different takes of the current utterance       |
 | **⌘/Ctrl+U**   | Change the utterance ordering method                            |
@@ -194,7 +195,7 @@ Revoxx allows you to edit recordings directly without leaving the application. T
 3. Record the replacement audio and press **Space** again to stop.
 4. The selection will be replaced with your new recording, using crossfades for smooth transitions.
 
-**Note:** All editing operations are applied directly to the current take. The original audio is modified, so use these features carefully.
+**Note:** All editing operations are applied directly to the current take. You can undo up to 10 operations using **⌘/Ctrl+Z**.
 
 **Tip:** After inserting or replacing audio, the new portion is automatically selected so you can immediately press **P** to review it.
 
@@ -207,6 +208,35 @@ Revoxx supports multiple undo/redo for all editing operations:
 - You can also access these commands from the **Edit** menu.
 
 The undo history is session-based and holds up to 10 operations for the current utterance.
+
+#### Reference Silence
+
+Reference silence allows you to replace unwanted sounds (coughs, clicks, background noise) with actual room silence from your recording environment. This produces more natural results than using digital silence (zeros).
+
+##### Recording Reference Silence
+
+Each session has a dedicated "Reference Silence" entry as the first utterance (Index 0):
+
+1. Navigate to **View → Reference Silence** (or use the Up arrow until you reach the first entry showing "Reference Silence")
+2. Press **Space** to record room silence (aim for at least 5 seconds)
+3. Press **Space** again to stop recording
+4. Navigate back to your utterances using the Down arrow
+
+**Tips:**
+- Record reference silence with the same microphone setup and room conditions as your main recordings.
+- If you change recording conditions (different room, microphone position, etc.), consider re-recording the reference silence.
+- Multiple takes are supported - the most recent take will be used for replacements.
+
+##### Replacing Audio with Reference Silence
+
+1. Navigate to any utterance with a recording
+2. Create a selection by clicking and dragging over the unwanted sound
+3. Press **⌘/Ctrl+0** to replace the selection with reference silence
+4. The replacement is seamlessly crossfaded at boundaries to avoid clicks
+
+If no reference silence has been recorded in this session, digital silence (zeros) will be used instead and a warning message will appear.
+
+**Note:** The reference silence is session-specific. Each session maintains its own reference silence recording, ensuring it matches the acoustic conditions of that session.
 
 ## 4. Multi-Screen Setup
 

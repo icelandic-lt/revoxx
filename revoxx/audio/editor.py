@@ -289,3 +289,103 @@ class AudioEditor:
         max_fade = selection_samples // 2
 
         return min(fade_from_config, max_fade)
+
+    @staticmethod
+    def loop_audio_for_duration(
+        audio: np.ndarray, target_samples: int, sample_rate: int
+    ) -> np.ndarray:
+        """Loop audio to achieve target duration with cross-fade at splice points.
+
+        If the source audio is longer than needed, it is trimmed.
+        If shorter, it is looped with equal-power cross-fade at each loop point.
+
+        Args:
+            audio: Source audio to loop
+            target_samples: Target number of samples
+            sample_rate: Audio sample rate in Hz
+
+        Returns:
+            Audio array of exactly target_samples length
+        """
+        if len(audio) == 0:
+            return np.zeros(target_samples, dtype=np.float32)
+
+        # If source is longer than needed, just trim
+        if len(audio) >= target_samples:
+            return audio[:target_samples].astype(np.float32)
+
+        # Calculate fade samples
+        fade_samples = int(AudioConstants.CROSSFADE_MS * sample_rate / 1000)
+
+        # Cap fade at half the source length
+        max_fade = len(audio) // 2
+        fade_samples = min(fade_samples, max_fade)
+
+        if fade_samples < 2:
+            # Too short for cross-fade, just tile
+            repeats = (target_samples // len(audio)) + 1
+            return np.tile(audio, repeats)[:target_samples].astype(np.float32)
+
+        # Build result by looping with cross-fade
+        result = []
+        remaining = target_samples
+
+        while remaining > 0:
+            if len(result) == 0:
+                # First iteration: add full audio (minus fade region at end)
+                if remaining >= len(audio):
+                    result.append(audio[:-fade_samples].copy())
+                    remaining -= len(audio) - fade_samples
+                else:
+                    result.append(audio[:remaining].copy())
+                    remaining = 0
+            else:
+                # Subsequent iterations: cross-fade start with previous end
+                if remaining >= len(audio):
+                    # Cross-fade region
+                    crossfade = AudioEditor._equal_power_crossfade(
+                        audio[-fade_samples:], audio[:fade_samples], fade_samples
+                    )
+                    result.append(crossfade)
+                    remaining -= fade_samples
+
+                    # Middle section (if any)
+                    middle_samples = len(audio) - 2 * fade_samples
+                    if middle_samples > 0:
+                        if remaining >= middle_samples:
+                            result.append(audio[fade_samples:-fade_samples].copy())
+                            remaining -= middle_samples
+                        else:
+                            result.append(
+                                audio[fade_samples : fade_samples + remaining].copy()
+                            )
+                            remaining = 0
+                else:
+                    # Final partial iteration
+                    crossfade = AudioEditor._equal_power_crossfade(
+                        audio[-fade_samples:], audio[:fade_samples], fade_samples
+                    )
+                    if remaining >= fade_samples:
+                        result.append(crossfade)
+                        remaining -= fade_samples
+                        if remaining > 0:
+                            take = min(remaining, len(audio) - fade_samples)
+                            result.append(
+                                audio[fade_samples : fade_samples + take].copy()
+                            )
+                            remaining -= take
+                    else:
+                        result.append(crossfade[:remaining].copy())
+                        remaining = 0
+
+        # Concatenate all parts
+        output = np.concatenate(result)
+
+        # Ensure exact length
+        if len(output) > target_samples:
+            output = output[:target_samples]
+        elif len(output) < target_samples:
+            # Pad with zeros if somehow short
+            output = np.pad(output, (0, target_samples - len(output)))
+
+        return output.astype(np.float32)

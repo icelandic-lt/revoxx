@@ -283,6 +283,14 @@ class ApplicationMenu:
             accelerator="F10",
         )
 
+        view_menu.add_separator()
+
+        # Reference Silence
+        view_menu.add_command(
+            label="Reference Silence...",
+            command=self._show_reference_silence,
+        )
+
     def _create_settings_menu(self) -> None:
         """Create the Settings menu."""
         settings_menu = tk.Menu(
@@ -574,6 +582,10 @@ class ApplicationMenu:
         new_state = self.app.display_controller.toggle_fullscreen()
         self.menu_vars["fullscreen"].set(new_state)
         self.app.settings_manager.update_setting("fullscreen", new_state)
+
+    def _show_reference_silence(self) -> None:
+        """Navigate to reference silence utterance (Index 0)."""
+        self.app.navigation_controller.find_utterance(0)
 
     def _toggle_second_window(self) -> None:
         """Toggle second window on/off."""
