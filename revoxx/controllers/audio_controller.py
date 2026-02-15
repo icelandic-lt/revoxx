@@ -6,6 +6,7 @@ and manages the overall audio workflow.
 """
 
 from pathlib import Path
+from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional, Callable
 
 from ..constants import UIConstants, MsgType
@@ -159,12 +160,49 @@ class AudioController:
         else:
             self.start_recording()
 
+    def _check_recording_compatibility(self) -> bool:
+        """Check if the current input device supports the session's audio settings.
+
+        Returns:
+            True if recording can proceed, False if incompatible
+        """
+        session = self.app.current_session
+        if not session or not session.audio_config:
+            return True
+
+        device_manager = get_device_manager()
+        input_device = self.app.config.audio.input_device
+        compatible = device_manager.check_device_compatibility(
+            input_device,
+            self.app.config.audio.sample_rate,
+            self.app.config.audio.bit_depth,
+            self.app.config.audio.channels,
+        )
+
+        if not compatible:
+            device_name = input_device or "System Default"
+            messagebox.showerror(
+                "Recording Not Possible",
+                f"The input device '{device_name}' does not support "
+                f"{self.app.config.audio.sample_rate}Hz/"
+                f"{self.app.config.audio.bit_depth}bit.\n\n"
+                "Please select a compatible input device in "
+                "Settings > Device > Input Device.",
+                parent=self.app.window.window,
+            )
+            return False
+
+        return True
+
     def start_recording(self) -> None:
         """Start recording.
 
         If a selection or marker is active and a recording exists,
         prepares for insert/replace mode.
         """
+        if not self._check_recording_compatibility():
+            return
+
         # Check for insert/replace mode based on selection state
         # Only if there's an existing recording to edit
         selection_state = self._get_selection_state()

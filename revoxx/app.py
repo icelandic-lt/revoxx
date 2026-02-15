@@ -209,6 +209,9 @@ class Revoxx:
                 print(f"Error loading session: {e}")
                 traceback.print_exc()
 
+        # Sync device menu checkmarks after menu + session are both ready
+        self.device_controller.sync_menu_state()
+
         # Show window
         self.window.window.deiconify()
 

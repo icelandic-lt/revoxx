@@ -158,10 +158,6 @@ class SessionManager:
 
         session = Session.load(session_dir)
 
-        # Validate audio configuration against current device
-        if session.audio_config:
-            self._validate_audio_config(session.audio_config)
-
         # Update recent sessions
         self._add_to_recent_sessions(session_dir)
 

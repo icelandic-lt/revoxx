@@ -119,43 +119,66 @@ class DeviceManager:
                 return dev["name"]
         return None
 
-    @staticmethod
-    def get_default_input_device() -> Optional[int]:
+    def get_default_input_device(self) -> Optional[int]:
         """Get the system's default input device index.
 
         Returns:
             Default input device index or None
         """
-        try:
-            default = sd.default.device
-            if isinstance(default, (list, tuple)) and len(default) == 2:
-                in_idx = default[0]
-                if in_idx is not None and in_idx >= 0:
-                    return in_idx
-        except (AttributeError, IndexError, TypeError):
-            pass
-        return None
+        in_idx, _ = self.get_default_device_indices()
+        return in_idx
 
-    @staticmethod
-    def get_default_device_indices() -> Tuple[Optional[int], Optional[int]]:
-        """Get system default (input_idx, output_idx) from sounddevice.
+    def get_default_device_indices(self) -> Tuple[Optional[int], Optional[int]]:
+        """Get system default (input_idx, output_idx).
+
+        First checks sd.default.device for user-configured defaults.
+        Falls back to querying PortAudio system defaults via
+        sd.query_devices(kind=...) when sd.default.device is [-1, -1].
 
         Returns:
             Tuple of (input_index, output_index), may contain None values
         """
+        in_idx = None
+        out_idx = None
+
+        # Check user-configured defaults
         try:
             default = sd.default.device
             if isinstance(default, (list, tuple)) and len(default) == 2:
-                in_idx = (
-                    default[0] if default[0] is not None and default[0] >= 0 else None
-                )
-                out_idx = (
-                    default[1] if default[1] is not None and default[1] >= 0 else None
-                )
-                return in_idx, out_idx
+                if default[0] is not None and int(default[0]) >= 0:
+                    in_idx = int(default[0])
+                if default[1] is not None and int(default[1]) >= 0:
+                    out_idx = int(default[1])
         except Exception:
             pass
-        return None, None
+
+        # Resolve PortAudio system defaults for unresolved indices
+        if in_idx is None:
+            in_idx = self._resolve_default_device("input")
+        if out_idx is None:
+            out_idx = self._resolve_default_device("output")
+
+        return in_idx, out_idx
+
+    def _resolve_default_device(self, kind: str) -> Optional[int]:
+        """Resolve PortAudio system default device index by kind.
+
+        Args:
+            kind: 'input' or 'output'
+
+        Returns:
+            Device index or None if no default device exists
+        """
+        try:
+            default_info = sd.query_devices(kind=kind)
+            name = default_info.get("name")
+            hostapi = default_info.get("hostapi")
+            for dev in self._all_devices:
+                if dev["name"] == name and dev["hostapi"] == hostapi:
+                    return dev["index"]
+        except (sd.PortAudioError, ValueError):
+            pass
+        return None
 
     def _get_device_index(self, device_name: Optional[str]) -> Optional[int]:
         """Get device index for the given device name.
