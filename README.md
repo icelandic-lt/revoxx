@@ -211,6 +211,20 @@ Development dependencies include:
 
 > **Note**: Black is pinned to version 25.x because Black 26+ requires Python 3.10+ and introduces the "2026 stable style" with different formatting rules. This ensures consistent formatting across all supported Python versions (3.9-3.13).
 
+### Tcl/Tk for standalone Python builds
+
+Standalone Python distributions (e.g. downloaded by `uv`) may not include Tcl/Tk data files. If Tkinter tests fail with `Cannot find a usable init.tcl`, set the `TCL_LIBRARY` environment variable to point to your installed Tcl library:
+
+```bash
+# macOS with Homebrew (ARM)
+export TCL_LIBRARY=/opt/homebrew/opt/tcl-tk/lib/tcl9.0
+
+# macOS with Homebrew (Intel)
+export TCL_LIBRARY=/usr/local/opt/tcl-tk/lib/tcl9.0
+```
+
+In PyCharm: Run > Edit Configurations > Environment variables.
+
 ### Running code quality checks
 
 ```bash
