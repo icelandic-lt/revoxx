@@ -47,7 +47,11 @@ class DialogController:
         Returns:
             Selected directory path or None if cancelled
         """
-        initial_dir = self.app.session_manager.get_default_base_dir()
+        last_session = self.app.session_manager.get_last_session()
+        if last_session:
+            initial_dir = last_session.parent
+        else:
+            initial_dir = self.app.session_manager.get_default_base_dir()
         dialog = OpenSessionDialog(self.app.window.window, initial_dir)
         return dialog.show()
 
