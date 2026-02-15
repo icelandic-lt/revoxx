@@ -3,6 +3,7 @@
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from ..utils.device_manager import get_device_manager
+from ..utils.tk_compat import deferred_warning
 from ..constants import FileConstants, MsgType
 
 if TYPE_CHECKING:
@@ -59,8 +60,15 @@ class DeviceController:
             if output_index is not None:
                 self.set_output_device(output_index, save=False)
             else:
-                # Device not found, use system default
+                # Device not found, use system default and persist the change
                 self.set_output_device(None, save=False)
+                self.app.settings_manager.update_setting("output_device", None)
+                deferred_warning(
+                    self.app.window.window,
+                    "Output Device Not Found",
+                    f"The saved output device '{saved_output}' is not available.\n\n"
+                    "Using default system device.",
+                )
 
         # Apply saved input channel mapping
         saved_input_mapping = self.app.settings_manager.get_setting(
@@ -127,6 +135,13 @@ class DeviceController:
             self.app.settings_manager.update_setting("input_device", device_name)
             # Update session settings
             self._update_session_input_device(index, device_changed)
+
+        # Sync menu checkmark (menu may not exist during startup)
+        devices_menu = getattr(
+            getattr(self.app, "menu", None), "audio_devices_menu", None
+        )
+        if devices_menu:
+            devices_menu.set_selected_input(index)
 
         # Update UI status
         self.app.window.set_status(f"Input device: {display_name}")
@@ -212,6 +227,13 @@ class DeviceController:
             self.app.settings_manager.update_setting("output_device", device_name)
             # Update session settings
             self._update_session_output_device(index, device_changed)
+
+        # Sync menu checkmark (menu may not exist during startup)
+        devices_menu = getattr(
+            getattr(self.app, "menu", None), "audio_devices_menu", None
+        )
+        if devices_menu:
+            devices_menu.set_selected_output(index)
 
         # Update UI status
         self.app.window.set_status(f"Output device: {display_name}")
@@ -321,6 +343,34 @@ class DeviceController:
                 return device["index"]
 
         return None
+
+    def sync_menu_state(self) -> None:
+        """Sync device menu checkmarks with current device configuration.
+
+        Call this after both menu creation and session loading are complete,
+        since apply_saved_settings() runs before the menu exists.
+        """
+        devices_menu = getattr(
+            getattr(self.app, "menu", None), "audio_devices_menu", None
+        )
+        if not devices_menu:
+            return
+
+        device_manager = get_device_manager()
+
+        input_index = None
+        if self.app.config.audio.input_device:
+            input_index = device_manager.get_device_index_by_name(
+                self.app.config.audio.input_device
+            )
+        devices_menu.set_selected_input(input_index)
+
+        output_index = None
+        if self.app.config.audio.output_device:
+            output_index = device_manager.get_device_index_by_name(
+                self.app.config.audio.output_device
+            )
+        devices_menu.set_selected_output(output_index)
 
     @staticmethod
     def refresh_devices() -> None:
@@ -471,45 +521,12 @@ class DeviceController:
                         self.set_input_channel_mapping(None, save=False)
                 else:
                     # Device not found, fallback to default
-                    print(
-                        f"Warning: Input device '{session_config.input_device}' not found, using default"
-                    )
-                    self.app.window.set_status("Input device not found, using default")
                     self.set_input_device(None, save=False)
-                    self.set_input_channel_mapping(None, save=False)
-
-        # Apply output device (if configured)
-        if hasattr(session_config, "output_device") and session_config.output_device:
-            if session_config.output_device == "default":
-                # Use system default (None represents system default)
-                self.set_output_device(None, save=False)
-                self.set_output_channel_mapping(None, save=False)
-            else:
-                # Try to find the saved device
-                device_index = device_manager.get_device_index_by_name(
-                    session_config.output_device
-                )
-
-                if device_index is not None:
-                    # Device found, apply it
-                    self.set_output_device(device_index, save=False)
-
-                    # Apply channel mapping only if device matches
-                    if (
-                        hasattr(session_config, "output_channel_mapping")
-                        and session_config.output_channel_mapping
-                    ):
-                        # TODO: Validate channel mapping against device capabilities
-                        self.set_output_channel_mapping(
-                            session_config.output_channel_mapping, save=False
-                        )
-                    else:
-                        self.set_output_channel_mapping(None, save=False)
-                else:
-                    # Device not found, fallback to default
-                    print(
-                        f"Warning: Output device '{session_config.output_device}' not found, using default"
+                    deferred_warning(
+                        self.app.window.window,
+                        "Input Device Not Found",
+                        f"The session's input device "
+                        f"'{session_config.input_device}' is not available.\n\n"
+                        "Using default system device.",
                     )
-                    self.app.window.set_status("Output device not found, using default")
-                    self.set_output_device(None, save=False)
-                    self.set_output_channel_mapping(None, save=False)
+                    self.set_input_channel_mapping(None, save=False)

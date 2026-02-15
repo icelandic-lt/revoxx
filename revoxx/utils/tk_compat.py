@@ -1,6 +1,7 @@
 """Tkinter compatibility utilities for Tcl/Tk 8.6 and 9.x."""
 
 import tkinter as tk
+from tkinter import messagebox
 
 
 def trace_var_write(var: tk.Variable, callback) -> str:
@@ -41,3 +42,33 @@ def untrace_var_write(var: tk.Variable, trace_id: str) -> None:
     except (AttributeError, tk.TclError):
         # Tcl/Tk 8.6 syntax
         var.trace_vdelete("w", trace_id)
+
+
+def deferred_warning(parent: tk.Widget, title: str, message: str) -> None:
+    """Show a warning messagebox deferred to the next event loop cycle.
+
+    Use this instead of messagebox.showwarning() when the parent window
+    may not be visible yet (e.g. during startup before deiconify).
+
+    Args:
+        parent: The parent widget (typically the main window)
+        title: Dialog title
+        message: Warning message text
+    """
+    parent.after(0, lambda: messagebox.showwarning(title, message, parent=parent))
+
+
+def clear_menu(menu: tk.Menu) -> None:
+    """Clear all items from a menu, safe for empty menus.
+
+    In some Tcl/Tk versions, menu.delete(0, END) on an empty menu
+    raises TclError because menu.index("end") returns "" instead
+    of None.
+
+    Args:
+        menu: The Tkinter menu to clear
+    """
+    try:
+        menu.delete(0, tk.END)
+    except tk.TclError:
+        pass

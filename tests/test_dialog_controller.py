@@ -57,6 +57,9 @@ class TestDialogController(unittest.TestCase):
         self.mock_app.state.recording.labels = ["label1", "label2"]
         self.mock_app.file_manager = Mock()
         self.mock_app.session_manager = Mock()
+        self.mock_app.session_manager.get_last_session = Mock(
+            return_value=Path("/test/sessions/my_session.revoxx")
+        )
         self.mock_app.session_manager.get_default_base_dir = Mock(
             return_value=Path("/test/sessions")
         )

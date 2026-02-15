@@ -16,6 +16,7 @@ from ..level_meter.config import RecordingStandard, get_standard_description
 from ..dialogs.dataset_dialog import DatasetDialog
 from .audio_devices import AudioDevicesMenuBuilder
 from ...utils.device_manager import get_device_manager
+from ...utils.tk_compat import clear_menu
 
 if TYPE_CHECKING:
     from ...app import Revoxx
@@ -695,7 +696,7 @@ high-quality speech datasets"""
         if not self.recent_menu:
             return
 
-        self.recent_menu.delete(0, tk.END)
+        clear_menu(self.recent_menu)
 
         recent_sessions = self.app.session_manager.get_recent_sessions()
 

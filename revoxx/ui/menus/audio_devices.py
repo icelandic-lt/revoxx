@@ -13,6 +13,7 @@ from typing import Callable, Optional
 import tkinter as tk
 
 from ...utils.device_manager import get_device_manager
+from ...utils.tk_compat import clear_menu
 
 
 class AudioDevicesMenuBuilder:
@@ -87,7 +88,7 @@ class AudioDevicesMenuBuilder:
 
     def _build_menu(self) -> None:
         # Clear existing
-        self.device_menu.delete(0, tk.END)
+        clear_menu(self.device_menu)
 
         # Rescan command
         self.device_menu.add_command(label="Rescan Devices", command=self._on_rescan)
@@ -116,11 +117,14 @@ class AudioDevicesMenuBuilder:
         self._populate_output_channels(self._initial_output_mapping)
 
     def _populate_input_devices(self) -> None:
-        self.input_menu.delete(0, tk.END)
+        clear_menu(self.input_menu)
         selected = self.input_var.get()
         has_match = False
         device_manager = get_device_manager()
-        for dev in device_manager.get_input_devices():
+        devices = device_manager.get_input_devices()
+        if not devices:
+            self.input_menu.add_command(label="(no input devices)", state="disabled")
+        for dev in devices:
             idx = dev["index"]
             self.input_menu.add_radiobutton(
                 label=device_manager.format_device_label(dev),
@@ -137,7 +141,7 @@ class AudioDevicesMenuBuilder:
         self._populate_input_channels(None)
 
     def _populate_output_devices(self) -> None:
-        self.output_menu.delete(0, tk.END)
+        clear_menu(self.output_menu)
         selected = self.output_var.get()
         has_match = False
         device_manager = get_device_manager()
@@ -156,7 +160,7 @@ class AudioDevicesMenuBuilder:
         self._populate_output_channels(None)
 
     def _populate_input_channels(self, initial_mapping: Optional[list]) -> None:
-        self.input_channels_menu.delete(0, tk.END)
+        clear_menu(self.input_channels_menu)
         # Default option (no explicit mapping)
         self.input_channels_menu.add_radiobutton(
             label="Device default",
@@ -196,7 +200,7 @@ class AudioDevicesMenuBuilder:
             self.input_channels_menu.add_cascade(label="Stereo", menu=stereo_menu)
 
     def _populate_output_channels(self, initial_mapping: Optional[list]) -> None:
-        self.output_channels_menu.delete(0, tk.END)
+        clear_menu(self.output_channels_menu)
         self.output_channels_menu.add_radiobutton(
             label="Device default",
             value="default",
@@ -219,6 +223,30 @@ class AudioDevicesMenuBuilder:
                     value=f"mono:{ch}",
                     command=lambda c=ch: self._on_select_output_channels([c]),
                 )
+
+    def set_selected_input(self, index: Optional[int]) -> None:
+        """Update the input device selection in the menu.
+
+        Args:
+            index: Device index or None for system default
+        """
+        if index is None:
+            device_manager = get_device_manager()
+            def_in, _ = device_manager.get_default_device_indices()
+            index = def_in if def_in is not None else -1
+        self.input_var.set(index)
+
+    def set_selected_output(self, index: Optional[int]) -> None:
+        """Update the output device selection in the menu.
+
+        Args:
+            index: Device index or None for system default
+        """
+        if index is None:
+            device_manager = get_device_manager()
+            _, def_out = device_manager.get_default_device_indices()
+            index = def_out if def_out is not None else -1
+        self.output_var.set(index)
 
     def refresh(self) -> None:
         """Re-enumerate devices and rebuild submenus."""
