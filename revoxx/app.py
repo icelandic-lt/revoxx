@@ -221,7 +221,7 @@ class Revoxx:
 
         # Resume at last position if available
         if self.current_session:
-            self.navigation_controller.resume_at_last_recording()
+            self.navigation_controller.resume_session_position()
             self.display_controller.show_saved_recording_when_ready()
 
         # Start audio queue processing transfer thread
@@ -660,9 +660,9 @@ class Revoxx:
 
         # Save current session state and remember it for next start
         if self.current_session:
-            # Save session state
-            if hasattr(self.current_session, "save"):
-                self.current_session.save()
+            # Remember current navigation position
+            self.current_session.last_viewed_index = self.state.recording.current_index
+            self.current_session.save()
             self.settings_manager.update_setting(
                 "last_session_path", str(self.current_session.session_dir)
             )

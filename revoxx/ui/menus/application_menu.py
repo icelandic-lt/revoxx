@@ -324,6 +324,18 @@ class ApplicationMenu:
             command=self._show_reference_silence,
         )
 
+        view_menu.add_separator()
+
+        # Go to Last Recorded
+        view_menu.add_command(
+            label="Go to Last Recorded",
+            command=self._go_to_last_recorded,
+        )
+
+    def _go_to_last_recorded(self) -> None:
+        """Navigate to the last recorded utterance."""
+        self.app.navigation_controller.go_to_last_recorded()
+
     def _create_settings_menu(self) -> None:
         """Create the Settings menu."""
         settings_menu = tk.Menu(

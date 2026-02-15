@@ -194,45 +194,74 @@ class NavigationController:
             if self.app.window.info_panel_visible:
                 self.app.display_controller.update_info_panel()
 
-    def resume_at_last_recording(self) -> None:
-        """Resume at the last recorded utterance if available in session."""
+    def resume_session_position(self) -> None:
+        """Resume at the last viewed position, falling back to last recorded."""
         if not self.app.current_session:
             return
 
+        session = self.app.current_session
+        total = len(self.app.state.recording.utterances)
+
+        # Try last viewed position first
         if (
-            self.app.current_session.last_recorded_index is not None
-            and self.app.current_session.last_recorded_take is not None
+            session.last_viewed_index is not None
+            and 0 <= session.last_viewed_index < total
         ):
+            self.find_utterance(session.last_viewed_index)
+            current_label = self.app.state.recording.current_label
+            self.app.display_controller.set_status(f"Resumed at: {current_label}")
+            return
 
-            # Check if the index is valid
-            if (
-                0
-                <= self.app.current_session.last_recorded_index
-                < len(self.app.state.recording.utterances)
-            ):
-                self.find_utterance(self.app.current_session.last_recorded_index)
+        # Fall back to last recorded position
+        self._navigate_to_last_recorded()
 
-                # Now check if we need to set a specific take
-                current_label = self.app.state.recording.current_label
-                existing_takes = self.app.active_recordings.get_existing_takes(
-                    current_label
+    def go_to_last_recorded(self) -> None:
+        """Navigate to the last recorded utterance."""
+        if not self.app.current_session:
+            return
+
+        if self._navigate_to_last_recorded():
+            return
+
+        self.app.display_controller.set_status(
+            "No recorded utterance to navigate to", MsgType.TEMPORARY
+        )
+
+    def _navigate_to_last_recorded(self) -> bool:
+        """Navigate to the last recorded utterance and set its take.
+
+        Returns:
+            True if navigation was performed, False otherwise
+        """
+        session = self.app.current_session
+        if not session:
+            return False
+
+        if session.last_recorded_index is None or session.last_recorded_take is None:
+            return False
+
+        total = len(self.app.state.recording.utterances)
+        if not (0 <= session.last_recorded_index < total):
+            return False
+
+        self.find_utterance(session.last_recorded_index)
+
+        current_label = self.app.state.recording.current_label
+        existing_takes = self.app.active_recordings.get_existing_takes(current_label)
+
+        if session.last_recorded_take in existing_takes:
+            current_take = self.app.state.recording.get_current_take(current_label)
+            if current_take != session.last_recorded_take:
+                self.app.state.recording.set_displayed_take(
+                    current_label, session.last_recorded_take
                 )
+                self.app.display_controller.show_saved_recording()
+                self.update_take_status()
 
-                if self.app.current_session.last_recorded_take in existing_takes:
-                    # Set the specific take if it's different from what find_utterance set
-                    current_take = self.app.state.recording.get_current_take(
-                        current_label
-                    )
-                    if current_take != self.app.current_session.last_recorded_take:
-                        self.app.state.recording.set_displayed_take(
-                            current_label, self.app.current_session.last_recorded_take
-                        )
-                        self.app.display_controller.show_saved_recording()
-                        self.update_take_status()
-
-                self.app.display_controller.set_status(
-                    f"Resumed at last recording: {current_label}"
-                )
+        self.app.display_controller.set_status(
+            f"Last recording: {current_label}", MsgType.TEMPORARY
+        )
+        return True
 
     def get_display_position(self, actual_index: int) -> int:
         """Get the display position for an actual index.

@@ -205,35 +205,42 @@ class TestNavigationController(unittest.TestCase):
 
         self.mock_app.audio_controller.stop_recording.assert_called_once()
 
-    def test_resume_at_last_recording_with_valid_session(self):
-        """Test resuming at last recording with valid session data."""
+    def test_resume_session_position_uses_last_viewed(self):
+        """Test resuming uses last viewed position when available."""
+        self.mock_app.current_session.last_viewed_index = 2
         self.mock_app.current_session.last_recorded_index = 1
         self.mock_app.current_session.last_recorded_take = 2
 
         with patch.object(self.controller, "find_utterance") as mock_find:
-            self.controller.resume_at_last_recording()
+            self.controller.resume_session_position()
+            mock_find.assert_called_once_with(2)
+
+    def test_resume_session_position_falls_back_to_last_recorded(self):
+        """Test resuming falls back to last recorded when no viewed index."""
+        self.mock_app.current_session.last_viewed_index = None
+        self.mock_app.current_session.last_recorded_index = 1
+        self.mock_app.current_session.last_recorded_take = 2
+
+        with patch.object(self.controller, "find_utterance") as mock_find:
+            self.controller.resume_session_position()
             mock_find.assert_called_once_with(1)
 
-        self.mock_app.display_controller.set_status.assert_called_with(
-            "Resumed at last recording: test_label"
-        )
-
-    def test_resume_at_last_recording_no_session(self):
+    def test_resume_session_position_no_session(self):
         """Test resuming when no session exists."""
         self.mock_app.current_session = None
 
-        self.controller.resume_at_last_recording()
+        self.controller.resume_session_position()
 
-        # Should return early
         self.mock_app.display_controller.set_status.assert_not_called()
 
-    def test_resume_at_last_recording_no_last_index(self):
-        """Test resuming when no last recorded index."""
+    def test_resume_session_position_no_saved_position(self):
+        """Test resuming when neither viewed nor recorded index exists."""
+        self.mock_app.current_session.last_viewed_index = None
         self.mock_app.current_session.last_recorded_index = None
+        self.mock_app.current_session.last_recorded_take = None
 
-        self.controller.resume_at_last_recording()
+        self.controller.resume_session_position()
 
-        # Should return early
         self.mock_app.display_controller.set_status.assert_not_called()
 
     def test_get_display_position(self):
