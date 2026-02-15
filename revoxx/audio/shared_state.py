@@ -11,7 +11,6 @@ from typing import Optional, Tuple, NamedTuple
 
 from revoxx.constants import AudioConstants
 
-
 # Status constants
 SHARED_STATUS_INVALID = 0  # Uninitialized state
 
