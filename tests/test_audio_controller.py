@@ -125,9 +125,12 @@ class TestAudioController(unittest.TestCase):
     def test_start_recording_calls_start_audio_capture(self):
         """Test that start_recording calls _start_audio_capture with 'recording' mode."""
         self.mock_app.state.recording.get_current_take = Mock(return_value=0)
-        with patch.object(self.controller, "_start_audio_capture") as mock_capture:
-            self.controller.start_recording()
-            mock_capture.assert_called_once_with("recording")
+        with patch.object(
+            self.controller, "_check_recording_compatibility", return_value=True
+        ):
+            with patch.object(self.controller, "_start_audio_capture") as mock_capture:
+                self.controller.start_recording()
+                mock_capture.assert_called_once_with("recording")
 
     def test_stop_recording_calls_stop_audio_capture(self):
         """Test that stop_recording calls _stop_audio_capture with 'recording' mode."""
@@ -323,6 +326,88 @@ class TestAudioController(unittest.TestCase):
 
         self.mock_app.queue_manager.stop_playback.assert_called_once()
         self.mock_app.display_controller.reset_level_meters.assert_called_once()
+
+    def test_check_recording_compatibility_no_session(self):
+        """When no session is loaded, recording is always compatible."""
+        self.mock_app.current_session = None
+
+        result = self.controller._check_recording_compatibility()
+
+        self.assertTrue(result)
+
+    def test_check_recording_compatibility_no_audio_config(self):
+        """When session has no audio_config, recording is always compatible."""
+        self.mock_app.current_session = Mock()
+        self.mock_app.current_session.audio_config = None
+
+        result = self.controller._check_recording_compatibility()
+
+        self.assertTrue(result)
+
+    @patch("revoxx.controllers.audio_controller.get_device_manager")
+    def test_check_recording_compatibility_device_ok(self, mock_get_dm):
+        """When device supports the audio settings, compatibility passes."""
+        mock_dm = Mock()
+        mock_dm.check_device_compatibility.return_value = True
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.current_session = Mock()
+        self.mock_app.current_session.audio_config = Mock()
+
+        result = self.controller._check_recording_compatibility()
+
+        self.assertTrue(result)
+
+    @patch("revoxx.controllers.audio_controller.messagebox")
+    @patch("revoxx.controllers.audio_controller.get_device_manager")
+    def test_check_recording_compatibility_device_incompatible(
+        self, mock_get_dm, mock_msgbox
+    ):
+        """When device is incompatible, show error and return False."""
+        mock_dm = Mock()
+        mock_dm.check_device_compatibility.return_value = False
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.current_session = Mock()
+        self.mock_app.current_session.audio_config = Mock()
+        self.mock_app.config.audio.input_device = "Scarlett 2i2"
+
+        result = self.controller._check_recording_compatibility()
+
+        self.assertFalse(result)
+        mock_msgbox.showerror.assert_called_once()
+        message = mock_msgbox.showerror.call_args[0][1]
+        self.assertIn("Scarlett 2i2", message)
+
+    @patch("revoxx.controllers.audio_controller.messagebox")
+    @patch("revoxx.controllers.audio_controller.get_device_manager")
+    def test_check_recording_compatibility_default_device_incompatible(
+        self, mock_get_dm, mock_msgbox
+    ):
+        """When default device (None) is incompatible, error shows 'System Default'."""
+        mock_dm = Mock()
+        mock_dm.check_device_compatibility.return_value = False
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.current_session = Mock()
+        self.mock_app.current_session.audio_config = Mock()
+        self.mock_app.config.audio.input_device = None
+
+        result = self.controller._check_recording_compatibility()
+
+        self.assertFalse(result)
+        mock_msgbox.showerror.assert_called_once()
+        message = mock_msgbox.showerror.call_args[0][1]
+        self.assertIn("System Default", message)
+
+    def test_start_recording_blocked_by_compatibility(self):
+        """When compatibility check fails, _start_audio_capture is not called."""
+        with patch.object(
+            self.controller, "_check_recording_compatibility", return_value=False
+        ):
+            with patch.object(self.controller, "_start_audio_capture") as mock_capture:
+                self.controller.start_recording()
+                mock_capture.assert_not_called()
 
 
 if __name__ == "__main__":

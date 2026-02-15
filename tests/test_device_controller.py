@@ -478,25 +478,17 @@ class TestDeviceController(unittest.TestCase):
         mock_config = Mock()
         mock_config.input_device = "Test Device"
         mock_config.input_channel_mapping = [0]
-        mock_config.output_device = "Output Device"
-        mock_config.output_channel_mapping = [1, 0]
 
         with patch.object(self.controller, "set_input_device") as mock_set_input:
-            with patch.object(self.controller, "set_output_device") as mock_set_output:
-                with patch.object(
-                    self.controller, "set_input_channel_mapping"
-                ) as mock_set_input_map:
-                    with patch.object(
-                        self.controller, "set_output_channel_mapping"
-                    ) as mock_set_output_map:
-                        # Execute
-                        self.controller.apply_session_audio_settings(mock_config)
+            with patch.object(
+                self.controller, "set_input_channel_mapping"
+            ) as mock_set_input_map:
+                # Execute
+                self.controller.apply_session_audio_settings(mock_config)
 
-                        # Verify devices were set
-                        mock_set_input.assert_called_once_with(3, save=False)
-                        mock_set_output.assert_called_once_with(3, save=False)
-                        mock_set_input_map.assert_called_once_with([0], save=False)
-                        mock_set_output_map.assert_called_once_with([1, 0], save=False)
+                # Verify input device was set (output device is not applied from session)
+                mock_set_input.assert_called_once_with(3, save=False)
+                mock_set_input_map.assert_called_once_with([0], save=False)
 
     @patch("revoxx.controllers.device_controller.get_device_manager")
     def test_apply_session_audio_settings_with_missing_device(self, mock_get_dm):
@@ -515,15 +507,16 @@ class TestDeviceController(unittest.TestCase):
             with patch.object(
                 self.controller, "set_input_channel_mapping"
             ) as mock_set_input_map:
-                # Execute
-                self.controller.apply_session_audio_settings(mock_config)
+                with patch(
+                    "revoxx.controllers.device_controller.deferred_warning"
+                ) as mock_warn:
+                    # Execute
+                    self.controller.apply_session_audio_settings(mock_config)
 
-                # Verify fallback to default
-                mock_set_input.assert_called_once_with(None, save=False)
-                mock_set_input_map.assert_called_once_with(None, save=False)
-                self.mock_app.window.set_status.assert_called_with(
-                    "Input device not found, using default"
-                )
+                    # Verify fallback to default
+                    mock_set_input.assert_called_once_with(None, save=False)
+                    mock_set_input_map.assert_called_once_with(None, save=False)
+                    mock_warn.assert_called_once()
 
     @patch("revoxx.controllers.device_controller.get_device_manager")
     def test_apply_session_audio_settings_with_default_device(self, mock_get_dm):
@@ -543,6 +536,106 @@ class TestDeviceController(unittest.TestCase):
                 # Verify default was set
                 mock_set_input.assert_called_once_with(None, save=False)
                 mock_set_input_map.assert_called_once_with(None, save=False)
+
+    @patch("revoxx.controllers.device_controller.deferred_warning")
+    @patch("revoxx.controllers.device_controller.get_device_manager")
+    def test_apply_saved_output_not_found(self, mock_get_dm, mock_deferred_warning):
+        """When saved output device is gone, fall back to default and warn."""
+        mock_dm = Mock()
+        mock_dm.get_device_index_by_name.return_value = None
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.settings_manager.get_setting.side_effect = [
+            None,  # input_device
+            "Gone Speaker",  # output_device
+            None,  # input_channel_mapping
+            None,  # output_channel_mapping
+        ]
+
+        with patch.object(self.controller, "set_output_device") as mock_set_output:
+            self.controller.apply_saved_settings()
+
+            mock_set_output.assert_called_once_with(None, save=False)
+            self.mock_app.settings_manager.update_setting.assert_called_once_with(
+                "output_device", None
+            )
+            mock_deferred_warning.assert_called_once()
+
+    @patch("revoxx.controllers.device_controller.deferred_warning")
+    @patch("revoxx.controllers.device_controller.get_device_manager")
+    def test_apply_saved_input_not_found(self, mock_get_dm, mock_deferred_warning):
+        """When saved input device is gone, fall back to default without warning."""
+        mock_dm = Mock()
+        mock_dm.get_device_index_by_name.return_value = None
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.settings_manager.get_setting.side_effect = [
+            "Gone Mic",  # input_device
+            None,  # output_device
+            None,  # input_channel_mapping
+            None,  # output_channel_mapping
+        ]
+
+        with patch.object(self.controller, "set_input_device") as mock_set_input:
+            self.controller.apply_saved_settings()
+
+            mock_set_input.assert_called_once_with(None, save=False)
+            mock_deferred_warning.assert_not_called()
+
+    @patch("revoxx.controllers.device_controller.get_device_manager")
+    def test_sync_menu_state_both_none(self, mock_get_dm):
+        """When no devices are configured, pass None for both menu selections."""
+        mock_dm = Mock()
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.config.audio.input_device = None
+        self.mock_app.config.audio.output_device = None
+
+        mock_devices_menu = Mock()
+        self.mock_app.menu.audio_devices_menu = mock_devices_menu
+
+        self.controller.sync_menu_state()
+
+        mock_devices_menu.set_selected_input.assert_called_once_with(None)
+        mock_devices_menu.set_selected_output.assert_called_once_with(None)
+
+    @patch("revoxx.controllers.device_controller.get_device_manager")
+    def test_sync_menu_state_named_devices(self, mock_get_dm):
+        """When both devices have names, resolve indices and pass to menu."""
+        mock_dm = Mock()
+        mock_dm.get_device_index_by_name.side_effect = [3, 7]
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.config.audio.input_device = "USB Mic"
+        self.mock_app.config.audio.output_device = "HDMI Output"
+
+        mock_devices_menu = Mock()
+        self.mock_app.menu.audio_devices_menu = mock_devices_menu
+
+        self.controller.sync_menu_state()
+
+        mock_devices_menu.set_selected_input.assert_called_once_with(3)
+        mock_devices_menu.set_selected_output.assert_called_once_with(7)
+
+    def test_sync_menu_state_no_menu(self):
+        """When menu is None, return early without error."""
+        self.mock_app.menu = None
+
+        self.controller.sync_menu_state()
+
+    @patch("revoxx.controllers.device_controller.get_device_manager")
+    def test_set_input_device_no_menu(self, mock_get_dm):
+        """When menu is not yet created, device is still set without error."""
+        mock_dm = Mock()
+        mock_dm.get_device_name_by_index.return_value = "USB Mic"
+        mock_get_dm.return_value = mock_dm
+
+        self.mock_app.menu = None
+
+        self.controller.set_input_device(2)
+
+        self.assertEqual(self.mock_app.config.audio.input_device, "USB Mic")
+        self.mock_app.queue_manager.set_input_device.assert_called_with("USB Mic")
 
 
 if __name__ == "__main__":
