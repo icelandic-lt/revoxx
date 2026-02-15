@@ -278,6 +278,20 @@ The order in which utterances appear during recording can be customized to suit 
 
 For each sorting option, you can also choose the sort direction.
 
+### Flagging Utterances
+
+You can flag utterances that need attention or should be excluded from export:
+
+| Key            | Action                           |
+|----------------|----------------------------------|
+| **Shift+E**    | Toggle "Edit" flag (needs re-recording) |
+| **Shift+X**    | Toggle "Rejected" flag (exclude from export) |
+| **Shift+U**    | Clear flag                       |
+| **⌘/Ctrl+E**   | Jump to next "Edit" flagged utterance |
+| **⌘/Ctrl+X**   | Jump to next "Rejected" utterance |
+
+Flagged utterances show a colored indicator in the status bar. Flags are persisted in the session and survive application restarts. During dataset export, you can choose to skip rejected utterances.
+
 ### Finding Utterances
 
 When you need to locate specific utterances quickly:
@@ -325,6 +339,7 @@ Once you have completed recording, you can export your sessions into datasets su
 2. Choose which recording sessions you want to include in the dataset. You can select multiple sessions from any speaker. Datasets are combined by speaker name automatically.
 3. Configure the export options according to your needs:
    - T3 format is chosen automatically
+   - **Skip rejected utterances**: Enabled by default, excludes utterances flagged as "Rejected" from the export.
    - **VAD analysis**: If VAD support is installed, you can generate voice activity timestamps for each audio file.
 4. Click **Export** to create an organized dataset structure that's ready for TTS model training. The export process will handle file naming, metadata generation, and directory organization automatically.
 

@@ -161,7 +161,7 @@ class SessionController:
         self.app.menu.update_recent_sessions()
 
         # Resume at last position (like when starting the app)
-        self.app.navigation_controller.resume_at_last_recording()
+        self.app.navigation_controller.resume_session_position()
 
         # Show saved recording when spectrogram is ready
         self.app.display_controller.show_saved_recording_when_ready()

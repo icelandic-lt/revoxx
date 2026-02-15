@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import List, Optional
+from typing import List, Dict, Optional
 from .utterance_list_base import UtteranceListDialog, SortDirection
 
 
@@ -19,6 +19,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
         current_sort_column: str = "label",
         current_sort_direction: SortDirection = SortDirection.UP,
         current_index: Optional[int] = None,
+        utterance_flags: Dict[str, str] = None,
     ):
         """Initialize the utterance order dialog.
 
@@ -31,6 +32,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
             current_sort_column: Current sort column from session
             current_sort_direction: Current sort direction from session
             current_index: Currently selected utterance index to highlight
+            utterance_flags: Dict mapping labels to flag types
         """
         self.current_order = current_order or list(range(len(utterances)))
         self.original_order = list(self.current_order)  # Keep copy of original
@@ -50,6 +52,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
             default_sort=current_sort_column,
             default_sort_direction=current_sort_direction,
             current_index=current_index,
+            utterance_flags=utterance_flags,
         )
 
     def _create_info_frame(self, parent: ttk.Frame) -> None:

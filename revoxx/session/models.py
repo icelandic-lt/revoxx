@@ -161,9 +161,12 @@ class Session:
     # Sorting configuration
     sort_column: str = "label"  # Default: alphabetical by label
     sort_reverse: bool = False
-    # Last recorded utterance (to resume where left off)
+    # Last viewed/recorded utterance (to resume where left off)
+    last_viewed_index: Optional[int] = None
     last_recorded_index: Optional[int] = None
     last_recorded_take: Optional[int] = None
+    # Utterance flags (only flagged entries stored)
+    utterance_flags: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -189,11 +192,17 @@ class Session:
         data["sort_column"] = self.sort_column
         data["sort_reverse"] = self.sort_reverse
 
-        # Save last recorded utterance info
+        # Save last viewed/recorded utterance info
+        if self.last_viewed_index is not None:
+            data["last_viewed_index"] = self.last_viewed_index
         if self.last_recorded_index is not None:
             data["last_recorded_index"] = self.last_recorded_index
         if self.last_recorded_take is not None:
             data["last_recorded_take"] = self.last_recorded_take
+
+        # Save utterance flags (only when non-empty)
+        if self.utterance_flags:
+            data["utterance_flags"] = self.utterance_flags
 
         return data
 
@@ -233,9 +242,13 @@ class Session:
         session.sort_column = data.get("sort_column", "label")
         session.sort_reverse = data.get("sort_reverse", False)
 
-        # Load last recorded utterance info
+        # Load last viewed/recorded utterance info
+        session.last_viewed_index = data.get("last_viewed_index")
         session.last_recorded_index = data.get("last_recorded_index")
         session.last_recorded_take = data.get("last_recorded_take")
+
+        # Load utterance flags
+        session.utterance_flags = data.get("utterance_flags", {})
 
         # Handle legacy utterance_order for backwards compatibility
         if "utterance_order" in data and "sort_column" not in data:

@@ -255,10 +255,25 @@ class AudioDevicesMenuBuilder:
         self._populate_output_devices()
 
     def _on_rescan(self) -> None:
-        # Try to force PortAudio to refresh device list
         device_manager = get_device_manager()
+
+        # Remember current selections by name before PortAudio re-enumeration
+        old_input_name = device_manager.get_device_name_by_index(self.input_var.get())
+        old_output_name = device_manager.get_device_name_by_index(self.output_var.get())
+
+        # Force PortAudio to refresh device list (indices may change)
         device_manager.refresh()
-        # Optionally dump devices in debug mode
+
+        # Restore selections by name in the new device list
+        if old_input_name:
+            new_idx = device_manager.get_device_index_by_name(old_input_name)
+            if new_idx is not None:
+                self.input_var.set(new_idx)
+        if old_output_name:
+            new_idx = device_manager.get_device_index_by_name(old_output_name)
+            if new_idx is not None:
+                self.output_var.set(new_idx)
+
         if self.debug:
             device_manager.debug_dump_devices()
         # Notify parent to refresh audio processes

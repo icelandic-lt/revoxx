@@ -250,6 +250,15 @@ class DatasetDialog:
         self.include_vad_var = tk.BooleanVar(
             value=getattr(self.settings_manager.settings, "export_include_vad", False)
         )
+        self.skip_rejected_var = tk.BooleanVar(
+            value=getattr(self.settings_manager.settings, "export_skip_rejected", True)
+        )
+        ttk.Checkbutton(
+            options_frame,
+            text="Skip rejected utterances",
+            variable=self.skip_rejected_var,
+        ).pack(anchor=tk.W, pady=(2, 0))
+
         self.vad_checkbox = ttk.Checkbutton(
             options_frame,
             text="Include VAD analysis",
@@ -622,6 +631,9 @@ class DatasetDialog:
         self.settings_manager.update_setting(
             "export_include_vad", self.include_vad_var.get()
         )
+        self.settings_manager.update_setting(
+            "export_skip_rejected", self.skip_rejected_var.get()
+        )
 
     def _run_export(
         self, session_paths: List[Path], output_dir: Path, dataset_name: Optional[str]
@@ -660,6 +672,7 @@ class DatasetDialog:
                 session_paths,
                 dataset_name=dataset_name,
                 progress_callback=progress_callback,
+                skip_rejected=self.skip_rejected_var.get(),
             )
 
             progress_dialog.close()

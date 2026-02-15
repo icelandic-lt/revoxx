@@ -30,6 +30,7 @@ from .session import SessionManager, Session
 from .controllers import (
     AudioController,
     EditController,
+    FlagController,
     NavigationController,
     SessionController,
     DeviceController,
@@ -220,7 +221,7 @@ class Revoxx:
 
         # Resume at last position if available
         if self.current_session:
-            self.navigation_controller.resume_at_last_recording()
+            self.navigation_controller.resume_session_position()
             self.display_controller.show_saved_recording_when_ready()
 
         # Start audio queue processing transfer thread
@@ -236,6 +237,7 @@ class Revoxx:
         """Initialize all controllers."""
         self.audio_controller = AudioController(self)
         self.navigation_controller = NavigationController(self)
+        self.flag_controller = FlagController(self)
         self.session_controller = SessionController(self)
         self.device_controller = DeviceController(self)
         self.display_controller = DisplayController(self, self.window_manager)
@@ -283,6 +285,9 @@ class Revoxx:
             self.dialog_controller.show_utterance_order_dialog
         )
         self.app_callbacks["show_find_dialog"] = self.dialog_controller.show_find_dialog
+
+        # Flag callbacks
+        self.app_callbacks["get_flag"] = self.flag_controller.get_flag
 
     def _apply_saved_settings(self):
         """Apply saved settings to configuration."""
@@ -415,6 +420,38 @@ class Revoxx:
             lambda e: self._toggle_second_window_fullscreen(),
         )
 
+        # Flagging shortcuts (Shift+key to toggle flags)
+        self.window.window.bind(
+            f"<Shift-{KeyBindings.FLAG_NEEDS_EDIT}>",
+            lambda e: self.flag_controller.toggle_needs_edit(),
+        )
+        self.window.window.bind(
+            f"<Shift-{KeyBindings.FLAG_REJECTED}>",
+            lambda e: self.flag_controller.toggle_rejected(),
+        )
+        self.window.window.bind(
+            f"<Shift-{KeyBindings.FLAG_CLEAR}>",
+            lambda e: self.flag_controller.clear_flag(),
+        )
+
+        # Jump to flagged (Ctrl+key)
+        self.window.window.bind(
+            "<Control-e>",
+            lambda e: self.flag_controller.jump_to_next("needs_edit"),
+        )
+        self.window.window.bind(
+            "<Control-E>",
+            lambda e: self.flag_controller.jump_to_next("needs_edit"),
+        )
+        self.window.window.bind(
+            "<Control-x>",
+            lambda e: self.flag_controller.jump_to_next("rejected"),
+        )
+        self.window.window.bind(
+            "<Control-X>",
+            lambda e: self.flag_controller.jump_to_next("rejected"),
+        )
+
         # Session management with platform-specific modifiers
         if platform.system() == "Darwin":  # macOS uses Command
             self.window.window.bind("<Command-n>", lambda e: self._new_session())
@@ -454,6 +491,23 @@ class Revoxx:
             # Replace with reference silence
             self.window.window.bind(
                 "<Command-0>", lambda e: self._replace_with_reference_silence()
+            )
+            # Jump to flagged (Command+key on macOS)
+            self.window.window.bind(
+                "<Command-e>",
+                lambda e: self.flag_controller.jump_to_next("needs_edit"),
+            )
+            self.window.window.bind(
+                "<Command-E>",
+                lambda e: self.flag_controller.jump_to_next("needs_edit"),
+            )
+            self.window.window.bind(
+                "<Command-x>",
+                lambda e: self.flag_controller.jump_to_next("rejected"),
+            )
+            self.window.window.bind(
+                "<Command-X>",
+                lambda e: self.flag_controller.jump_to_next("rejected"),
             )
 
         # Session keys
@@ -606,9 +660,9 @@ class Revoxx:
 
         # Save current session state and remember it for next start
         if self.current_session:
-            # Save session state
-            if hasattr(self.current_session, "save"):
-                self.current_session.save()
+            # Remember current navigation position
+            self.current_session.last_viewed_index = self.state.recording.current_index
+            self.current_session.save()
             self.settings_manager.update_setting(
                 "last_session_path", str(self.current_session.session_dir)
             )

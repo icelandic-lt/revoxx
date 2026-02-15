@@ -284,16 +284,27 @@ class DisplayController:
             return ""
 
         if not self.app.active_recordings:
-            return label
+            status = label
+        else:
+            current_take = self.app.state.recording.get_current_take(label)
+            existing_takes = self.app.active_recordings.get_existing_takes(label)
 
-        current_take = self.app.state.recording.get_current_take(label)
-        existing_takes = self.app.active_recordings.get_existing_takes(label)
+            if existing_takes and current_take in existing_takes:
+                position = existing_takes.index(current_take) + 1
+                status = f"{label} - Take {position}/{len(existing_takes)}"
+            else:
+                status = label
 
-        if existing_takes and current_take in existing_takes:
-            position = existing_takes.index(current_take) + 1
-            return f"{label} - Take {position}/{len(existing_takes)}"
+        return status
 
-        return label
+    def update_flag_indicator(self, label: str = None) -> None:
+        """Update the flag indicator on all windows.
+
+        Args:
+            label: Utterance label to check, or None to clear
+        """
+        flag = self.app.flag_controller.get_flag(label) if label else None
+        self._for_each_window(lambda w: w.update_flag_indicator(flag))
 
     def set_status(self, status: str, msg_type: MsgType = MsgType.TEMPORARY) -> None:
         """Set the status bar text.

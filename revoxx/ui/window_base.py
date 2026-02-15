@@ -8,7 +8,7 @@ in both the main window and secondary windows.
 from typing import Optional
 import tkinter as tk
 
-from ..constants import UIConstants, MsgType, MsgConfig
+from ..constants import UIConstants, MsgType, MsgConfig, FlagType
 from .font_manager import FontManager
 from .emotion_indicator import EmotionLevelIndicator
 from .widget_initializer import WidgetInitializer
@@ -122,12 +122,27 @@ class WindowBase:
             fg=UIConstants.COLOR_TEXT_SECONDARY,
             bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
             font=(UIConstants.FONT_FAMILY_MONO[0], 14),
-            width=40,  # Fixed width to prevent layout shifts
-            anchor="w",  # Left-align text within the fixed width
+            anchor="w",
         )
         self.status_label.pack(
             side=tk.LEFT,
-            padx=UIConstants.FRAME_SPACING * 2,
+            padx=(UIConstants.FRAME_SPACING * 2, 0),
+            pady=UIConstants.FRAME_SPACING,
+        )
+
+        # Flag indicator (colored symbol next to status)
+        self.flag_var = tk.StringVar(value="")
+        self.flag_label = tk.Label(
+            self.info_frame,
+            textvariable=self.flag_var,
+            fg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 14, "bold"),
+            anchor="w",
+        )
+        self.flag_label.pack(
+            side=tk.LEFT,
+            padx=(4, 0),
             pady=UIConstants.FRAME_SPACING,
         )
 
@@ -562,12 +577,18 @@ class WindowBase:
         # Restore saved status
         self.status_var.set(self._saved_status)
 
+    FLAG_COLORS = {
+        "needs_edit": "COLOR_FLAG_EDIT",
+        "rejected": "COLOR_FLAG_REJECTED",
+    }
+
     def _update_default_status(self) -> None:
         """Update status with default utterance/take information."""
         # Get current utterance label
         current_label = getattr(self.recording_state, "current_label", None)
         if not current_label:
             self.status_var.set("")
+            self.update_flag_indicator(None)
             return
 
         # Check if we have takes
@@ -583,10 +604,38 @@ class WindowBase:
         )
 
         if total_takes > 0 and current_take > 0:
-            self.status_var.set(f"{current_label} - Take {current_take}/{total_takes}")
+            status = f"{current_label} - Take {current_take}/{total_takes}"
         else:
-            # Just show label
-            self.status_var.set(current_label)
+            status = current_label
+
+        self.status_var.set(status)
+
+        # Update flag indicator via callback
+        get_flag = self.app_callbacks.get("get_flag") if self.app_callbacks else None
+        if get_flag:
+            self.update_flag_indicator(get_flag(current_label))
+        else:
+            self.update_flag_indicator(None)
+
+    def update_flag_indicator(self, flag: str = None) -> None:
+        """Update the colored flag indicator label.
+
+        Args:
+            flag: Flag type string or None to clear
+        """
+        if flag:
+            display_text = FlagType.DISPLAY.get(flag, flag)
+            color_attr = self.FLAG_COLORS.get(flag)
+            color = (
+                getattr(UIConstants, color_attr)
+                if color_attr
+                else UIConstants.COLOR_TEXT_SECONDARY
+            )
+            self.flag_var.set(display_text)
+            self.flag_label.config(fg=color)
+        else:
+            self.flag_var.set("")
+            self.flag_label.config(fg=UIConstants.COLOR_BACKGROUND_SECONDARY)
 
     def update_label_with_filename(self, label: str, filename: str = None) -> None:
         """Update the label display with optional filename.
@@ -964,6 +1013,7 @@ class WindowBase:
                 fg=UIConstants.COLOR_TEXT_SECONDARY,
                 bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
             )
+            self.flag_label.configure(bg=UIConstants.COLOR_BACKGROUND_SECONDARY)
             self.rec_indicator.configure(
                 fg=UIConstants.COLOR_TEXT_INACTIVE,
                 bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
