@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from revoxx.controllers.device_controller import DeviceController
+from revoxx.ui.menus.audio_devices import AudioDevicesMenuBuilder
 
 
 class TestDeviceController(unittest.TestCase):
@@ -636,6 +637,147 @@ class TestDeviceController(unittest.TestCase):
 
         self.assertEqual(self.mock_app.config.audio.input_device, "USB Mic")
         self.mock_app.queue_manager.set_input_device.assert_called_with("USB Mic")
+
+
+class FakeVar:
+    """Minimal stand-in for tk.IntVar / tk.StringVar without a Tk root."""
+
+    def __init__(self, value=None, **kwargs):
+        self._value = value
+
+    def get(self):
+        return self._value
+
+    def set(self, value):
+        self._value = value
+
+
+class TestAudioDevicesMenuRescan(unittest.TestCase):
+    """Test that device menu rescan preserves selection by name."""
+
+    def _create_builder(self, mock_dm, input_index=1, output_index=-1):
+        """Create a minimal AudioDevicesMenuBuilder without Tk."""
+        builder = object.__new__(AudioDevicesMenuBuilder)
+        builder.input_var = FakeVar(input_index)
+        builder.output_var = FakeVar(output_index)
+        builder.input_menu = Mock()
+        builder.output_menu = Mock()
+        builder.input_channels_menu = Mock()
+        builder.output_channels_menu = Mock()
+        builder.input_channels_var = FakeVar("default")
+        builder.output_channels_var = FakeVar("default")
+        builder.on_select_input = None
+        builder.on_select_output = None
+        builder.on_select_input_channels = None
+        builder.on_select_output_channels = None
+        builder.on_rescan_devices = None
+        builder.debug = False
+        return builder
+
+    @patch("revoxx.ui.menus.audio_devices.get_device_manager")
+    def test_rescan_preserves_selection_when_indices_change(self, mock_get_dm):
+        """After rescan, selection follows device name even if index changed."""
+        mock_dm = Mock()
+        mock_dm.format_device_label.side_effect = lambda d: d["name"]
+        mock_get_dm.return_value = mock_dm
+
+        builder = self._create_builder(mock_dm, input_index=1, output_index=2)
+
+        # Before refresh: name lookup uses old device list
+        mock_dm.get_device_name_by_index.side_effect = lambda idx: {
+            1: "USB Mic",
+            2: "Speakers",
+        }.get(idx)
+
+        # After refresh: same devices but indices shifted
+        def do_refresh():
+            mock_dm.get_input_devices.return_value = [
+                {"index": 0, "name": "Built-in Mic"},
+                {"index": 5, "name": "USB Mic"},
+            ]
+            mock_dm.get_output_devices.return_value = [
+                {"index": 4, "name": "Speakers"},
+                {"index": 6, "name": "Headphones"},
+            ]
+            mock_dm.get_device_name_by_index.side_effect = lambda idx: {
+                0: "Built-in Mic",
+                5: "USB Mic",
+                4: "Speakers",
+                6: "Headphones",
+            }.get(idx)
+            mock_dm.get_device_index_by_name.side_effect = lambda name: {
+                "USB Mic": 5,
+                "Speakers": 4,
+            }.get(name)
+
+        mock_dm.refresh.side_effect = lambda: do_refresh()
+
+        builder._on_rescan()
+
+        self.assertEqual(builder.input_var.get(), 5)
+        self.assertEqual(builder.output_var.get(), 4)
+
+    @patch("revoxx.ui.menus.audio_devices.get_device_manager")
+    def test_rescan_clears_selection_when_device_removed(self, mock_get_dm):
+        """After rescan, selection is cleared if device disappeared."""
+        mock_dm = Mock()
+        mock_dm.format_device_label.side_effect = lambda d: d["name"]
+        mock_get_dm.return_value = mock_dm
+
+        builder = self._create_builder(mock_dm, input_index=1)
+
+        # Before refresh: name lookup finds the device
+        mock_dm.get_device_name_by_index.side_effect = lambda idx: {
+            1: "USB Mic",
+        }.get(idx)
+
+        # After refresh: device is gone
+        def do_refresh():
+            mock_dm.get_input_devices.return_value = [
+                {"index": 0, "name": "Built-in Mic"}
+            ]
+            mock_dm.get_output_devices.return_value = []
+            mock_dm.get_device_name_by_index.side_effect = lambda idx: {
+                0: "Built-in Mic",
+            }.get(idx)
+            mock_dm.get_device_index_by_name.side_effect = lambda name: {
+                "Built-in Mic": 0,
+            }.get(name)
+
+        mock_dm.refresh.side_effect = lambda: do_refresh()
+
+        builder._on_rescan()
+
+        self.assertEqual(builder.input_var.get(), -1)
+
+    @patch("revoxx.ui.menus.audio_devices.get_device_manager")
+    def test_rescan_keeps_selection_when_indices_unchanged(self, mock_get_dm):
+        """After rescan, selection stays if indices did not change."""
+        mock_dm = Mock()
+        mock_dm.format_device_label.side_effect = lambda d: d["name"]
+        mock_get_dm.return_value = mock_dm
+
+        builder = self._create_builder(mock_dm, input_index=1)
+
+        mock_dm.get_device_name_by_index.side_effect = lambda idx: {
+            1: "USB Mic",
+        }.get(idx)
+
+        def do_refresh():
+            mock_dm.get_input_devices.return_value = [
+                {"index": 0, "name": "Built-in Mic"},
+                {"index": 1, "name": "USB Mic"},
+            ]
+            mock_dm.get_output_devices.return_value = []
+            mock_dm.get_device_index_by_name.side_effect = lambda name: {
+                "USB Mic": 1,
+            }.get(name)
+
+        mock_dm.refresh.side_effect = lambda: do_refresh()
+
+        builder._on_rescan()
+
+        self.assertEqual(builder.input_var.get(), 1)
 
 
 if __name__ == "__main__":
