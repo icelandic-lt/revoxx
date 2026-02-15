@@ -138,6 +138,8 @@ class UIConstants:
             cls.COLOR_CLIPPING = colors.COLOR_CLIPPING
             cls.COLOR_PLAYBACK_LINE = colors.COLOR_PLAYBACK_LINE
             cls.COLOR_EDGE_INDICATOR = colors.COLOR_EDGE_INDICATOR
+            cls.COLOR_FLAG_EDIT = colors.COLOR_FLAG_EDIT
+            cls.COLOR_FLAG_REJECTED = colors.COLOR_FLAG_REJECTED
 
     @classmethod
     def refresh(cls):
@@ -306,6 +308,19 @@ class FileConstants:
     FLAC_SUBTYPE = "FLAC"
 
 
+class FlagType:
+    """Utterance flag types for marking utterances during review."""
+
+    NEEDS_EDIT = "needs_edit"
+    REJECTED = "rejected"
+
+    # Display symbols and labels
+    DISPLAY = {
+        "needs_edit": "\u26a0 Edit",
+        "rejected": "\u2298 Rejected",
+    }
+
+
 class KeyBindings:
     """Keyboard shortcuts.
 
@@ -329,6 +344,15 @@ class KeyBindings:
     SHOW_HELP = "F1"  # Standard help key
     SHOW_INFO = "i"
     FIND_UTTERANCE = "f"  # Used with Cmd/Ctrl modifier
+
+    # Flagging - Shift+key to toggle flags
+    FLAG_NEEDS_EDIT = "E"  # Shift+E
+    FLAG_REJECTED = "X"  # Shift+X
+    FLAG_CLEAR = "U"  # Shift+U
+
+    # Jump to flagged - Ctrl/Cmd+key
+    JUMP_NEEDS_EDIT = "e"  # Ctrl/Cmd+E
+    JUMP_REJECTED = "x"  # Ctrl/Cmd+X
 
     # Session management - use platform-specific modifier
     NEW_SESSION = "n"  # Ctrl/Cmd+N

@@ -3,7 +3,7 @@
 import shutil
 import json
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Set, Tuple, Optional, Any
 from collections import Counter
 import soundfile as sf
 
@@ -77,6 +77,7 @@ class DatasetExporter:
         session_paths: List[Path],
         dataset_name: str = None,
         progress_callback=None,
+        skip_rejected: bool = False,
     ) -> Tuple[List[Path], Dict]:
         """Export Revoxx sessions grouped by speaker name.
 
@@ -86,6 +87,7 @@ class DatasetExporter:
             session_paths: List of paths to .revoxx session directories
             dataset_name: Optional override for dataset name (if None, uses speaker names)
             progress_callback: Optional callback for progress updates
+            skip_rejected: If True, skip utterances flagged as 'rejected'
 
         Returns:
             Tuple of (list of output_paths, statistics_dict)
@@ -132,6 +134,16 @@ class DatasetExporter:
                 "sessions": len(sessions),
             }
 
+            # Collect rejected labels from all sessions if skip_rejected is enabled
+            rejected_labels = None
+            if skip_rejected:
+                rejected_labels = set()
+                for session_path, session_data in sessions:
+                    flags = session_data.get("utterance_flags", {})
+                    for label, flag_type in flags.items():
+                        if flag_type == "rejected":
+                            rejected_labels.add(label)
+
             # Group sessions by emotion
             emotion_sessions = {}
             for session_path, session_data in sessions:
@@ -152,6 +164,7 @@ class DatasetExporter:
                     file_counts,
                     total_statistics,
                     progress_callback,
+                    rejected_labels=rejected_labels,
                 )
 
             # Write index file for this speaker
@@ -194,6 +207,7 @@ class DatasetExporter:
         file_counts: Counter,
         total_statistics: Dict,
         progress_callback=None,
+        rejected_labels: Optional[Set[str]] = None,
     ) -> None:
         """Process all sessions for a specific emotion.
 
@@ -206,12 +220,15 @@ class DatasetExporter:
             file_counts: Counter for file numbering
             total_statistics: Statistics dictionary to update
             progress_callback: Optional progress callback
+            rejected_labels: Set of utterance labels to skip during export
         """
         emotion_dir = dataset_dir / emotion
         emotion_dir.mkdir(exist_ok=True)
 
         # Process all utterances for this emotion
-        utterance_map = self._collect_utterances(emotion_session_list)
+        utterance_map = self._collect_utterances(
+            emotion_session_list, rejected_labels=rejected_labels
+        )
 
         for utterance_id, (session_path, take_num, text) in utterance_map.items():
             total_statistics["total_utterances"] += 1
@@ -261,8 +278,16 @@ class DatasetExporter:
         """Load session metadata from session.json."""
         return SessionInspector.load_metadata(session_path)
 
-    def _collect_utterances(self, emotion_sessions: List[Tuple[Path, Dict]]) -> Dict:
+    def _collect_utterances(
+        self,
+        emotion_sessions: List[Tuple[Path, Dict]],
+        rejected_labels: Optional[Set[str]] = None,
+    ) -> Dict:
         """Collect all utterances from sessions, choosing best take for each.
+
+        Args:
+            emotion_sessions: List of (session_path, session_data) tuples
+            rejected_labels: Set of utterance labels to skip during export
 
         Returns:
             Dict mapping utterance_id to (session_path, take_number, text)
@@ -282,6 +307,10 @@ class DatasetExporter:
 
                         # Skip reference silence - it's not part of the dataset
                         if utterance_id == REFERENCE_SILENCE_LABEL:
+                            continue
+
+                        # Skip rejected utterances
+                        if rejected_labels and utterance_id in rejected_labels:
                             continue
 
                         # Find highest take number

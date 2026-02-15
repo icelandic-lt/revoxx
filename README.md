@@ -60,6 +60,7 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 - Recordings are organized into **Recording Sessions**
   - Record emotional sessions for each speaker or record more traditional LJSpeech-style sessions
   - Seamless transitions between different recording sessions with automatic progress tracking: continue where you left-off
+  - **Flag utterances** for re-recording or exclusion from export
   - Offers advanced search and navigation capabilities for utterances, with flexible sorting and ordering by label, emotion, text
     content, text length and recorded takes
   - Consistent audio settings & metadata for all recordings
@@ -81,6 +82,7 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
 - Export Dataset
   - Facilitates **batch export of multiple sessions** into T3 (Talrómur3) dataset format
   - Groups different recording sessions of the same speaker into a common dataset
+  - Option to **skip rejected utterances** during export
   - **Add voice timestamps, if VAD is enabled**
 
 ## Installation

@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Optional, Callable
+from typing import List, Optional, Dict, Callable
 from .utterance_list_base import UtteranceListDialog, SortDirection
 
 
@@ -20,6 +20,7 @@ class FindDialog(UtteranceListDialog):
         utterance_order: List[int],
         current_sort_column: str = "label",
         current_sort_direction: SortDirection = SortDirection.UP,
+        utterance_flags: Dict[str, str] = None,
     ):
         """Initialize the find dialog.
 
@@ -33,6 +34,7 @@ class FindDialog(UtteranceListDialog):
             utterance_order: Display order for utterances (list of indices)
             current_sort_column: Current sort column from session
             current_sort_direction: Current sort direction from session
+            utterance_flags: Dict mapping labels to flag types
         """
         self.current_index = current_index
         self.on_find = on_find
@@ -51,6 +53,7 @@ class FindDialog(UtteranceListDialog):
             default_sort=current_sort_column,
             default_sort_direction=current_sort_direction,
             current_index=current_index,
+            utterance_flags=utterance_flags,
         )
 
     def _create_button_frame(self, parent: ttk.Frame) -> None:

@@ -144,6 +144,8 @@ class DialogController:
             else SortDirection.UP
         )
 
+        utterance_flags = self.app.flag_controller.get_flags()
+
         self.find_dialog = FindDialog(
             self.app.window.window,
             self.app.state.recording.utterances,
@@ -154,6 +156,7 @@ class DialogController:
             sorted_indices,
             self.app.active_recordings.sort_column,
             sort_direction,
+            utterance_flags=utterance_flags,
         )
         self.find_dialog.show()
 
@@ -189,6 +192,8 @@ class DialogController:
             else SortDirection.UP
         )
 
+        utterance_flags = self.app.flag_controller.get_flags()
+
         # Create and show dialog
         dialog = UtteranceOrderDialog(
             self.app.window.window,
@@ -199,6 +204,7 @@ class DialogController:
             self.app.active_recordings.sort_column,
             sort_direction,
             self.app.state.recording.current_index,
+            utterance_flags=utterance_flags,
         )
 
         result = dialog.show()

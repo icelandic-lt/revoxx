@@ -7,6 +7,7 @@ import re
 from enum import Enum
 
 from .dialog_utils import setup_dialog_window
+from revoxx.constants import FlagType, UIConstants
 from revoxx.utils.tk_compat import trace_var_write
 
 
@@ -29,6 +30,7 @@ class UtteranceListDialog:
     # Column widths (min, max) - will be calculated dynamically
     COLUMN_LIMITS = {
         "#0": (70, 120),  # Label column (min, max)
+        "flag": (40, 90),  # Flag column
         "emotion": (50, 80),  # Emotion column
         "text": (200, 500),  # Text column
         "recordings": (50, 80),  # Takes column
@@ -56,6 +58,7 @@ class UtteranceListDialog:
         default_sort: str = "order",
         default_sort_direction: SortDirection = SortDirection.UP,
         current_index: int = None,
+        utterance_flags: Dict[str, str] = None,
     ):
         """Initialize the dialog base.
 
@@ -71,11 +74,13 @@ class UtteranceListDialog:
             default_sort: Default sort column ("order", "label", etc.)
             default_sort_direction: Default sort direction (UP or DOWN)
             current_index: Currently selected utterance index to highlight
+            utterance_flags: Dict mapping labels to flag types
         """
         self.parent = parent
         self.utterances = utterances
         self.labels = labels
         self.file_manager = file_manager
+        self.utterance_flags = utterance_flags or {}
         # Dynamically scan takes (excluding trash)
         take_files = file_manager.scan_all_take_files(labels)
         self.takes = {label: len(files) for label, files in take_files.items()}
@@ -138,12 +143,18 @@ class UtteranceListDialog:
             if len(clean_text) > 60:
                 display_text += "..."
 
+            # Get flag for this label (raw value for sorting, display for column)
+            flag_raw = self.utterance_flags.get(label, "")
+            flag = FlagType.DISPLAY.get(flag_raw, "") if flag_raw else ""
+
             # Store item data with both display position and actual index
             self.all_items.append(
                 {
                     "index": actual_idx,
                     "display_pos": display_pos,
                     "label": label,
+                    "flag": flag,
+                    "flag_raw": flag_raw,
                     "emotion": emotion,
                     "text": display_text,
                     "full_text": utterance,
@@ -192,6 +203,7 @@ class UtteranceListDialog:
         # Add up column widths plus padding and scrollbar
         content_width = (
             self.column_widths["#0"]
+            + self.column_widths["flag"]
             + self.column_widths["emotion"]
             + self.column_widths["text"]
             + self.column_widths["recordings"]
@@ -244,6 +256,16 @@ class UtteranceListDialog:
             max(max_label * self.CHAR_WIDTH + 20, self.COLUMN_LIMITS["#0"][0]),
             self.COLUMN_LIMITS["#0"][1],
         )
+
+        # Flag column
+        max_flag = max((len(item["flag"]) for item in self.all_items), default=0)
+        if max_flag > 0:
+            widths["flag"] = min(
+                max(max_flag * self.CHAR_WIDTH + 20, self.COLUMN_LIMITS["flag"][0]),
+                self.COLUMN_LIMITS["flag"][1],
+            )
+        else:
+            widths["flag"] = self.COLUMN_LIMITS["flag"][0]
 
         # Emotion column
         max_emotion = max((len(item["emotion"]) for item in self.all_items), default=0)
@@ -356,10 +378,10 @@ class UtteranceListDialog:
         list_frame = ttk.Frame(parent)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, self.PADDING_STANDARD))
 
-        # Create treeview for utterance list with emotion column
+        # Create treeview for utterance list with flag and emotion columns
         self.tree = ttk.Treeview(
             list_frame,
-            columns=("emotion", "text", "recordings", "text_length"),
+            columns=("flag", "emotion", "text", "recordings", "text_length"),
             show="tree headings",
             selectmode="browse",
         )
@@ -377,6 +399,7 @@ class UtteranceListDialog:
 
         # Configure columns with sorting
         self.tree.heading("#0", text="Label", command=lambda: self._sort_by("label"))
+        self.tree.heading("flag", text="Flag", command=lambda: self._sort_by("flag"))
         self.tree.heading(
             "emotion", text="Emotion", command=lambda: self._sort_by("emotion")
         )
@@ -393,6 +416,11 @@ class UtteranceListDialog:
             "#0",
             width=self.COLUMN_LIMITS["#0"][0],
             minwidth=self.COLUMN_LIMITS["#0"][0],
+        )
+        self.tree.column(
+            "flag",
+            width=self.COLUMN_LIMITS["flag"][0],
+            minwidth=self.COLUMN_LIMITS["flag"][0],
         )
         self.tree.column(
             "emotion",
@@ -443,8 +471,18 @@ class UtteranceListDialog:
 
     def _apply_data(self) -> None:
         """Apply the prepared data to the tree widget."""
+        # Configure flag color tags
+        UIConstants._init_colors()
+        self.tree.tag_configure(
+            "flag_needs_edit", foreground=UIConstants.COLOR_FLAG_EDIT
+        )
+        self.tree.tag_configure(
+            "flag_rejected", foreground=UIConstants.COLOR_FLAG_REJECTED
+        )
+
         # Set column widths
         self.tree.column("#0", width=self.column_widths["#0"], minwidth=50)
+        self.tree.column("flag", width=self.column_widths["flag"], minwidth=30)
         self.tree.column("emotion", width=self.column_widths["emotion"], minwidth=40)
         self.tree.column("text", width=self.column_widths["text"], minwidth=150)
         self.tree.column(
@@ -493,6 +531,12 @@ class UtteranceListDialog:
             # Sort by number of recordings, then by label
             self.all_items.sort(
                 key=lambda x: (x["takes"], x["label"]), reverse=self.sort_reverse
+            )
+        elif self.sort_column == "flag":
+            # Sort by flag (flagged items first, then by flag type, then by label)
+            self.all_items.sort(
+                key=lambda x: (x["flag_raw"] == "", x["flag_raw"], x["label"]),
+                reverse=self.sort_reverse,
             )
         elif self.sort_column == "text_length":
             # Sort by text length, then by label
@@ -556,6 +600,7 @@ class UtteranceListDialog:
 
         columns = {
             "label": ("Label", "#0"),
+            "flag": ("Flag", "flag"),
             "emotion": ("Emotion", "emotion"),
             "text": ("Text", "text"),
             "recordings": ("Takes", "recordings"),
@@ -619,18 +664,26 @@ class UtteranceListDialog:
                 ):
                     continue
 
-            # Add to tree with emotion column
+            # Build tags: index for selection, flag tag for coloring
+            item_tags = [str(item["index"])]
+            if item["flag_raw"] == FlagType.NEEDS_EDIT:
+                item_tags.append("flag_needs_edit")
+            elif item["flag_raw"] == FlagType.REJECTED:
+                item_tags.append("flag_rejected")
+
+            # Add to tree with flag and emotion columns
             self.tree.insert(
                 "",
                 "end",
                 text=item["label"],
                 values=(
+                    item["flag"],
                     item["emotion"],
                     item["text"],
                     str(item["takes"]),
                     str(item["text_length"]),
                 ),
-                tags=(str(item["index"]),),
+                tags=tuple(item_tags),
             )
 
     def _on_search_changed(self, *args) -> None:

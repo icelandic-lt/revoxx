@@ -205,6 +205,19 @@ class ApplicationMenu:
             accelerator=find_accel,
         )
 
+        # Jump to flagged (grouped with Find)
+        jump_accel_mod = "Cmd" if platform.system() == "Darwin" else "Ctrl"
+        edit_menu.add_command(
+            label="Jump to Next Needs Edit",
+            command=lambda: self.app.flag_controller.jump_to_next("needs_edit"),
+            accelerator=f"{jump_accel_mod}+E",
+        )
+        edit_menu.add_command(
+            label="Jump to Next Rejected",
+            command=lambda: self.app.flag_controller.jump_to_next("rejected"),
+            accelerator=f"{jump_accel_mod}+X",
+        )
+
         edit_menu.add_separator()
 
         # Delete recording
@@ -213,6 +226,25 @@ class ApplicationMenu:
             label="Delete Recording",
             command=self.app.file_operations_controller.delete_current_recording,
             accelerator=delete_accel,
+        )
+
+        edit_menu.add_separator()
+
+        # Flagging
+        edit_menu.add_command(
+            label="Mark as Needs Edit",
+            command=self.app.flag_controller.toggle_needs_edit,
+            accelerator="Shift+E",
+        )
+        edit_menu.add_command(
+            label="Mark as Rejected",
+            command=self.app.flag_controller.toggle_rejected,
+            accelerator="Shift+X",
+        )
+        edit_menu.add_command(
+            label="Clear Flag",
+            command=self.app.flag_controller.clear_flag,
+            accelerator="Shift+U",
         )
 
         edit_menu.add_separator()

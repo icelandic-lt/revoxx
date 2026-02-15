@@ -164,6 +164,8 @@ class Session:
     # Last recorded utterance (to resume where left off)
     last_recorded_index: Optional[int] = None
     last_recorded_take: Optional[int] = None
+    # Utterance flags (only flagged entries stored)
+    utterance_flags: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -194,6 +196,10 @@ class Session:
             data["last_recorded_index"] = self.last_recorded_index
         if self.last_recorded_take is not None:
             data["last_recorded_take"] = self.last_recorded_take
+
+        # Save utterance flags (only when non-empty)
+        if self.utterance_flags:
+            data["utterance_flags"] = self.utterance_flags
 
         return data
 
@@ -236,6 +242,9 @@ class Session:
         # Load last recorded utterance info
         session.last_recorded_index = data.get("last_recorded_index")
         session.last_recorded_take = data.get("last_recorded_take")
+
+        # Load utterance flags
+        session.utterance_flags = data.get("utterance_flags", {})
 
         # Handle legacy utterance_order for backwards compatibility
         if "utterance_order" in data and "sort_column" not in data:

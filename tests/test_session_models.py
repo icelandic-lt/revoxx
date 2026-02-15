@@ -279,6 +279,64 @@ class TestSession(unittest.TestCase):
         self.assertEqual(loaded_session.speaker.metadata["test"], "value")
         self.assertEqual(loaded_session.audio_config.format, "flac")
 
+    def test_utterance_flags_persistence(self):
+        """Test that utterance flags survive save/load round-trip."""
+        session = Session(
+            name="Flags Test",
+            session_dir=self.session_dir,
+        )
+        session.utterance_flags = {
+            "utt_001": "needs_edit",
+            "utt_042": "rejected",
+            "utt_100": "needs_edit",
+        }
+
+        session.save()
+
+        loaded = Session.load(self.session_dir)
+
+        self.assertEqual(
+            loaded.utterance_flags,
+            {
+                "utt_001": "needs_edit",
+                "utt_042": "rejected",
+                "utt_100": "needs_edit",
+            },
+        )
+
+    def test_utterance_flags_empty_not_serialized(self):
+        """Test that empty flags are omitted from session.json."""
+        session = Session(
+            name="No Flags",
+            session_dir=self.session_dir,
+        )
+
+        data = session.to_dict()
+        self.assertNotIn("utterance_flags", data)
+
+    def test_utterance_flags_default_empty(self):
+        """Test that loading a session without flags returns empty dict."""
+        session = Session(
+            name="Legacy Session",
+            session_dir=self.session_dir,
+        )
+        session.save()
+
+        loaded = Session.load(self.session_dir)
+        self.assertEqual(loaded.utterance_flags, {})
+
+    def test_utterance_flags_json_round_trip(self):
+        """Test flags survive JSON serialization round-trip."""
+        session = Session(name="JSON Flags")
+        session.utterance_flags = {"utt_007": "rejected"}
+
+        data = session.to_dict()
+        json_str = json.dumps(data)
+        loaded_data = json.loads(json_str)
+        loaded = Session.from_dict(loaded_data)
+
+        self.assertEqual(loaded.utterance_flags, {"utt_007": "rejected"})
+
 
 if __name__ == "__main__":
     unittest.main()

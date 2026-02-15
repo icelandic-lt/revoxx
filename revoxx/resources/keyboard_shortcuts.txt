@@ -24,6 +24,13 @@ NAVIGATION
   Up/Down      Navigate utterances
   Left/Right   Browse takes
 
+FLAGGING
+  Shift+E      Toggle 'Needs Edit' flag
+  Shift+X      Toggle 'Rejected' flag
+  Shift+U      Clear flag
+  Ctrl+E       Jump to next 'Needs Edit'
+  Ctrl+X       Jump to next 'Rejected'
+
 DISPLAY
   M            Toggle mel spectrogram & level meter
   I            Toggle info overlay

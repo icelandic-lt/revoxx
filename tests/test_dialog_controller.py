@@ -53,6 +53,10 @@ class TestDialogController(unittest.TestCase):
         self.mock_app.active_recordings.sort_column = "default"
         self.mock_app.active_recordings.sort_reverse = False
 
+        # Mock flag controller
+        self.mock_app.flag_controller = Mock()
+        self.mock_app.flag_controller.get_flags = Mock(return_value={})
+
         # Mock additional required attributes
         self.mock_app.state.recording.labels = ["label1", "label2"]
         self.mock_app.file_manager = Mock()
@@ -156,6 +160,7 @@ class TestDialogController(unittest.TestCase):
             self.mock_app.active_recordings.get_sorted_indices(),
             self.mock_app.active_recordings.sort_column,
             SortDirection.UP,  # Changed from sort_reverse (False) to SortDirection.UP
+            utterance_flags=self.mock_app.flag_controller.get_flags(),
         )
         self.assertEqual(self.controller.find_dialog, mock_dialog)
 
@@ -208,6 +213,7 @@ class TestDialogController(unittest.TestCase):
             self.mock_app.active_recordings.sort_column,
             SortDirection.UP,  # Changed from sort_reverse (False) to SortDirection.UP
             self.mock_app.state.recording.current_index,
+            utterance_flags=self.mock_app.flag_controller.get_flags(),
         )
         # Verify that set_sort and update were called with the dialog result
         self.mock_app.active_recordings.set_sort.assert_called_once_with(

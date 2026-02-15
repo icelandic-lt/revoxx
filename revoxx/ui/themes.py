@@ -34,6 +34,10 @@ class ThemeColors:
     COLOR_SUCCESS: str
     COLOR_BORDER: str
 
+    # Flag indicator colors
+    COLOR_FLAG_EDIT: str
+    COLOR_FLAG_REJECTED: str
+
     # Specific UI elements
     COLOR_CLIPPING: str
     COLOR_PLAYBACK_LINE: str
@@ -148,6 +152,9 @@ THEMES = {
             COLOR_WARNING="#FFFF00",  # Yellow
             COLOR_SUCCESS="#40C040",  # Pleasant green
             COLOR_BORDER="#808080",  # Gray
+            # Flag indicator colors
+            COLOR_FLAG_EDIT="#FFA500",  # Orange
+            COLOR_FLAG_REJECTED="#FF4444",  # Red
             # Specific UI elements
             COLOR_CLIPPING="#FF0000",  # Red
             COLOR_PLAYBACK_LINE="#FF0000",  # Red
@@ -184,6 +191,9 @@ THEMES = {
             COLOR_WARNING="#FF00FF",
             COLOR_SUCCESS="#00FF88",
             COLOR_BORDER="#1F2937",
+            # Flag indicator colors
+            COLOR_FLAG_EDIT="#FFA500",  # Orange
+            COLOR_FLAG_REJECTED="#FF4444",  # Red
             # Specific UI elements
             COLOR_CLIPPING="#FF0080",
             COLOR_PLAYBACK_LINE="#FF0080",

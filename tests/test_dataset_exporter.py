@@ -40,6 +40,7 @@ class TestDatasetExporter(unittest.TestCase):
         emotion: str,
         utterances: list,
         intensity_prefix: bool = False,
+        utterance_flags: dict = None,
     ):
         """Create a test session with metadata and recordings."""
         # Create session.json
@@ -52,6 +53,9 @@ class TestDatasetExporter(unittest.TestCase):
             },
             "audio_config": {"sample_rate": 48000, "bit_depth": 24, "channels": 1},
         }
+
+        if utterance_flags:
+            session_data["utterance_flags"] = utterance_flags
 
         with open(session_dir / "session.json", "w") as f:
             json.dump(session_data, f)
@@ -557,6 +561,132 @@ class TestDatasetExporter(unittest.TestCase):
         with open(output_paths[0] / "index.tsv", "r") as f:
             content = f.read()
         self.assertEqual(content, "")
+
+    def test_skip_rejected_utterances(self):
+        """Test that rejected utterances are excluded when skip_rejected is True."""
+        utterances = [
+            ("utt_001", "Keep this one"),
+            ("utt_002", "Reject this one"),
+            ("utt_003", "Also keep this"),
+            ("utt_004", "Reject this too"),
+        ]
+
+        self._create_test_session(
+            self.session1_dir,
+            "Test Speaker",
+            "happy",
+            utterances,
+            utterance_flags={"utt_002": "rejected", "utt_004": "rejected"},
+        )
+
+        exporter = DatasetExporter(self.output_dir, audio_format="flac")
+        output_paths, stats = exporter.export_sessions(
+            [self.session1_dir], skip_rejected=True
+        )
+
+        dataset_dir = output_paths[0]
+        audio_files = list((dataset_dir / "happy").glob("*.flac"))
+        self.assertEqual(len(audio_files), 2)
+
+        with open(dataset_dir / "index.tsv", "r") as f:
+            index_lines = f.readlines()
+
+        self.assertEqual(len(index_lines), 2)
+        all_texts = [line.strip().split("\t")[-1] for line in index_lines]
+        self.assertIn("Keep this one", all_texts)
+        self.assertIn("Also keep this", all_texts)
+        self.assertNotIn("Reject this one", all_texts)
+        self.assertNotIn("Reject this too", all_texts)
+
+    def test_skip_rejected_disabled_includes_all(self):
+        """Test that rejected utterances are included when skip_rejected is False."""
+        utterances = [
+            ("utt_001", "Keep this one"),
+            ("utt_002", "Flagged but included"),
+        ]
+
+        self._create_test_session(
+            self.session1_dir,
+            "Test Speaker",
+            "happy",
+            utterances,
+            utterance_flags={"utt_002": "rejected"},
+        )
+
+        exporter = DatasetExporter(self.output_dir, audio_format="flac")
+        output_paths, stats = exporter.export_sessions(
+            [self.session1_dir], skip_rejected=False
+        )
+
+        dataset_dir = output_paths[0]
+        audio_files = list((dataset_dir / "happy").glob("*.flac"))
+        self.assertEqual(len(audio_files), 2)
+
+    def test_skip_rejected_ignores_needs_edit(self):
+        """Test that needs_edit flags are not skipped during export."""
+        utterances = [
+            ("utt_001", "Normal utterance"),
+            ("utt_002", "Needs edit but not rejected"),
+            ("utt_003", "Rejected utterance"),
+        ]
+
+        self._create_test_session(
+            self.session1_dir,
+            "Test Speaker",
+            "happy",
+            utterances,
+            utterance_flags={
+                "utt_002": "needs_edit",
+                "utt_003": "rejected",
+            },
+        )
+
+        exporter = DatasetExporter(self.output_dir, audio_format="flac")
+        output_paths, stats = exporter.export_sessions(
+            [self.session1_dir], skip_rejected=True
+        )
+
+        dataset_dir = output_paths[0]
+        audio_files = list((dataset_dir / "happy").glob("*.flac"))
+        self.assertEqual(len(audio_files), 2)
+
+        with open(dataset_dir / "index.tsv", "r") as f:
+            index_lines = f.readlines()
+
+        all_texts = [line.strip().split("\t")[-1] for line in index_lines]
+        self.assertIn("Normal utterance", all_texts)
+        self.assertIn("Needs edit but not rejected", all_texts)
+        self.assertNotIn("Rejected utterance", all_texts)
+
+    def test_skip_rejected_across_sessions(self):
+        """Test skip_rejected works across multiple sessions of the same speaker."""
+        self._create_test_session(
+            self.session1_dir,
+            "Anna",
+            "happy",
+            [("utt_001", "Happy ok"), ("utt_002", "Happy rejected")],
+            utterance_flags={"utt_002": "rejected"},
+        )
+
+        self._create_test_session(
+            self.session2_dir,
+            "Anna",
+            "sad",
+            [("utt_003", "Sad ok"), ("utt_004", "Sad rejected")],
+            utterance_flags={"utt_004": "rejected"},
+        )
+
+        exporter = DatasetExporter(self.output_dir, audio_format="flac")
+        output_paths, stats = exporter.export_sessions(
+            [self.session1_dir, self.session2_dir], skip_rejected=True
+        )
+
+        dataset_dir = output_paths[0]
+        happy_files = list((dataset_dir / "happy").glob("*.flac"))
+        sad_files = list((dataset_dir / "sad").glob("*.flac"))
+        self.assertEqual(len(happy_files), 1)
+        self.assertEqual(len(sad_files), 1)
+        self.assertEqual(stats["total_utterances"], 2)
 
 
 if __name__ == "__main__":

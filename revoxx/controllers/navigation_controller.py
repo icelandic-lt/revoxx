@@ -274,6 +274,7 @@ class NavigationController:
 
         status_text = self.app.display_controller.format_take_status(current_label)
         self.app.display_controller.set_status(status_text, MsgType.DEFAULT)
+        self.app.display_controller.update_flag_indicator(current_label)
 
     def after_recording_saved(self, label: str) -> None:
         """Called after a recording has been saved to disk.
