@@ -226,11 +226,11 @@ class DatasetExporter:
         emotion_dir.mkdir(exist_ok=True)
 
         # Process all utterances for this emotion
-        utterance_map = self._collect_utterances(
+        utterance_list = self._collect_utterances(
             emotion_session_list, rejected_labels=rejected_labels
         )
 
-        for utterance_id, (session_path, take_num, text) in utterance_map.items():
+        for utterance_id, session_path, take_num, text in utterance_list:
             total_statistics["total_utterances"] += 1
 
             # Extract intensity and clean text
@@ -282,17 +282,21 @@ class DatasetExporter:
         self,
         emotion_sessions: List[Tuple[Path, Dict]],
         rejected_labels: Optional[Set[str]] = None,
-    ) -> Dict:
-        """Collect all utterances from sessions, choosing best take for each.
+    ) -> List[Tuple[str, Path, int, str]]:
+        """Collect all utterances from sessions, choosing best take per session.
+
+        Within a single session, the highest take is selected for each utterance.
+        Across sessions, utterances with the same ID are kept separately since
+        they may contain different texts from different scripts.
 
         Args:
             emotion_sessions: List of (session_path, session_data) tuples
             rejected_labels: Set of utterance labels to skip during export
 
         Returns:
-            Dict mapping utterance_id to (session_path, take_number, text)
+            List of (utterance_id, session_path, take_number, text) tuples
         """
-        utterances = {}
+        utterances = []
 
         for session_path, session_data in emotion_sessions:
             recordings_dir = session_path / "recordings"
@@ -330,10 +334,8 @@ class DatasetExporter:
                             if take_numbers:
                                 highest_take = max(take_numbers)
                                 text = script_data.get(utterance_id, "")
-                                utterances[utterance_id] = (
-                                    session_path,
-                                    highest_take,
-                                    text,
+                                utterances.append(
+                                    (utterance_id, session_path, highest_take, text)
                                 )
 
         return utterances
