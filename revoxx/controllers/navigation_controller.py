@@ -40,8 +40,9 @@ class NavigationController:
         # Stop all playback activities (same as when starting new playback)
         self.app.audio_controller.stop_all_playback_activities()
 
-        # Clear undo history when switching clips
+        # Clear undo history and selection when switching clips
         self.app.edit_controller.clear_undo_history()
+        self.app.display_controller.clear_selections()
 
         # Check if we have a session loaded
         if not self.app.active_recordings:
@@ -162,12 +163,14 @@ class NavigationController:
             if second and second.mel_spectrogram:
                 second.mel_spectrogram.stop_playback()
 
-        # Reset level meter via shared state
+        # Reset level meter and selections
         try:
             self.app.shared_state.reset_level_meter()
         except AttributeError:
             # Shared state or method might not exist
             pass
+
+        self.app.display_controller.clear_selections()
 
         # Update index
         if 0 <= index < len(self.app.state.recording.utterances):
