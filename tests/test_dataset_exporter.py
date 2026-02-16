@@ -688,6 +688,56 @@ class TestDatasetExporter(unittest.TestCase):
         self.assertEqual(len(sad_files), 1)
         self.assertEqual(stats["total_utterances"], 2)
 
+    def test_multi_session_same_emotion_overlapping_ids(self):
+        """Test that sessions with same emotion and overlapping utterance IDs
+        export all utterances instead of overwriting by ID."""
+        # Session 1: utt_001, utt_002 with text from script A
+        self._create_test_session(
+            self.session1_dir,
+            "Anna",
+            "neutral",
+            [("utt_001", "Script A first"), ("utt_002", "Script A second")],
+        )
+
+        # Session 2: same IDs but different texts from script B
+        self._create_test_session(
+            self.session2_dir,
+            "Anna",
+            "neutral",
+            [("utt_001", "Script B first"), ("utt_002", "Script B second")],
+        )
+
+        # Session 3: same IDs, yet another script
+        self._create_test_session(
+            self.session3_dir,
+            "Anna",
+            "neutral",
+            [("utt_001", "Script C first")],
+        )
+
+        exporter = DatasetExporter(self.output_dir, audio_format="flac")
+        output_paths, stats = exporter.export_sessions(
+            [self.session1_dir, self.session2_dir, self.session3_dir]
+        )
+
+        dataset_dir = output_paths[0]
+        audio_files = list((dataset_dir / "neutral").glob("*.flac"))
+        # 2 + 2 + 1 = 5 total utterances, not 2 (deduplicated)
+        self.assertEqual(len(audio_files), 5)
+        self.assertEqual(stats["total_utterances"], 5)
+
+        with open(dataset_dir / "index.tsv", "r") as f:
+            index_lines = f.readlines()
+
+        self.assertEqual(len(index_lines), 5)
+
+        all_texts = [line.strip().split("\t")[-1] for line in index_lines]
+        self.assertIn("Script A first", all_texts)
+        self.assertIn("Script A second", all_texts)
+        self.assertIn("Script B first", all_texts)
+        self.assertIn("Script B second", all_texts)
+        self.assertIn("Script C first", all_texts)
+
 
 if __name__ == "__main__":
     unittest.main()
