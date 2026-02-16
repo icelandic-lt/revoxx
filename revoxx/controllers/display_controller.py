@@ -454,6 +454,10 @@ class DisplayController:
             lambda spec: spec.show_recording(audio_data, sample_rate)
         )
 
+    def clear_selections(self) -> None:
+        """Clear selection and marker visuals and state in all spectrograms."""
+        self._for_each_spectrogram(lambda spec: spec.clear_selection())
+
     def reset_level_meters(self) -> None:
         """Reset all level meter displays."""
         self._for_each_level_meter(lambda meter: meter.reset())

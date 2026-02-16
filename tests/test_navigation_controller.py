@@ -178,6 +178,18 @@ class TestNavigationController(unittest.TestCase):
 
         self.mock_app.state.recording.set_displayed_take.assert_not_called()
 
+    def test_navigate_clears_selection(self):
+        """Test that navigation clears selection/marker state."""
+        self.controller.navigate(1)
+
+        self.mock_app.display_controller.clear_selections.assert_called_once()
+
+    def test_find_utterance_clears_selection(self):
+        """Test that find_utterance clears selection/marker state."""
+        self.controller.find_utterance(1)
+
+        self.mock_app.display_controller.clear_selections.assert_called_once()
+
     def test_find_utterance_valid_index(self):
         """Test finding a specific utterance with valid index."""
         self.controller.find_utterance(2)
