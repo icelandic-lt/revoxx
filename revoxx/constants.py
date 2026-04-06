@@ -308,6 +308,25 @@ class FileConstants:
     FLAC_SUBTYPE = "FLAC"
 
 
+class LoudnessConstants:
+    """EBU R 128 loudness normalization constants for dataset export."""
+
+    DEFAULT_TARGET = -20.0  # LUFS
+    TRUE_PEAK_LIMIT = -1.0  # dBTP
+
+    PRESETS = {
+        "-16 LUFS (Streaming)": -16.0,
+        "-18 LUFS (Loud Speech)": -18.0,
+        "-20 LUFS (TTS/Speech)": -20.0,
+        "-23 LUFS (Broadcast)": -23.0,
+    }
+
+    @staticmethod
+    def db_to_linear(db: float) -> float:
+        """Convert decibels to linear amplitude ratio."""
+        return 10.0 ** (db / 20.0)
+
+
 class FlagType:
     """Utterance flag types for marking utterances during review."""
 

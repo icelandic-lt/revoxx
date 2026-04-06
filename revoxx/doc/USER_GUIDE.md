@@ -339,7 +339,9 @@ Once you have completed recording, you can export your sessions into datasets su
 2. Choose which recording sessions you want to include in the dataset. You can select multiple sessions from any speaker. Datasets are combined by speaker name automatically.
 3. Configure the export options according to your needs:
    - T3 format is chosen automatically
-   - **Skip rejected utterances**: Enabled by default, excludes utterances flagged as "Rejected" from the export.
+   - **Skip rejected utterances**: Enabled by default, excludes utterances flagged as "Rejected" from the export. Rejected flags only apply to the session where they were set.
+   - **Omit emotion from filenames**: When all selected sessions share a single emotion (e.g. only "neutral"), this option removes the emotion from filenames and the directory structure, producing cleaner paths like `speaker_001.flac` instead of `speaker_neutral_001.flac`.
+   - **Loudness normalization (EBU R 128)**: Normalizes the loudness of each audio file individually to a target level using ITU-R BS.1770 integrated loudness measurement. Choose from presets (-16, -18, -20, -23 LUFS) or enter a custom value. The default is -20 LUFS. This applies a constant gain per file with no dynamic compression, preserving the natural speech dynamics. If the required gain would cause the signal to exceed -1 dBTP (true peak), the gain is automatically reduced to prevent clipping.
    - **VAD analysis**: If VAD support is installed, you can generate voice activity timestamps for each audio file.
 4. Click **Export** to create an organized dataset structure that's ready for TTS model training. The export process will handle file naming, metadata generation, and directory organization automatically.
 

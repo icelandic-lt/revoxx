@@ -8,6 +8,8 @@ from pathlib import Path
 import soundfile as sf
 import numpy as np
 
+import pyloudnorm as pyln
+
 from revoxx.dataset.exporter import DatasetExporter
 
 
@@ -851,6 +853,118 @@ class TestDatasetExporter(unittest.TestCase):
         self.assertIn("Script B first", all_texts)
         self.assertIn("Script B second", all_texts)
         self.assertNotIn("Script A first", all_texts)
+
+    def test_loudness_normalization_applied(self):
+        """Test that loudness normalization adjusts audio to target LUFS."""
+        # Create a session with a known-level audio signal
+        session_dir = self.session1_dir
+        utt_dir = session_dir / "recordings" / "utt_001"
+        utt_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate a tone at a known level (louder than -18 LUFS)
+        sr = 48000
+        duration = 2.0
+        t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+        loud_audio = (np.sin(2 * np.pi * 440 * t) * 0.5).astype(np.float64)
+        sf.write(str(utt_dir / "take_001.flac"), loud_audio, sr)
+
+        # Measure original loudness
+        meter = pyln.Meter(sr)
+        original_lufs = meter.integrated_loudness(loud_audio)
+
+        # Create session metadata and script
+        session_data = {
+            "speaker": {"name": "Test", "emotion": "neutral"},
+            "audio_config": {"sample_rate": sr, "bit_depth": 24, "channels": 1},
+        }
+        with open(session_dir / "session.json", "w") as f:
+            json.dump(session_data, f)
+        with open(session_dir / "script.txt", "w") as f:
+            f.write('(utt_001 "Test utterance")\n')
+
+        target_lufs = -18.0
+        exporter = DatasetExporter(
+            self.output_dir,
+            audio_format="flac",
+            loudness_target=target_lufs,
+        )
+        output_paths, _ = exporter.export_sessions([session_dir])
+
+        # Read exported audio and measure loudness
+        dataset_dir = output_paths[0]
+        exported_files = list((dataset_dir / "neutral").glob("*.flac"))
+        self.assertEqual(len(exported_files), 1)
+
+        exported_data, exported_sr = sf.read(str(exported_files[0]), dtype="float64")
+        exported_lufs = meter.integrated_loudness(exported_data)
+
+        # Loudness should be within 0.5 LU of target
+        self.assertAlmostEqual(exported_lufs, target_lufs, delta=0.5)
+        # Should have changed from original
+        self.assertNotAlmostEqual(original_lufs, exported_lufs, delta=1.0)
+
+    def test_loudness_normalization_respects_true_peak(self):
+        """Test that normalization reduces gain to respect true peak limit."""
+        session_dir = self.session1_dir
+        utt_dir = session_dir / "recordings" / "utt_001"
+        utt_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate very quiet audio with a sharp peak
+        sr = 48000
+        audio = np.zeros(sr * 2, dtype=np.float64)
+        audio[sr : sr + sr] = (
+            np.sin(2 * np.pi * 440 * np.linspace(0, 1, sr, endpoint=False)) * 0.001
+        )
+        audio[100] = 0.9  # Sharp peak
+        sf.write(str(utt_dir / "take_001.flac"), audio, sr)
+
+        session_data = {
+            "speaker": {"name": "Test", "emotion": "neutral"},
+            "audio_config": {"sample_rate": sr, "bit_depth": 24, "channels": 1},
+        }
+        with open(session_dir / "session.json", "w") as f:
+            json.dump(session_data, f)
+        with open(session_dir / "script.txt", "w") as f:
+            f.write('(utt_001 "Test utterance")\n')
+
+        exporter = DatasetExporter(
+            self.output_dir,
+            audio_format="flac",
+            loudness_target=-18.0,
+            true_peak_limit=-1.0,
+        )
+        output_paths, _ = exporter.export_sessions([session_dir])
+
+        dataset_dir = output_paths[0]
+        exported_files = list((dataset_dir / "neutral").glob("*.flac"))
+        exported_data, _ = sf.read(str(exported_files[0]), dtype="float64")
+
+        # Peak must not exceed -1 dBTP
+        peak_dbtp = 20.0 * np.log10(np.max(np.abs(exported_data)))
+        self.assertLessEqual(peak_dbtp, -1.0 + 0.1)  # Small tolerance
+
+    def test_loudness_disabled_by_default(self):
+        """Test that loudness normalization is not applied when target is None."""
+        utterances = [("utt_001", "Test utterance")]
+        self._create_test_session(
+            self.session1_dir, "Test Speaker", "neutral", utterances
+        )
+
+        # Get original file content
+        source = self.session1_dir / "recordings" / "utt_001" / "take_001.flac"
+        original_data, sr = sf.read(str(source), dtype="float64")
+
+        exporter = DatasetExporter(
+            self.output_dir, audio_format="flac", loudness_target=None
+        )
+        output_paths, _ = exporter.export_sessions([self.session1_dir])
+
+        dataset_dir = output_paths[0]
+        exported_files = list((dataset_dir / "neutral").glob("*.flac"))
+        exported_data, _ = sf.read(str(exported_files[0]), dtype="float64")
+
+        # Audio should be unchanged (bit-perfect copy)
+        np.testing.assert_array_equal(original_data, exported_data)
 
 
 if __name__ == "__main__":

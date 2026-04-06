@@ -83,6 +83,7 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
   - Facilitates **batch export of multiple sessions** into T3 (Talrómur3) dataset format
   - Groups different recording sessions of the same speaker into a common dataset
   - Option to **skip rejected utterances** during export
+  - **EBU R 128 loudness normalization** with selectable presets or custom LUFS target, true peak limiting
   - **Add voice timestamps, if VAD is enabled**
 
 ## Installation

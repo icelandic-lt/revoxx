@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 
+from ..constants import LoudnessConstants
+
 
 @dataclass
 class UserSettings:
@@ -54,6 +56,8 @@ class UserSettings:
     export_format: str = "flac"
     export_include_intensity: bool = True
     export_omit_single_emotion: bool = False
+    export_loudness_enabled: bool = False
+    export_loudness_target: float = LoudnessConstants.DEFAULT_TARGET
 
     # Text import settings
     import_input_dir: Optional[str] = None
