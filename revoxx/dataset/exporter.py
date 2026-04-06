@@ -1,7 +1,6 @@
 """Dataset exporter for converting Revoxx sessions to Talrómur 3 format."""
 
 import shutil
-import json
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from collections import Counter
@@ -35,7 +34,8 @@ class DatasetExporter:
         audio_format: str = "flac",
         zero_intensity_emotions: List[str] = None,
         include_intensity: bool = True,
-        include_vad: bool = False,
+        include_omnivad: bool = False,
+        include_silero_vad: bool = False,
         omit_single_emotion: bool = False,
         loudness_target: Optional[float] = None,
         true_peak_limit: float = LoudnessConstants.TRUE_PEAK_LIMIT,
@@ -47,7 +47,8 @@ class DatasetExporter:
             audio_format: Output audio format ('wav' or 'flac')
             zero_intensity_emotions: List of emotions to set intensity to 0
             include_intensity: Whether to include intensity column in index.tsv
-            include_vad: Whether to run VAD analysis on the exported dataset
+            include_omnivad: Whether to run OmniVAD analysis (CPU-only, default VAD)
+            include_silero_vad: Whether to run Silero VAD analysis (requires torch)
             omit_single_emotion: If True and only one emotion exists, omit emotion
                 from filenames and directory structure
             loudness_target: Target loudness in LUFS (None to disable normalization)
@@ -57,7 +58,8 @@ class DatasetExporter:
         self.format = audio_format.lower()
         self.zero_intensity_emotions = zero_intensity_emotions or ["neutral"]
         self.include_intensity = include_intensity
-        self.include_vad = include_vad
+        self.include_omnivad = include_omnivad
+        self.include_silero_vad = include_silero_vad
         self.omit_single_emotion = omit_single_emotion
         self.loudness_target = loudness_target
         self.true_peak_limit = true_peak_limit
@@ -200,9 +202,17 @@ class DatasetExporter:
             )
 
         # Run VAD processing if requested
-        if self.include_vad:
-            vad_stats = self._run_vad_processing(all_datasets, progress_callback)
-            total_statistics["vad_statistics"] = vad_stats
+        if self.include_omnivad:
+            omnivad_stats = self._run_omnivad_processing(
+                all_datasets, progress_callback
+            )
+            total_statistics["omnivad_statistics"] = omnivad_stats
+
+        if self.include_silero_vad:
+            silero_stats = self._run_silero_vad_processing(
+                all_datasets, progress_callback
+            )
+            total_statistics["silero_vad_statistics"] = silero_stats
 
         return all_datasets, total_statistics
 
@@ -537,26 +547,38 @@ class DatasetExporter:
         with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
 
+    @staticmethod
     def _run_vad_processing(
-        self, dataset_paths: List[Path], progress_callback=None
+        module_path: str,
+        dataset_paths: List[Path],
+        output_filename: str,
+        label: str,
+        progress_callback=None,
     ) -> Dict:
-        """Run VAD processing on exported datasets using multiprocessing.
+        """Run VAD processing using any backend that provides process_dataset().
+
+        Both OmniVAD and Silero VAD expose the same interface:
+        process_dataset(dataset_path, output_filename) -> {files_processed, warnings}
 
         Args:
+            module_path: Python module path (e.g. "scripts_module.omnivad_processor")
             dataset_paths: List of dataset directories to process
+            output_filename: Name of the output JSON file (e.g. "vad.json")
+            label: Display label for progress messages (e.g. "OmniVAD")
             progress_callback: Optional progress callback (count, message)
 
         Returns:
             Dictionary with total files processed and warnings
         """
         try:
-            from scripts_module.vadiate import get_audio_files
-            import multiprocessing as mp
-            from concurrent.futures import ProcessPoolExecutor, as_completed
-        except ImportError:
-            return {}  # VAD not available
+            import importlib
 
-        # Count total files for progress
+            mod = importlib.import_module(module_path)
+            get_audio_files = mod.get_audio_files
+            process_dataset = mod.process_dataset
+        except ImportError:
+            return {}
+
         total_files = sum(len(get_audio_files(str(d))) for d in dataset_paths)
         if total_files == 0:
             return {}
@@ -564,87 +586,43 @@ class DatasetExporter:
         processed = 0
         vad_statistics = {"total_files": total_files, "warnings": []}
 
-        # Use process pool for parallel processing
-        # Each process handles VAD analysis for one complete dataset (speaker)
-        # This means if we export 3 speakers, we use up to 3 processes
-        # Each process analyzes all audio files within its assigned speaker's dataset
-        num_workers = min(mp.cpu_count(), len(dataset_paths))
+        def file_progress(files_done_in_dataset):
+            current = processed + files_done_in_dataset
+            if progress_callback:
+                progress_callback(current, f"{label}: {current}/{total_files} files")
 
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            # Submit one VAD processing task per dataset (per speaker)
-            # Each task processes all audio files in that speaker's dataset directory
-            future_to_dataset = {
-                executor.submit(self._process_dataset_vad, dataset_path): dataset_path
-                for dataset_path in dataset_paths
-            }
-
-            # Process completed tasks
-            for future in as_completed(future_to_dataset):
-                dataset_path = future_to_dataset[future]
-                try:
-                    result = future.result()
-                    processed += result["files_processed"]
-                    vad_statistics["warnings"].extend(result["warnings"])
-                    if progress_callback:
-                        progress_callback(
-                            processed, f"VAD analysis: {processed}/{total_files}"
-                        )
-                except Exception as e:
-                    vad_statistics["warnings"].append(
-                        f"VAD processing error for {dataset_path}: {e}"
-                    )
+        for dataset_path in dataset_paths:
+            try:
+                result = process_dataset(
+                    dataset_path,
+                    output_filename=output_filename,
+                    file_callback=file_progress,
+                )
+                processed += result["files_processed"]
+                vad_statistics["warnings"].extend(result["warnings"])
+            except Exception as e:
+                vad_statistics["warnings"].append(
+                    f"{label} error for {dataset_path}: {e}"
+                )
 
         return vad_statistics
 
-    @staticmethod
-    def _process_dataset_vad(dataset_path: Path) -> Dict:
-        """Process VAD for a single dataset (one speaker's complete dataset).
-
-        This method runs in a separate process and handles all audio files
-        for one speaker. If multiple speakers were exported, each speaker's
-        dataset is processed by a different process in parallel.
-
-        Args:
-            dataset_path: Path to the dataset directory for one speaker
-
-        Returns:
-            Dictionary with files processed and warnings
-        """
-        from scripts_module.vadiate import (
-            get_audio_files,
-            process_audio,
-            load_silero_vad,
+    def _run_omnivad_processing(self, dataset_paths, progress_callback=None):
+        """Run OmniVAD on exported datasets. Outputs vad.json."""
+        return self._run_vad_processing(
+            "scripts_module.omnivad_processor",
+            dataset_paths,
+            "vad.json",
+            "OmniVAD",
+            progress_callback,
         )
 
-        vad_output = dataset_path / "vad.json"
-        audio_files = get_audio_files(str(dataset_path))
-
-        result_info = {"files_processed": 0, "warnings": []}
-
-        if not audio_files:
-            return result_info
-
-        # Load model for this process
-        model = load_silero_vad()
-        results = {}
-
-        for file_path in audio_files:
-            try:
-                rel_path, result, warnings = process_audio(
-                    file_path,
-                    model,
-                    str(dataset_path),
-                    use_dynamic_threshold=True,
-                    collect_warnings=True,
-                )
-                results[rel_path] = result
-                result_info["warnings"].extend(warnings)
-                result_info["files_processed"] += 1
-            except Exception as e:
-                result_info["warnings"].append(f"VAD error for {file_path}: {e}")
-
-        # Save results
-        with open(vad_output, "w") as f:
-            json.dump(results, f, indent=2)
-
-        return result_info
+    def _run_silero_vad_processing(self, dataset_paths, progress_callback=None):
+        """Run Silero VAD on exported datasets. Outputs vad_silero.json."""
+        return self._run_vad_processing(
+            "scripts_module.vadiate",
+            dataset_paths,
+            "vad_silero.json",
+            "Silero VAD",
+            progress_callback,
+        )

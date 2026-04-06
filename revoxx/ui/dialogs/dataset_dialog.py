@@ -247,10 +247,6 @@ class DatasetDialog:
             variable=self.include_intensity_var,
         ).pack(anchor=tk.W)
 
-        # VAD support checkbox
-        self.include_vad_var = tk.BooleanVar(
-            value=getattr(self.settings_manager.settings, "export_include_vad", False)
-        )
         self.skip_rejected_var = tk.BooleanVar(
             value=getattr(self.settings_manager.settings, "export_skip_rejected", True)
         )
@@ -326,31 +322,49 @@ class DatasetDialog:
 
         self._on_loudness_toggle()
 
-        self.vad_checkbox = ttk.Checkbutton(
-            options_frame,
-            text="Include VAD analysis",
-            variable=self.include_vad_var,
-        )
-        self.vad_checkbox.pack(anchor=tk.W, pady=(2, 0))
-
-        # Enable/disable VAD checkbox based on availability
-        vad_available = (
-            self.process_manager.is_vad_available() if self.process_manager else False
-        )
-        if vad_available:
-            self.vad_checkbox.configure(state="normal")
-            # Add tooltip
-            self._create_tooltip(
-                self.vad_checkbox,
-                "Voice Activity Detection provides speech segment timestamps",
+        # VAD options
+        self.include_omnivad_var = tk.BooleanVar(
+            value=getattr(
+                self.settings_manager.settings, "export_include_omnivad", False
             )
-        else:
-            self.vad_checkbox.configure(state="disabled")
-            self.include_vad_var.set(False)
-            # Add different tooltip for disabled state
+        )
+        omnivad_available = (
+            self.process_manager.is_omnivad_available()
+            if self.process_manager
+            else False
+        )
+        self.omnivad_checkbox = ttk.Checkbutton(
+            options_frame,
+            text="Include VAD analysis (OmniVAD)",
+            variable=self.include_omnivad_var,
+            state="normal" if omnivad_available else "disabled",
+        )
+        self.omnivad_checkbox.pack(anchor=tk.W, pady=(2, 0))
+        if not omnivad_available:
+            self.include_omnivad_var.set(False)
+
+        self.include_silero_var = tk.BooleanVar(
+            value=getattr(
+                self.settings_manager.settings, "export_include_silero_vad", False
+            )
+        )
+        silero_available = (
+            self.process_manager.is_silero_vad_available()
+            if self.process_manager
+            else False
+        )
+        self.silero_checkbox = ttk.Checkbutton(
+            options_frame,
+            text="Include VAD analysis (Silero)",
+            variable=self.include_silero_var,
+            state="normal" if silero_available else "disabled",
+        )
+        self.silero_checkbox.pack(anchor=tk.W, pady=(2, 0))
+        if not silero_available:
+            self.include_silero_var.set(False)
             self._create_tooltip(
-                self.vad_checkbox,
-                "VAD not available - install Revoxx with '[vad]' option to enable",
+                self.silero_checkbox,
+                "Silero VAD not available - install with: pip install revoxx[silero]",
             )
 
         output_frame.columnconfigure(1, weight=1)
@@ -735,7 +749,10 @@ class DatasetDialog:
             "export_include_intensity", self.include_intensity_var.get()
         )
         self.settings_manager.update_setting(
-            "export_include_vad", self.include_vad_var.get()
+            "export_include_omnivad", self.include_omnivad_var.get()
+        )
+        self.settings_manager.update_setting(
+            "export_include_silero_vad", self.include_silero_var.get()
         )
         self.settings_manager.update_setting(
             "export_skip_rejected", self.skip_rejected_var.get()
@@ -766,16 +783,12 @@ class DatasetDialog:
 
         try:
             # Create exporter
-            vad_enabled = self.include_vad_var.get() and (
-                self.process_manager.is_vad_available()
-                if self.process_manager
-                else False
-            )
             exporter = DatasetExporter(
                 output_dir=output_dir,
                 audio_format=self.format_var.get(),
                 include_intensity=self.include_intensity_var.get(),
-                include_vad=vad_enabled,
+                include_omnivad=self.include_omnivad_var.get(),
+                include_silero_vad=self.include_silero_var.get(),
                 omit_single_emotion=self.omit_single_emotion_var.get(),
                 loudness_target=self._get_loudness_target(),
             )
@@ -871,18 +884,20 @@ class DatasetDialog:
             summary += f"⚠ Warning: {statistics['missing_recordings']} recordings were missing\n"
 
         # Add VAD statistics if available
-        if "vad_statistics" in statistics and statistics["vad_statistics"]:
-            vad_stats = statistics["vad_statistics"]
-            summary += "\n" + "-" * 50 + "\n"
-            summary += (
-                f"VAD Analysis: {vad_stats.get('total_files', 0)} files processed\n"
-            )
-
-            # Add warnings if any
-            if vad_stats.get("warnings"):
-                summary += "\nWarnings:\n"
-                for warning in vad_stats["warnings"]:
-                    summary += f"{warning}\n"
+        for key, label in [
+            ("omnivad_statistics", "OmniVAD"),
+            ("silero_vad_statistics", "Silero VAD"),
+        ]:
+            if key in statistics and statistics[key]:
+                vad_stats = statistics[key]
+                summary += "\n" + "-" * 50 + "\n"
+                summary += (
+                    f"{label}: {vad_stats.get('total_files', 0)} files processed\n"
+                )
+                if vad_stats.get("warnings"):
+                    summary += "\nWarnings:\n"
+                    for warning in vad_stats["warnings"]:
+                        summary += f"{warning}\n"
 
         # Insert text and make read-only
         text_widget.insert("1.0", summary)

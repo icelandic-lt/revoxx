@@ -327,32 +327,58 @@ class ProcessManager:
         )
 
     def _check_vad_availability(self) -> None:
-        """Check if VAD support is available and store in manager_dict."""
+        """Check if VAD backends are available and store in manager_dict."""
+        # OmniVAD (default, always installed)
         try:
-            # Try to import the VAD module from scripts_module
+            from omnivad import OmniVAD  # noqa: F401
+
+            omnivad_available = True
+        except ImportError:
+            omnivad_available = False
+
+        # Silero VAD (optional, requires torch)
+        try:
             from scripts_module import vadiate  # noqa: F401
             from silero_vad import load_silero_vad  # noqa: F401
 
-            vad_available = True
-            if self.app.debug:
-                print("[ProcessManager] VAD support is available")
+            silero_available = True
         except ImportError:
-            vad_available = False
-            if self.app.debug:
-                print("[ProcessManager] VAD support is not available")
+            silero_available = False
+
+        if self.app.debug:
+            print(
+                f"[ProcessManager] OmniVAD: {omnivad_available}, Silero: {silero_available}"
+            )
 
         if self.manager_dict is not None:
-            self.manager_dict["vad_available"] = vad_available
+            self.manager_dict["omnivad_available"] = omnivad_available
+            self.manager_dict["silero_vad_available"] = silero_available
+            # Legacy key for backwards compatibility
+            self.manager_dict["vad_available"] = omnivad_available or silero_available
 
     def is_vad_available(self) -> bool:
-        """Check if VAD support is available.
-
-        Returns:
-            True if VAD is available
-        """
+        """Check if any VAD backend is available."""
         if self.manager_dict:
             try:
                 return self.manager_dict.get("vad_available", False)
+            except (AttributeError, KeyError):
+                return False
+        return False
+
+    def is_omnivad_available(self) -> bool:
+        """Check if OmniVAD is available."""
+        if self.manager_dict:
+            try:
+                return self.manager_dict.get("omnivad_available", False)
+            except (AttributeError, KeyError):
+                return False
+        return False
+
+    def is_silero_vad_available(self) -> bool:
+        """Check if Silero VAD is available (requires torch)."""
+        if self.manager_dict:
+            try:
+                return self.manager_dict.get("silero_vad_available", False)
             except (AttributeError, KeyError):
                 return False
         return False

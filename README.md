@@ -3,7 +3,6 @@
 This repository provides **Revoxx**, a graphical recording application for recording raw speech and generating datasets.
 
 [![PyPI version](https://img.shields.io/pypi/v/revoxx)](https://pypi.org/project/revoxx/)
-![Python](https://img.shields.io/badge/python-3.9-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.10-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
@@ -19,7 +18,7 @@ This repository provides **Revoxx**, a graphical recording application for recor
 - **Domain:** Laptop/Workstation
 - **Languages:** Python
 - **Language Version/Dialect:**
-  - Python: 3.9 - 3.13
+  - Python: 3.10 - 3.13
 - **Audience**: Developers, Researchers
 - **Origins:** [Icelandic EmoSpeech scripts](https://github.com/icelandic-lt/emospeech-scripts)
 
@@ -28,7 +27,7 @@ This repository provides **Revoxx**, a graphical recording application for recor
 
 ## System Requirements
 - **Operating System:** Linux/OS-X, should work on Windows
-- **Python:** 3.9 - 3.13 with Tkinter support
+- **Python:** 3.10 - 3.13 with Tkinter support
 - **Recording:** Audio Interface, good voice microphone and headphones
 - **Linux:** Requires PortAudio library (`sudo apt-get install portaudio19-dev` on Ubuntu/Debian)
 - **GUI:** Tkinter (usually included with Python, see installation notes below)
@@ -84,7 +83,10 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
   - Groups different recording sessions of the same speaker into a common dataset
   - Option to **skip rejected utterances** during export
   - **EBU R 128 loudness normalization** with selectable presets or custom LUFS target, true peak limiting
-  - **Add voice timestamps, if VAD is enabled**
+  - **Voice Activity Detection (VAD)** with speech segment timestamps
+    - **OmniVAD** (included by default) - CPU-only, based on FireRedVAD DFSMN model via ncnn, no PyTorch required
+    - **Silero VAD** (optional) - requires PyTorch, install with `pip install revoxx[silero]`
+    - Both VAD backends can run simultaneously for comparison
 
 ## Installation
 
@@ -129,17 +131,17 @@ python3 -c "import tkinter; print('Tkinter is installed')"
 [uv](https://github.com/astral-sh/uv) is a fast Python package installer and resolver:
 
 ```bash
-uv pip install revoxx         # From PyPI
-uv pip install .              # From source
-uv pip install revoxx[vad]    # With VAD support
+uv pip install revoxx           # From PyPI (includes OmniVAD)
+uv pip install .                # From source
+uv pip install revoxx[silero]   # With additional Silero VAD support
 ```
 
 ### Using pip
 
 ```bash
-pip install revoxx           # From PyPI
-pip install .                # From source
-pip install revoxx[vad]      # With VAD support
+pip install revoxx             # From PyPI (includes OmniVAD)
+pip install .                  # From source
+pip install revoxx[silero]     # With additional Silero VAD support
 ```
 
 ### From source
@@ -150,21 +152,22 @@ cd revoxx
 # Then use either uv or pip as shown above
 ```
 
-### With Voice Activity Detection (VAD)
+### Voice Activity Detection (VAD)
 
-The VAD functionality requires PyTorch. You need only to install the PyTorch CPU-only version and save a lot of disk space
-in comparison to the CUDA-enabled version:
+**OmniVAD** is included by default and requires no additional installation. It uses the FireRedVAD DFSMN model via ncnn and runs entirely on CPU.
+
+To additionally install **Silero VAD** (requires PyTorch):
 
 ```bash
-# Option 1: CPU-only PyTorch (recommended)
+# Option 1: CPU-only PyTorch (recommended, smaller download)
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install revoxx[vad]
+pip install revoxx[silero]
 
 # Option 2: Default PyTorch (often includes CUDA support > 2GB disk-space required)
-pip install revoxx[vad]
+pip install revoxx[silero]
 ```
 
-**Note:** The VAD uses ONNX models and only requires CPU. The CPU-only version is much smaller and sufficient for all VAD operations.
+Both VAD backends can be enabled simultaneously during export to produce separate result files for comparison.
 
 </details>
 
@@ -185,8 +188,8 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install in editable mode with dev dependencies
 uv pip install -e .[dev]
-# With VAD support:
-uv pip install -e .[dev,vad]
+# With Silero VAD support:
+uv pip install -e .[dev,silero]
 ```
 
 #### Using pip (traditional)
@@ -201,8 +204,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install in editable mode with dev dependencies
 pip install -e .[dev]
-# With VAD support:
-pip install -e .[dev,vad]
+# With Silero VAD support:
+pip install -e .[dev,silero]
 ```
 
 Development dependencies include:
@@ -212,7 +215,7 @@ Development dependencies include:
 - **pytest**: Testing framework
 - **pytest-cov**: Code coverage reporting
 
-> **Note**: Black is pinned to version 25.x because Black 26+ requires Python 3.10+ and introduces the "2026 stable style" with different formatting rules. This ensures consistent formatting across all supported Python versions (3.9-3.13).
+> **Note**: Black is pinned to version 25.x to ensure consistent formatting rules across all supported Python versions.
 
 ### Tcl/Tk for standalone Python builds
 
@@ -278,10 +281,10 @@ The package includes additional utilities:
 
 ```bash
 revoxx-export    # Export sessions to dataset format
-revoxx-vadiate   # Voice Activity Detection tool (requires [vad] option)
+revoxx-vadiate   # Voice Activity Detection tool (uses OmniVAD by default)
 ```
 
-**Note:** The `revoxx-vadiate` tool requires the VAD dependencies. Install with `pip install revoxx[vad]` or `pip install .[vad]` to use this tool.
+The `revoxx-vadiate` tool uses OmniVAD by default. Use `--backend silero` to use Silero VAD instead (requires `pip install revoxx[silero]`).
 
 ### Command-line arguments
 
@@ -326,21 +329,6 @@ The emotion intensity levels are used to control the emotion intensity of the sp
 Neutral speech is treated as intensity level 0 at dataset export.
 
 ## Known Issues
-
-### macOS: System Python 3.9 Icon Loading Issue
-
-On macOS with the system-provided Python 3.9 (3.9.6), the application icon may fail to load with the error:
-- "couldn't recognize data in image file"
-- "Error: too many values to unpack (expected 2)"
-
-**Affected versions:**
-- macOS system Python 3.9.6 (default installation)
-
-**Solution:**
-- Use Python 3.9.23 or newer (available via Homebrew, uv or python.org)
-- Alternatively, use Python 3.10 or newer
-
-This issue is related to Tkinter's PNG handling in the macOS system Python 3.9.6 and does not affect newer Python versions.
 
 ### Linux: USB Audio Output Devices
 
