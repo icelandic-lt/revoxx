@@ -259,6 +259,17 @@ class DatasetDialog:
             variable=self.skip_rejected_var,
         ).pack(anchor=tk.W, pady=(2, 0))
 
+        self.omit_single_emotion_var = tk.BooleanVar(
+            value=getattr(
+                self.settings_manager.settings, "export_omit_single_emotion", False
+            )
+        )
+        ttk.Checkbutton(
+            options_frame,
+            text="Omit emotion from filenames (single emotion only)",
+            variable=self.omit_single_emotion_var,
+        ).pack(anchor=tk.W, pady=(2, 0))
+
         self.vad_checkbox = ttk.Checkbutton(
             options_frame,
             text="Include VAD analysis",
@@ -634,6 +645,9 @@ class DatasetDialog:
         self.settings_manager.update_setting(
             "export_skip_rejected", self.skip_rejected_var.get()
         )
+        self.settings_manager.update_setting(
+            "export_omit_single_emotion", self.omit_single_emotion_var.get()
+        )
 
     def _run_export(
         self, session_paths: List[Path], output_dir: Path, dataset_name: Optional[str]
@@ -659,6 +673,7 @@ class DatasetDialog:
                 audio_format=self.format_var.get(),
                 include_intensity=self.include_intensity_var.get(),
                 include_vad=vad_enabled,
+                omit_single_emotion=self.omit_single_emotion_var.get(),
             )
 
             # Export sessions

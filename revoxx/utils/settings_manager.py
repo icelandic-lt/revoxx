@@ -53,6 +53,7 @@ class UserSettings:
     last_export_dir: Optional[str] = None
     export_format: str = "flac"
     export_include_intensity: bool = True
+    export_omit_single_emotion: bool = False
 
     # Text import settings
     import_input_dir: Optional[str] = None
