@@ -64,6 +64,10 @@ class TestNavigationController(unittest.TestCase):
         self.mock_app.current_session.save = Mock()
         self.mock_app.current_session.asr_verification = {}
 
+        # Mock ASR auto controller
+        self.mock_app.asr_auto_controller = Mock()
+        self.mock_app.asr_auto_controller.is_enabled = Mock(return_value=False)
+
         # Mock shared state
         self.mock_app.shared_state = Mock()
 

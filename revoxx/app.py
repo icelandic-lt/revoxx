@@ -235,6 +235,8 @@ class Revoxx:
 
     def _init_controllers(self):
         """Initialize all controllers."""
+        from .controllers.asr_auto_controller import ASRAutoController
+
         self.audio_controller = AudioController(self)
         self.navigation_controller = NavigationController(self)
         self.flag_controller = FlagController(self)
@@ -244,6 +246,7 @@ class Revoxx:
         self.file_operations_controller = FileOperationsController(self)
         self.dialog_controller = DialogController(self)
         self.edit_controller = EditController(self)
+        self.asr_auto_controller = ASRAutoController(self)
 
     def _populate_app_callbacks(self):
         """Populate app_callbacks dictionary with controller methods."""

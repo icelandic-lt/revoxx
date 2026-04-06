@@ -66,6 +66,7 @@ class UserSettings:
     asr_language: Optional[str] = None
     asr_similarity_threshold: float = 0.95
     asr_max_concurrent: int = 4
+    asr_auto_verify: bool = False
 
     # Text import settings
     import_input_dir: Optional[str] = None

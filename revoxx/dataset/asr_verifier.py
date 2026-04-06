@@ -142,6 +142,49 @@ def character_similarity(expected: str, actual: str) -> float:
     return 1.0 - (distance / max_len)
 
 
+def verify_single(
+    audio_path: Path,
+    expected_text: str,
+    base_url: str,
+    api_key: Optional[str] = None,
+    language: Optional[str] = None,
+    similarity_threshold: float = 0.95,
+) -> Dict:
+    """Verify a single audio file against expected text via ASR.
+
+    Args:
+        audio_path: Path to the audio file
+        expected_text: The text that should have been spoken
+        base_url: ASR endpoint base URL
+        api_key: Optional API key
+        language: Optional ISO language code
+        similarity_threshold: Minimum similarity to count as match (0.0-1.0)
+
+    Returns:
+        Dict with transcription, expected, match, similarity (and error on failure)
+    """
+    client = ASRClient(base_url, api_key)
+    try:
+        transcription = client.transcribe(audio_path, language=language)
+        similarity = character_similarity(expected_text, transcription)
+        return {
+            "transcription": transcription,
+            "expected": expected_text,
+            "match": similarity >= similarity_threshold,
+            "similarity": round(similarity, 4),
+        }
+    except Exception as e:
+        return {
+            "transcription": "",
+            "expected": expected_text,
+            "match": False,
+            "similarity": 0.0,
+            "error": str(e),
+        }
+    finally:
+        client.close()
+
+
 def verify_utterances(
     session_dir: Path,
     labels: List[str],
