@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Dict
 from datetime import datetime
 
+from ...constants import LoudnessConstants
 from ...dataset import DatasetExporter
 from ...utils.settings_manager import SettingsManager
 from ...session.inspector import SessionInspector
@@ -18,7 +19,7 @@ class DatasetDialog:
 
     # Dialog dimensions
     DIALOG_WIDTH = 800
-    DIALOG_HEIGHT = 600
+    DIALOG_HEIGHT = 700
 
     # Summary dialog dimensions
     SUMMARY_WIDTH = 600
@@ -269,6 +270,61 @@ class DatasetDialog:
             text="Omit emotion from filenames (single emotion only)",
             variable=self.omit_single_emotion_var,
         ).pack(anchor=tk.W, pady=(2, 0))
+
+        # Loudness normalization
+        loudness_frame = ttk.Frame(options_frame)
+        loudness_frame.pack(anchor=tk.W, fill=tk.X, pady=(6, 0))
+
+        self.loudness_enabled_var = tk.BooleanVar(
+            value=getattr(
+                self.settings_manager.settings, "export_loudness_enabled", False
+            )
+        )
+        ttk.Checkbutton(
+            loudness_frame,
+            text="Loudness normalization (EBU R 128):",
+            variable=self.loudness_enabled_var,
+            command=self._on_loudness_toggle,
+        ).pack(side=tk.LEFT)
+
+        self.loudness_presets = LoudnessConstants.PRESETS
+        saved_target = getattr(
+            self.settings_manager.settings,
+            "export_loudness_target",
+            LoudnessConstants.DEFAULT_TARGET,
+        )
+        # Find matching preset or use custom
+        initial_preset = ""
+        for label, value in self.loudness_presets.items():
+            if value == saved_target:
+                initial_preset = label
+                break
+
+        self.loudness_combo_var = tk.StringVar(value=initial_preset)
+        self.loudness_combo = ttk.Combobox(
+            loudness_frame,
+            textvariable=self.loudness_combo_var,
+            values=list(self.loudness_presets.keys()),
+            width=22,
+            state="readonly" if initial_preset else "normal",
+        )
+        self.loudness_combo.pack(side=tk.LEFT, padx=(5, 5))
+        self.loudness_combo.bind("<<ComboboxSelected>>", self._on_loudness_preset)
+
+        ttk.Label(loudness_frame, text="or").pack(side=tk.LEFT)
+
+        self.loudness_entry_var = tk.StringVar(
+            value="" if initial_preset else str(saved_target)
+        )
+        self.loudness_entry = ttk.Entry(
+            loudness_frame,
+            textvariable=self.loudness_entry_var,
+            width=6,
+        )
+        self.loudness_entry.pack(side=tk.LEFT, padx=(5, 2))
+        ttk.Label(loudness_frame, text="LUFS").pack(side=tk.LEFT)
+
+        self._on_loudness_toggle()
 
         self.vad_checkbox = ttk.Checkbutton(
             options_frame,
@@ -628,6 +684,45 @@ class DatasetDialog:
         self._save_export_settings(output_dir)
         self._run_export(valid_sessions, output_dir, dataset_name)
 
+    def _on_loudness_toggle(self) -> None:
+        """Enable/disable loudness controls based on checkbox state."""
+        enabled = self.loudness_enabled_var.get()
+        state = "readonly" if enabled else "disabled"
+        entry_state = "normal" if enabled else "disabled"
+        self.loudness_combo.configure(state=state if enabled else "disabled")
+        self.loudness_entry.configure(state=entry_state)
+
+    def _on_loudness_preset(self, _event=None) -> None:
+        """Clear manual entry when a preset is selected."""
+        self.loudness_entry_var.set("")
+
+    def _get_loudness_target(self) -> Optional[float]:
+        """Get the loudness target from UI controls.
+
+        Returns:
+            Target LUFS value, or None if normalization is disabled
+        """
+        if not self.loudness_enabled_var.get():
+            return None
+
+        # Manual entry takes priority
+        manual = self.loudness_entry_var.get().strip()
+        if manual:
+            try:
+                value = float(manual)
+                if value > 0:
+                    value = -value
+                return value
+            except ValueError:
+                pass
+
+        # Fall back to preset
+        preset_label = self.loudness_combo_var.get()
+        if preset_label in self.loudness_presets:
+            return self.loudness_presets[preset_label]
+
+        return LoudnessConstants.DEFAULT_TARGET
+
     def _save_export_settings(self, output_dir: Path) -> None:
         """Save export settings for next time.
 
@@ -648,6 +743,14 @@ class DatasetDialog:
         self.settings_manager.update_setting(
             "export_omit_single_emotion", self.omit_single_emotion_var.get()
         )
+        self.settings_manager.update_setting(
+            "export_loudness_enabled", self.loudness_enabled_var.get()
+        )
+        loudness_target = self._get_loudness_target()
+        if loudness_target is not None:
+            self.settings_manager.update_setting(
+                "export_loudness_target", loudness_target
+            )
 
     def _run_export(
         self, session_paths: List[Path], output_dir: Path, dataset_name: Optional[str]
@@ -674,6 +777,7 @@ class DatasetDialog:
                 include_intensity=self.include_intensity_var.get(),
                 include_vad=vad_enabled,
                 omit_single_emotion=self.omit_single_emotion_var.get(),
+                loudness_target=self._get_loudness_target(),
             )
 
             # Export sessions

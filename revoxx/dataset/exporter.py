@@ -5,10 +5,13 @@ import json
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from collections import Counter
+import numpy as np
 import soundfile as sf
+import pyloudnorm as pyln
 
 from ..session.inspector import SessionInspector
 from ..session.script_parser import FestivalScriptParser
+from ..constants import LoudnessConstants
 from ..controllers.session_controller import REFERENCE_SILENCE_LABEL
 
 
@@ -34,6 +37,8 @@ class DatasetExporter:
         include_intensity: bool = True,
         include_vad: bool = False,
         omit_single_emotion: bool = False,
+        loudness_target: Optional[float] = None,
+        true_peak_limit: float = LoudnessConstants.TRUE_PEAK_LIMIT,
     ):
         """Initialize dataset exporter.
 
@@ -45,6 +50,8 @@ class DatasetExporter:
             include_vad: Whether to run VAD analysis on the exported dataset
             omit_single_emotion: If True and only one emotion exists, omit emotion
                 from filenames and directory structure
+            loudness_target: Target loudness in LUFS (None to disable normalization)
+            true_peak_limit: Maximum true peak in dBTP (default -1.0 per EBU R 128)
         """
         self.output_dir = Path(output_dir)
         self.format = audio_format.lower()
@@ -52,6 +59,8 @@ class DatasetExporter:
         self.include_intensity = include_intensity
         self.include_vad = include_vad
         self.omit_single_emotion = omit_single_emotion
+        self.loudness_target = loudness_target
+        self.true_peak_limit = true_peak_limit
 
     def _group_sessions_by_speaker(self, session_paths: List[Path]) -> Dict:
         """Group sessions by speaker name.
@@ -261,8 +270,10 @@ class DatasetExporter:
                     )
                 output_path = output_dir / output_filename
 
-                # Copy or convert audio
-                if self.format == "flac" and source_file.suffix == ".flac":
+                # Copy/convert audio, with optional loudness normalization
+                if self.loudness_target is not None:
+                    self._export_with_loudness(source_file, output_path)
+                elif self.format == "flac" and source_file.suffix == ".flac":
                     shutil.copy2(source_file, output_path)
                 else:
                     self._convert_audio(source_file, output_path)
@@ -425,6 +436,39 @@ class DatasetExporter:
             "Example:\n"
             "speaker_001.flac<TAB>speaker<TAB>Hvað er klukkan?"
         )
+
+    def _export_with_loudness(self, source_path: Path, dest_path: Path) -> None:
+        """Read audio, apply EBU R 128 loudness normalization, and write output.
+
+        Uses ITU-R BS.1770 integrated loudness measurement. The gain is reduced
+        if the normalized signal would exceed the true peak limit.
+
+        Args:
+            source_path: Path to source audio file
+            dest_path: Path to output audio file
+        """
+        data, samplerate = sf.read(str(source_path), dtype="float64")
+
+        meter = pyln.Meter(samplerate)
+        loudness = meter.integrated_loudness(data)
+
+        # Skip normalization for silence or extremely quiet files
+        if loudness == -np.inf:
+            sf.write(str(dest_path), data, samplerate)
+            return
+
+        gain_db = self.loudness_target - loudness
+        gain_linear = LoudnessConstants.db_to_linear(gain_db)
+
+        # Check true peak and reduce gain if it would clip
+        peak = np.max(np.abs(data))
+        if peak > 0:
+            peak_limit_linear = LoudnessConstants.db_to_linear(self.true_peak_limit)
+            if peak * gain_linear > peak_limit_linear:
+                gain_linear = peak_limit_linear / peak
+
+        normalized = data * gain_linear
+        sf.write(str(dest_path), normalized, samplerate)
 
     @staticmethod
     def _convert_audio(source_path: Path, dest_path: Path):
