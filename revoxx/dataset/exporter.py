@@ -3,7 +3,7 @@
 import shutil
 import json
 from pathlib import Path
-from typing import List, Dict, Set, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional, Any
 from collections import Counter
 import soundfile as sf
 
@@ -33,6 +33,7 @@ class DatasetExporter:
         zero_intensity_emotions: List[str] = None,
         include_intensity: bool = True,
         include_vad: bool = False,
+        omit_single_emotion: bool = False,
     ):
         """Initialize dataset exporter.
 
@@ -42,12 +43,15 @@ class DatasetExporter:
             zero_intensity_emotions: List of emotions to set intensity to 0
             include_intensity: Whether to include intensity column in index.tsv
             include_vad: Whether to run VAD analysis on the exported dataset
+            omit_single_emotion: If True and only one emotion exists, omit emotion
+                from filenames and directory structure
         """
         self.output_dir = Path(output_dir)
         self.format = audio_format.lower()
         self.zero_intensity_emotions = zero_intensity_emotions or ["neutral"]
         self.include_intensity = include_intensity
         self.include_vad = include_vad
+        self.omit_single_emotion = omit_single_emotion
 
     def _group_sessions_by_speaker(self, session_paths: List[Path]) -> Dict:
         """Group sessions by speaker name.
@@ -134,16 +138,6 @@ class DatasetExporter:
                 "sessions": len(sessions),
             }
 
-            # Collect rejected labels from all sessions if skip_rejected is enabled
-            rejected_labels = None
-            if skip_rejected:
-                rejected_labels = set()
-                for session_path, session_data in sessions:
-                    flags = session_data.get("utterance_flags", {})
-                    for label, flag_type in flags.items():
-                        if flag_type == "rejected":
-                            rejected_labels.add(label)
-
             # Group sessions by emotion
             emotion_sessions = {}
             for session_path, session_data in sessions:
@@ -152,6 +146,11 @@ class DatasetExporter:
                     emotion_sessions[emotion] = []
                 emotion_sessions[emotion].append((session_path, session_data))
                 speaker_statistics["emotions"].add(emotion)
+
+            # Determine whether to omit emotion from filenames/paths
+            flatten_emotion = (
+                self.omit_single_emotion and len(emotion_sessions) == 1
+            )
 
             # Process each emotion group
             for emotion, emotion_session_list in emotion_sessions.items():
@@ -164,7 +163,8 @@ class DatasetExporter:
                     file_counts,
                     total_statistics,
                     progress_callback,
-                    rejected_labels=rejected_labels,
+                    skip_rejected=skip_rejected,
+                    flatten_emotion=flatten_emotion,
                 )
 
             # Write index file for this speaker
@@ -176,7 +176,9 @@ class DatasetExporter:
             audio_properties = self._get_audio_properties(sessions[0][1])
 
             # Write README file with format documentation
-            self._write_readme(dataset_dir, audio_properties)
+            self._write_readme(
+                dataset_dir, audio_properties, flatten_emotion=flatten_emotion
+            )
 
             all_datasets.append(dataset_dir)
             total_statistics["datasets_created"] += 1
@@ -207,7 +209,8 @@ class DatasetExporter:
         file_counts: Counter,
         total_statistics: Dict,
         progress_callback=None,
-        rejected_labels: Optional[Set[str]] = None,
+        skip_rejected: bool = False,
+        flatten_emotion: bool = False,
     ) -> None:
         """Process all sessions for a specific emotion.
 
@@ -220,15 +223,22 @@ class DatasetExporter:
             file_counts: Counter for file numbering
             total_statistics: Statistics dictionary to update
             progress_callback: Optional progress callback
-            rejected_labels: Set of utterance labels to skip during export
+            skip_rejected: If True, skip utterances flagged as 'rejected' in their own session
+            flatten_emotion: If True, omit emotion from filenames and directory structure
         """
-        emotion_dir = dataset_dir / emotion
-        emotion_dir.mkdir(exist_ok=True)
+        if flatten_emotion:
+            output_dir = dataset_dir
+        else:
+            output_dir = dataset_dir / emotion
+            output_dir.mkdir(exist_ok=True)
 
         # Process all utterances for this emotion
         utterance_list = self._collect_utterances(
-            emotion_session_list, rejected_labels=rejected_labels
+            emotion_session_list, skip_rejected=skip_rejected
         )
+
+        # Use a single counter key when flattened
+        count_key = "_flat" if flatten_emotion else emotion
 
         for utterance_id, session_path, take_num, text in utterance_list:
             total_statistics["total_utterances"] += 1
@@ -244,11 +254,16 @@ class DatasetExporter:
             )
 
             if source_file.exists():
-                file_counter = file_counts[emotion] + 1
-                output_filename = (
-                    f"{dataset_name}_{emotion}_{file_counter:03d}.{self.format}"
-                )
-                output_path = emotion_dir / output_filename
+                file_counter = file_counts[count_key] + 1
+                if flatten_emotion:
+                    output_filename = (
+                        f"{dataset_name}_{file_counter:03d}.{self.format}"
+                    )
+                else:
+                    output_filename = (
+                        f"{dataset_name}_{emotion}_{file_counter:03d}.{self.format}"
+                    )
+                output_path = output_dir / output_filename
 
                 # Copy or convert audio
                 if self.format == "flac" and source_file.suffix == ".flac":
@@ -256,17 +271,27 @@ class DatasetExporter:
                 else:
                     self._convert_audio(source_file, output_path)
 
-                file_counts[emotion] += 1
+                file_counts[count_key] += 1
 
                 # Add to index
-                if self.include_intensity:
-                    index_data.append(
-                        f"{output_filename}\t{dataset_name}\t{emotion}\t{intensity}\t{clean_text}\n"
-                    )
+                if flatten_emotion:
+                    if self.include_intensity:
+                        index_data.append(
+                            f"{output_filename}\t{dataset_name}\t{intensity}\t{clean_text}\n"
+                        )
+                    else:
+                        index_data.append(
+                            f"{output_filename}\t{dataset_name}\t{clean_text}\n"
+                        )
                 else:
-                    index_data.append(
-                        f"{output_filename}\t{dataset_name}\t{emotion}\t{clean_text}\n"
-                    )
+                    if self.include_intensity:
+                        index_data.append(
+                            f"{output_filename}\t{dataset_name}\t{emotion}\t{intensity}\t{clean_text}\n"
+                        )
+                    else:
+                        index_data.append(
+                            f"{output_filename}\t{dataset_name}\t{emotion}\t{clean_text}\n"
+                        )
             else:
                 total_statistics["missing_recordings"] += 1
 
@@ -281,7 +306,7 @@ class DatasetExporter:
     def _collect_utterances(
         self,
         emotion_sessions: List[Tuple[Path, Dict]],
-        rejected_labels: Optional[Set[str]] = None,
+        skip_rejected: bool = False,
     ) -> List[Tuple[str, Path, int, str]]:
         """Collect all utterances from sessions, choosing best take per session.
 
@@ -291,7 +316,7 @@ class DatasetExporter:
 
         Args:
             emotion_sessions: List of (session_path, session_data) tuples
-            rejected_labels: Set of utterance labels to skip during export
+            skip_rejected: If True, skip utterances flagged as 'rejected' in their own session
 
         Returns:
             List of (utterance_id, session_path, take_number, text) tuples
@@ -303,6 +328,14 @@ class DatasetExporter:
             script_file = session_path / "script.txt"
             script_data = self._load_script(script_file)
 
+            # Build per-session rejected set
+            rejected_labels = set()
+            if skip_rejected:
+                flags = session_data.get("utterance_flags", {})
+                rejected_labels = {
+                    label for label, flag in flags.items() if flag == "rejected"
+                }
+
             # Find all recordings
             if recordings_dir.exists():
                 for utterance_dir in recordings_dir.iterdir():
@@ -313,8 +346,8 @@ class DatasetExporter:
                         if utterance_id == REFERENCE_SILENCE_LABEL:
                             continue
 
-                        # Skip rejected utterances
-                        if rejected_labels and utterance_id in rejected_labels:
+                        # Skip utterances rejected in this session
+                        if utterance_id in rejected_labels:
                             continue
 
                         # Find highest take number
@@ -374,6 +407,29 @@ class DatasetExporter:
         """
         return FestivalScriptParser.extract_intensity_and_text(text)
 
+    def _build_flat_index_format(self) -> str:
+        """Build index format description for flattened (no emotion) export."""
+        if self.include_intensity:
+            return (
+                "Each line in index.tsv contains 4 tab-separated columns:\n"
+                "1. filename        : Audio file name (e.g., speaker_001.flac)\n"
+                "2. speaker         : Speaker name/identifier\n"
+                "3. intensity       : Emotional intensity level (0-5)\n"
+                "4. text           : Transcription of the utterance\n"
+                "\n"
+                "Example:\n"
+                "speaker_001.flac<TAB>speaker<TAB>0<TAB>Hvað er klukkan?"
+            )
+        return (
+            "Each line in index.tsv contains 3 tab-separated columns:\n"
+            "1. filename        : Audio file name (e.g., speaker_001.flac)\n"
+            "2. speaker         : Speaker name/identifier\n"
+            "3. text           : Transcription of the utterance\n"
+            "\n"
+            "Example:\n"
+            "speaker_001.flac<TAB>speaker<TAB>Hvað er klukkan?"
+        )
+
     @staticmethod
     def _convert_audio(source_path: Path, dest_path: Path):
         """Convert audio file to target format."""
@@ -384,12 +440,18 @@ class DatasetExporter:
             # If conversion fails, try to copy as-is
             shutil.copy2(source_path, dest_path)
 
-    def _write_readme(self, dataset_dir: Path, audio_properties: Dict[str, Any]):
+    def _write_readme(
+        self,
+        dataset_dir: Path,
+        audio_properties: Dict[str, Any],
+        flatten_emotion: bool = False,
+    ):
         """Write README.txt with TSV format documentation from template.
 
         Args:
             dataset_dir: Directory to write README to
             audio_properties: Dict with sample_rate and bit_depth
+            flatten_emotion: Whether emotion was omitted from structure
         """
         # Load main template
         template_dir = Path(__file__).parent.parent / "resources" / "templates"
@@ -398,14 +460,16 @@ class DatasetExporter:
         with open(main_template_path, "r", encoding="utf-8") as f:
             readme_content = f.read()
 
-        # Load appropriate index format template
-        if self.include_intensity:
+        if flatten_emotion:
+            index_format = self._build_flat_index_format()
+        elif self.include_intensity:
             index_template_path = template_dir / "index_format_with_intensity.txt"
+            with open(index_template_path, "r", encoding="utf-8") as f:
+                index_format = f.read()
         else:
             index_template_path = template_dir / "index_format_without_intensity.txt"
-
-        with open(index_template_path, "r", encoding="utf-8") as f:
-            index_format = f.read()
+            with open(index_template_path, "r", encoding="utf-8") as f:
+                index_format = f.read()
 
         # Prepare audio properties strings
         sample_rate_str = (

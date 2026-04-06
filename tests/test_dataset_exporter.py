@@ -739,5 +739,120 @@ class TestDatasetExporter(unittest.TestCase):
         self.assertIn("Script C first", all_texts)
 
 
+    def test_omit_single_emotion_from_filenames(self):
+        """Test that emotion is omitted from filenames, directory, and index
+        when only one emotion exists."""
+        utterances = [
+            ("utt_001", "First utterance"),
+            ("utt_002", "Second utterance"),
+        ]
+        self._create_test_session(
+            self.session1_dir, "Test Speaker", "neutral", utterances
+        )
+
+        exporter = DatasetExporter(
+            self.output_dir, audio_format="flac", omit_single_emotion=True
+        )
+        output_paths, stats = exporter.export_sessions([self.session1_dir])
+
+        dataset_dir = output_paths[0]
+
+        # No emotion subdirectory
+        self.assertFalse((dataset_dir / "neutral").exists())
+
+        # Files directly in dataset dir without emotion in name
+        audio_files = sorted(dataset_dir.glob("*.flac"))
+        self.assertEqual(len(audio_files), 2)
+        self.assertEqual(audio_files[0].name, "test_speaker_001.flac")
+        self.assertEqual(audio_files[1].name, "test_speaker_002.flac")
+
+        # Index has no emotion column: filename, speaker, intensity, text
+        with open(dataset_dir / "index.tsv", "r") as f:
+            lines = f.readlines()
+        self.assertEqual(len(lines), 2)
+        parts = lines[0].strip().split("\t")
+        self.assertEqual(len(parts), 4)
+        self.assertEqual(parts[0], "test_speaker_001.flac")
+        self.assertEqual(parts[1], "test_speaker")
+        self.assertEqual(parts[2], "0")  # intensity
+        self.assertNotEqual(parts[3], "neutral")  # text, not emotion
+
+    def test_omit_single_emotion_disabled_with_multiple_emotions(self):
+        """Test that emotion is kept when multiple emotions exist, even with flag."""
+        self._create_test_session(
+            self.session1_dir,
+            "Anna",
+            "happy",
+            [("utt_001", "Happy text")],
+        )
+        self._create_test_session(
+            self.session2_dir,
+            "Anna",
+            "sad",
+            [("utt_002", "Sad text")],
+        )
+
+        exporter = DatasetExporter(
+            self.output_dir, audio_format="flac", omit_single_emotion=True
+        )
+        output_paths, _ = exporter.export_sessions(
+            [self.session1_dir, self.session2_dir]
+        )
+
+        dataset_dir = output_paths[0]
+        # Emotion subdirectories still exist
+        self.assertTrue((dataset_dir / "happy").exists())
+        self.assertTrue((dataset_dir / "sad").exists())
+        # Filenames still contain emotion
+        happy_files = list((dataset_dir / "happy").glob("*.flac"))
+        self.assertTrue(happy_files[0].name.startswith("anna_happy_"))
+
+    def test_skip_rejected_per_session_not_global(self):
+        """Test that rejected flags only apply to their own session.
+
+        When two sessions share the same utterance IDs and one session
+        rejects an utterance, the same utterance in the other session
+        must still be exported.
+        """
+        # Session 1: utt_001 is rejected here
+        self._create_test_session(
+            self.session1_dir,
+            "Anna",
+            "neutral",
+            [("utt_001", "Script A first"), ("utt_002", "Script A second")],
+            utterance_flags={"utt_001": "rejected"},
+        )
+
+        # Session 2: same IDs, no rejections
+        self._create_test_session(
+            self.session2_dir,
+            "Anna",
+            "neutral",
+            [("utt_001", "Script B first"), ("utt_002", "Script B second")],
+        )
+
+        exporter = DatasetExporter(self.output_dir, audio_format="flac")
+        output_paths, stats = exporter.export_sessions(
+            [self.session1_dir, self.session2_dir], skip_rejected=True
+        )
+
+        dataset_dir = output_paths[0]
+        audio_files = list((dataset_dir / "neutral").glob("*.flac"))
+        # Session 1: utt_002 only (utt_001 rejected)
+        # Session 2: utt_001 + utt_002 (no rejections)
+        # Total: 3
+        self.assertEqual(len(audio_files), 3)
+        self.assertEqual(stats["total_utterances"], 3)
+
+        with open(dataset_dir / "index.tsv", "r") as f:
+            index_lines = f.readlines()
+
+        all_texts = [line.strip().split("\t")[-1] for line in index_lines]
+        self.assertIn("Script A second", all_texts)
+        self.assertIn("Script B first", all_texts)
+        self.assertIn("Script B second", all_texts)
+        self.assertNotIn("Script A first", all_texts)
+
+
 if __name__ == "__main__":
     unittest.main()
