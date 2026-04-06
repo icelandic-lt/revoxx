@@ -87,6 +87,11 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
     - **OmniVAD** (included by default) - CPU-only, based on FireRedVAD DFSMN model via ncnn, no PyTorch required
     - **Silero VAD** (optional) - requires PyTorch, install with `pip install revoxx[silero]`
     - Both VAD backends can run simultaneously for comparison
+- **ASR-based Recording Verification**
+  - Automatically transcribe recordings via an **OpenAI-compatible ASR endpoint** (cloud or self-hosted) and compare against the script text
+  - Spot misread utterances via configurable character-level similarity threshold
+  - **Toggle** between script text and ASR transcription in the display with a single keystroke
+  - **Manual override** for false negatives, direct navigation to mismatches
 
 ## Installation
 

@@ -175,6 +175,20 @@ class WindowBase:
             pady=UIConstants.FRAME_SPACING,
         )
 
+        # ASR display mode indicator (right side, next to progress)
+        self.asr_mode_label = tk.Label(
+            self.info_frame,
+            text="",
+            fg=UIConstants.COLOR_ASR_TEXT,
+            bg=UIConstants.COLOR_BACKGROUND_SECONDARY,
+            font=(UIConstants.FONT_FAMILY_MONO[0], 13, "bold"),
+        )
+        self.asr_mode_label.pack(
+            side=tk.RIGHT,
+            padx=(0, UIConstants.MAIN_FRAME_PADDING),
+            pady=UIConstants.FRAME_SPACING,
+        )
+
         # Emotion level indicator (center - positioned absolutely)
         max_level = (
             get_max_emotion_level(self.recording_state.utterances)
@@ -205,6 +219,9 @@ class WindowBase:
         self.utterance_frame.grid(
             row=1, column=0, sticky="nsew", pady=UIConstants.FRAME_SPACING
         )
+
+        # ASR transcription toggle state
+        self._show_asr_transcription = False
 
         # Main text display only (no label)
         self.text_var = tk.StringVar()
@@ -458,33 +475,73 @@ class WindowBase:
             is_recording: Whether currently recording
             display_position: Display position for progress counter (1-based)
         """
+        self._update_recording_indicators(is_recording)
+
         if 0 <= index < len(self.recording_state.utterances):
             self._update_utterance_display(index)
             self._update_progress_display(display_position)
 
-        self._update_recording_indicators(is_recording)
-
     def _update_utterance_display(self, index: int) -> None:
         """Update the utterance text display and emotion indicator.
 
-        Extracts emotion level from utterance text and displays
-        clean text without emotion label.
+        Shows either the script text or ASR transcription depending on toggle state.
+        Does not override the recording color (red) if currently recording.
 
         Args:
             index: Index of current utterance
         """
         full_text = self.recording_state.utterances[index]
-
-        # Extract emotion level and clean text
         emotion_level, clean_text = extract_emotion_level(full_text)
 
-        self.update_utterance_text(clean_text)
+        asr_text = None
+        if self._show_asr_transcription:
+            label = self.recording_state.current_label
+            asr_text = self._get_asr_transcription(label)
 
-        # Update emotion indicator
+        if asr_text is not None:
+            self.update_utterance_text(asr_text)
+            if not self.recording_state.is_recording:
+                self.text_display.config(fg=UIConstants.COLOR_ASR_TEXT)
+        else:
+            self.update_utterance_text(clean_text)
+            if not self.recording_state.is_recording:
+                self.text_display.config(fg=UIConstants.COLOR_TEXT_NORMAL)
+
         if emotion_level is not None:
             self.emotion_indicator.set_level(emotion_level)
         else:
-            self.emotion_indicator.set_level(0)  # No emotion level
+            self.emotion_indicator.set_level(0)
+
+    def _get_asr_transcription(self, label: str) -> str:
+        """Get ASR transcription for a label from the session.
+
+        Args:
+            label: Utterance label
+
+        Returns:
+            Transcription text or None if not available
+        """
+        if not label:
+            return None
+        get_session = self.app_callbacks.get("get_current_session")
+        if not get_session:
+            return None
+        session = get_session()
+        if not session:
+            return None
+        result = session.asr_verification.get(label)
+        if not result:
+            return None
+        return result.get("transcription")
+
+    def toggle_asr_display(self) -> None:
+        """Toggle between script text and ASR transcription display."""
+        self._show_asr_transcription = not self._show_asr_transcription
+        self.asr_mode_label.config(text="ASR" if self._show_asr_transcription else "")
+        # Re-render current utterance
+        index = self.recording_state.current_index
+        if 0 <= index < len(self.recording_state.utterances):
+            self._update_utterance_display(index)
 
     def _update_progress_display(self, display_position: int) -> None:
         """Update the progress counter display.
@@ -617,21 +674,29 @@ class WindowBase:
         else:
             self.update_flag_indicator(None)
 
-    def update_flag_indicator(self, flag: str = None) -> None:
+    def update_flag_indicator(self, flag: str = None, asr_status: str = None) -> None:
         """Update the colored flag indicator label.
 
         Args:
             flag: Flag type string or None to clear
+            asr_status: ASR verification status ("match", "mismatch", "error", None)
         """
+        parts = []
+        color = UIConstants.COLOR_TEXT_SECONDARY
+
         if flag:
-            display_text = FlagType.DISPLAY.get(flag, flag)
+            parts.append(FlagType.DISPLAY.get(flag, flag))
             color_attr = self.FLAG_COLORS.get(flag)
-            color = (
-                getattr(UIConstants, color_attr)
-                if color_attr
-                else UIConstants.COLOR_TEXT_SECONDARY
-            )
-            self.flag_var.set(display_text)
+            if color_attr:
+                color = getattr(UIConstants, color_attr)
+
+        if asr_status == "mismatch":
+            parts.append("ASR mismatch")
+            if not flag:
+                color = UIConstants.COLOR_WARNING
+
+        if parts:
+            self.flag_var.set(" | ".join(parts))
             self.flag_label.config(fg=color)
         else:
             self.flag_var.set("")

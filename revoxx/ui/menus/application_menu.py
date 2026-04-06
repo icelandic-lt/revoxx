@@ -159,6 +159,12 @@ class ApplicationMenu:
             command=self._create_dataset,
         )
 
+        # ASR Verification
+        file_menu.add_command(
+            label="ASR Verification...",
+            command=self._asr_verification,
+        )
+
         file_menu.add_separator()
 
         # Quit
@@ -217,6 +223,11 @@ class ApplicationMenu:
             command=lambda: self.app.flag_controller.jump_to_next("rejected"),
             accelerator=f"{jump_accel_mod}+X",
         )
+        edit_menu.add_command(
+            label="Jump to Next ASR Mismatch",
+            command=self.app.flag_controller.jump_to_next_asr_mismatch,
+            accelerator=f"{jump_accel_mod}+A",
+        )
 
         edit_menu.add_separator()
 
@@ -245,6 +256,11 @@ class ApplicationMenu:
             label="Clear Flag",
             command=self.app.flag_controller.clear_flag,
             accelerator="Shift+U",
+        )
+        edit_menu.add_command(
+            label="Toggle ASR Match",
+            command=self.app.flag_controller.toggle_asr_match,
+            accelerator=f"Shift+{jump_accel_mod}+A",
         )
 
         edit_menu.add_separator()
@@ -294,6 +310,15 @@ class ApplicationMenu:
             variable=self.menu_vars["info_panel"],
             command=self._toggle_info_panel,
             accelerator="I",
+        )
+
+        # ASR Transcription toggle
+        self.menu_vars["asr_display"] = tk.BooleanVar(value=False)
+        view_menu.add_checkbutton(
+            label="Show ASR Transcription",
+            variable=self.menu_vars["asr_display"],
+            command=self._toggle_asr_display,
+            accelerator="Shift+A",
         )
 
         view_menu.add_separator()
@@ -563,6 +588,10 @@ class ApplicationMenu:
         """Handle Open Session menu item."""
         self.app._open_session()
 
+    def _asr_verification(self) -> None:
+        """Show ASR verification dialog."""
+        self.app.dialog_controller.show_asr_verification_dialog()
+
     def _create_dataset(self) -> None:
         """Show dataset creation dialog."""
         base_dir = getattr(
@@ -617,6 +646,10 @@ class ApplicationMenu:
         """Toggle info panel visibility."""
         new_state = self.app.display_controller.toggle_info_panel()
         self.app.settings_manager.update_setting("show_info_panel", new_state)
+
+    def _toggle_asr_display(self) -> None:
+        """Toggle ASR transcription display."""
+        self.app._toggle_asr_display()
 
     def _toggle_monitoring(self) -> None:
         """Toggle monitoring mode."""

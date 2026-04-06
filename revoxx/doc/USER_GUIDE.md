@@ -333,7 +333,81 @@ Follow these guidelines for efficient and consistent recording sessions:
 5. **Multiple Takes**: For difficult or important utterances, record 2-3 takes to have options during dataset creation.
 6. **Review**: Periodically stop to review recent recordings and ensure quality standards are being maintained.
 
-## 7. Export and Dataset Creation
+## 7. ASR Verification
+
+Revoxx can automatically verify recordings against the script by transcribing them with an **Automatic Speech Recognition (ASR)** service. This helps catch misread utterances, skipped words, or wrong intonation that might otherwise be missed during a recording session.
+
+### Why use ASR verification?
+
+During long recording sessions it is easy to miss subtle errors: a speaker swaps two words, pronounces a name differently than expected, or accidentally skips a clause. Manual review of hundreds of recordings is tedious. ASR verification transcribes every recording and compares the result against the script text, so you can focus attention only on the few utterances that actually diverge.
+
+It is intended as a **safety net**, not as a replacement for quality control. A state-of-the-art ASR system will still produce false positives (marking correct recordings as mismatches because of unusual words, proper nouns, etc.) and can miss subtle errors a human ear would notice.
+
+### Configuring the ASR endpoint
+
+Revoxx talks to any **OpenAI-compatible ASR endpoint** (a service that implements `POST /v1/audio/transcriptions`). This includes:
+
+- OpenAI's hosted Whisper API
+- Self-hosted [faster-whisper-server](https://github.com/fedirz/faster-whisper-server)
+- Local [whisper.cpp server](https://github.com/ggerganov/whisper.cpp)
+- Any other compatible service
+
+1. Open **File → ASR Verification...** to show the configuration dialog.
+2. Enter the **Base URL** of your ASR service (e.g. `http://localhost:8000` or `https://api.openai.com`). The `/v1/audio/transcriptions` path is appended automatically.
+3. Enter the **API Key** if your service requires authentication. The key is stored in `~/.revoxx/.env` and is never sent to any other service.
+4. Optionally specify an **ISO language code** (e.g. `is` for Icelandic, `en` for English) to improve transcription accuracy.
+5. Click **Test Connection** to verify the endpoint is reachable. Only when the connection is confirmed does the **Run Verification** button become active.
+
+### Running verification
+
+Configure the verification parameters:
+
+- **Similarity threshold**: The minimum character-level similarity (after normalization) required to count as a match. Default is 95%. Lower values are more lenient.
+- **Concurrent requests**: How many ASR requests to send in parallel. Default is 4. Increase for self-hosted servers with spare capacity; keep low for rate-limited cloud APIs.
+- **Force**: When enabled, re-transcribes all utterances even if they already have a result. Use this to re-verify after changing the ASR backend or threshold.
+
+Click **Run Verification** to start. A progress dialog shows how many recordings have been processed. The verification:
+
+- **Skips** utterances flagged as rejected
+- **Skips** the Reference Silence entry
+- **Skips** utterances that already have a verification result (unless Force is enabled)
+- Processes only utterances that have at least one take recorded
+
+After completion, results are saved in the session file. Re-recording an utterance automatically clears its ASR result so it will be re-verified next time.
+
+### Navigation and review
+
+Once verification is done, the following tools help you review the results:
+
+| Action | Shortcut | Description |
+|---|---|---|
+| Toggle display | **Shift+A** | Switch between script text and ASR transcription in the main text area (amber color). An "ASR" indicator appears in the top-right. |
+| Jump to mismatch | **Ctrl/Cmd+A** | Jump to the next utterance flagged as ASR mismatch |
+| Toggle match | **Shift+Ctrl/Cmd+A** | Manually toggle the match status of the current utterance (see below) |
+
+The ASR status is also visible in the **Find Utterance** and **Utterance Order** dialogs as a dedicated column (green checkmark for match, red X for mismatch). You can sort by ASR status to bring all mismatches to the top.
+
+### Handling false negatives
+
+ASR is imperfect. A perfectly correct recording may be marked as mismatch because:
+
+- The ASR transcribed a homophone or unusual word spelling
+- Proper nouns or numbers were written differently
+- Punctuation in the expected text confused the comparison (normalization strips punctuation before comparison, but edge cases remain)
+
+When you encounter a false negative:
+
+1. Press **Shift+A** to see the ASR transcription and compare it against the script text
+2. If the recording is actually correct, press **Shift+Ctrl/Cmd+A** to mark it as a manual match
+3. The match status is overridden and the utterance will no longer appear in the mismatch list
+
+A manual override is persistent and survives subsequent non-Force verification runs. Only a Force verification (checkbox in the dialog) will overwrite manual overrides.
+
+### Relationship to other flags
+
+ASR verification is independent of the manual **Needs Edit** and **Rejected** flags. An utterance can have both a manual flag AND an ASR status simultaneously. The flag indicator at the top of the recording view shows both when applicable. Rejected utterances are skipped during verification so they do not consume ASR quota.
+
+## 8. Export and Dataset Creation
 
 Once you have completed recording, you can export your sessions into datasets suitable for TTS training:
 
@@ -348,7 +422,7 @@ Once you have completed recording, you can export your sessions into datasets su
    - **VAD analysis (Silero)**: If Silero VAD is installed (`pip install revoxx[silero]`), an additional Silero-based VAD analysis can be enabled. Output is saved as `vad_silero.json`. Both VAD backends can run simultaneously for comparison or completeness.
 4. Click **Export** to create an organized dataset structure that's ready for TTS model training. The export process will handle file naming, metadata generation, and directory organization automatically.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Audio Issues
 

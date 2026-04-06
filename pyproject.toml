@@ -39,6 +39,7 @@ dependencies = [
     "markdown2>2.5.1",  # User guide dependencies
     "pyloudnorm>=0.1.0",  # EBU R 128 loudness normalization for dataset export
     "omnivad>=0.2.0",  # CPU-only VAD based on FireRedVAD (DFSMN via ncnn)
+    "httpx>=0.27.0",  # HTTP client for ASR verification
 ]
 
 [project.optional-dependencies]

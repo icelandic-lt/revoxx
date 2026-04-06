@@ -167,6 +167,8 @@ class Session:
     last_recorded_take: Optional[int] = None
     # Utterance flags (only flagged entries stored)
     utterance_flags: Dict[str, str] = field(default_factory=dict)
+    # ASR verification results (label -> {transcription, expected, match, similarity})
+    asr_verification: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -203,6 +205,10 @@ class Session:
         # Save utterance flags (only when non-empty)
         if self.utterance_flags:
             data["utterance_flags"] = self.utterance_flags
+
+        # Save ASR verification results (only when non-empty)
+        if self.asr_verification:
+            data["asr_verification"] = self.asr_verification
 
         return data
 
@@ -249,6 +255,9 @@ class Session:
 
         # Load utterance flags
         session.utterance_flags = data.get("utterance_flags", {})
+
+        # Load ASR verification results
+        session.asr_verification = data.get("asr_verification", {})
 
         # Handle legacy utterance_order for backwards compatibility
         if "utterance_order" in data and "sort_column" not in data:

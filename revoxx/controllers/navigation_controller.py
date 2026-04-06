@@ -314,6 +314,13 @@ class NavigationController:
         Args:
             label: The label of the recording that was saved
         """
+        # Clear ASR verification for this label (new recording invalidates it)
+        if (
+            self.app.current_session
+            and label in self.app.current_session.asr_verification
+        ):
+            del self.app.current_session.asr_verification[label]
+
         # Invalidate cache since we have a new recording
         if self.app.active_recordings:
             self.app.active_recordings.on_recording_completed(label)

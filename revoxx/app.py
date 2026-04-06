@@ -403,6 +403,12 @@ class Revoxx:
             lambda e: self.display_controller.toggle_info_panel(),
         )
 
+        # Toggle ASR transcription display
+        self.window.window.bind(
+            f"<{KeyBindings.TOGGLE_ASR_DISPLAY}>",
+            lambda e: self._toggle_asr_display(),
+        )
+
         # Escape: clear selection
         self.window.window.bind("<Escape>", lambda e: self._handle_escape())
 
@@ -450,6 +456,22 @@ class Revoxx:
         self.window.window.bind(
             "<Control-X>",
             lambda e: self.flag_controller.jump_to_next("rejected"),
+        )
+        self.window.window.bind(
+            "<Control-a>",
+            lambda e: self.flag_controller.jump_to_next_asr_mismatch(),
+        )
+        self.window.window.bind(
+            "<Control-A>",
+            lambda e: self.flag_controller.jump_to_next_asr_mismatch(),
+        )
+        self.window.window.bind(
+            "<Shift-Control-a>",
+            lambda e: self.flag_controller.toggle_asr_match(),
+        )
+        self.window.window.bind(
+            "<Shift-Control-A>",
+            lambda e: self.flag_controller.toggle_asr_match(),
         )
 
         # Session management with platform-specific modifiers
@@ -508,6 +530,22 @@ class Revoxx:
             self.window.window.bind(
                 "<Command-X>",
                 lambda e: self.flag_controller.jump_to_next("rejected"),
+            )
+            self.window.window.bind(
+                "<Command-a>",
+                lambda e: self.flag_controller.jump_to_next_asr_mismatch(),
+            )
+            self.window.window.bind(
+                "<Command-A>",
+                lambda e: self.flag_controller.jump_to_next_asr_mismatch(),
+            )
+            self.window.window.bind(
+                "<Shift-Command-a>",
+                lambda e: self.flag_controller.toggle_asr_match(),
+            )
+            self.window.window.bind(
+                "<Shift-Command-A>",
+                lambda e: self.flag_controller.toggle_asr_match(),
             )
 
         # Session keys
@@ -690,6 +728,17 @@ class Revoxx:
 
         # Exit
         sys.exit(0)
+
+    def _toggle_asr_display(self) -> None:
+        """Toggle between script text and ASR transcription."""
+        self.window.toggle_asr_display()
+        if self.has_active_second_window:
+            second = self.window_manager.get_window("monitor1")
+            if second:
+                second.toggle_asr_display()
+        # Sync menu checkbox
+        if self.menu and "asr_display" in self.menu.menu_vars:
+            self.menu.menu_vars["asr_display"].set(self.window._show_asr_transcription)
 
     def _handle_escape(self) -> None:
         """Handle escape key - clear selection."""

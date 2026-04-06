@@ -35,6 +35,7 @@ class UtteranceListDialog:
         "text": (200, 500),  # Text column
         "recordings": (50, 80),  # Takes column
         "text_length": (60, 100),  # Text length column
+        "asr": (50, 90),  # ASR status column
     }
 
     # Character width approximation for column sizing
@@ -59,6 +60,7 @@ class UtteranceListDialog:
         default_sort_direction: SortDirection = SortDirection.UP,
         current_index: int = None,
         utterance_flags: Dict[str, str] = None,
+        asr_verification: Dict[str, dict] = None,
     ):
         """Initialize the dialog base.
 
@@ -75,12 +77,14 @@ class UtteranceListDialog:
             default_sort_direction: Default sort direction (UP or DOWN)
             current_index: Currently selected utterance index to highlight
             utterance_flags: Dict mapping labels to flag types
+            asr_verification: Dict mapping labels to ASR results
         """
         self.parent = parent
         self.utterances = utterances
         self.labels = labels
         self.file_manager = file_manager
         self.utterance_flags = utterance_flags or {}
+        self.asr_verification = asr_verification or {}
         # Dynamically scan takes (excluding trash)
         take_files = file_manager.scan_all_take_files(labels)
         self.takes = {label: len(files) for label, files in take_files.items()}
@@ -147,7 +151,24 @@ class UtteranceListDialog:
             flag_raw = self.utterance_flags.get(label, "")
             flag = FlagType.DISPLAY.get(flag_raw, "") if flag_raw else ""
 
-            # Store item data with both display position and actual index
+            # ASR verification status (reference silence never has ASR)
+            from ...controllers.session_controller import REFERENCE_SILENCE_LABEL
+
+            asr = (
+                None
+                if label == REFERENCE_SILENCE_LABEL
+                else self.asr_verification.get(label)
+            )
+            if not asr:
+                asr_display = ""
+                asr_order = 1  # unverified
+            elif not asr.get("match", True):
+                asr_display = "mismatch"
+                asr_order = 0  # mismatch first
+            else:
+                asr_display = "ok"
+                asr_order = 2  # match last
+
             self.all_items.append(
                 {
                     "index": actual_idx,
@@ -161,6 +182,8 @@ class UtteranceListDialog:
                     "clean_text": clean_text,
                     "takes": take_count,
                     "text_length": len(clean_text),
+                    "asr": asr_display,
+                    "asr_order": asr_order,
                 }
             )
 
@@ -204,6 +227,7 @@ class UtteranceListDialog:
         content_width = (
             self.column_widths["#0"]
             + self.column_widths["flag"]
+            + self.column_widths.get("asr", 50)
             + self.column_widths["emotion"]
             + self.column_widths["text"]
             + self.column_widths["recordings"]
@@ -305,6 +329,9 @@ class UtteranceListDialog:
             self.COLUMN_LIMITS["text_length"][1],
         )
 
+        # ASR column - fixed small width
+        widths["asr"] = self.COLUMN_LIMITS["asr"][0]
+
         return widths
 
     def _create_ui(self) -> None:
@@ -381,7 +408,7 @@ class UtteranceListDialog:
         # Create treeview for utterance list with flag and emotion columns
         self.tree = ttk.Treeview(
             list_frame,
-            columns=("flag", "emotion", "text", "recordings", "text_length"),
+            columns=("flag", "asr", "emotion", "text", "recordings", "text_length"),
             show="tree headings",
             selectmode="browse",
         )
@@ -400,6 +427,7 @@ class UtteranceListDialog:
         # Configure columns with sorting
         self.tree.heading("#0", text="Label", command=lambda: self._sort_by("label"))
         self.tree.heading("flag", text="Flag", command=lambda: self._sort_by("flag"))
+        self.tree.heading("asr", text="ASR", command=lambda: self._sort_by("asr"))
         self.tree.heading(
             "emotion", text="Emotion", command=lambda: self._sort_by("emotion")
         )
@@ -421,6 +449,11 @@ class UtteranceListDialog:
             "flag",
             width=self.COLUMN_LIMITS["flag"][0],
             minwidth=self.COLUMN_LIMITS["flag"][0],
+        )
+        self.tree.column(
+            "asr",
+            width=self.COLUMN_LIMITS["asr"][0],
+            minwidth=self.COLUMN_LIMITS["asr"][0],
         )
         self.tree.column(
             "emotion",
@@ -479,6 +512,8 @@ class UtteranceListDialog:
         self.tree.tag_configure(
             "flag_rejected", foreground=UIConstants.COLOR_FLAG_REJECTED
         )
+        self.tree.tag_configure("asr_ok", foreground="#22cc22")
+        self.tree.tag_configure("asr_mismatch", foreground=UIConstants.COLOR_WARNING)
 
         # Set column widths
         self.tree.column("#0", width=self.column_widths["#0"], minwidth=50)
@@ -491,6 +526,7 @@ class UtteranceListDialog:
         self.tree.column(
             "text_length", width=self.column_widths["text_length"], minwidth=40
         )
+        self.tree.column("asr", width=self.column_widths.get("asr", 50), minwidth=40)
 
         # Sort by default column
         self._sort_items()
@@ -542,6 +578,11 @@ class UtteranceListDialog:
             # Sort by text length, then by label
             self.all_items.sort(
                 key=lambda x: (x["text_length"], x["label"]), reverse=self.sort_reverse
+            )
+        elif self.sort_column == "asr":
+            # Sort by ASR status: mismatch first, unverified, then match
+            self.all_items.sort(
+                key=lambda x: (x["asr_order"], x["label"]), reverse=self.sort_reverse
             )
 
     def _sort_by(self, column: str) -> None:
@@ -601,6 +642,7 @@ class UtteranceListDialog:
         columns = {
             "label": ("Label", "#0"),
             "flag": ("Flag", "flag"),
+            "asr": ("ASR", "asr"),
             "emotion": ("Emotion", "emotion"),
             "text": ("Text", "text"),
             "recordings": ("Takes", "recordings"),
@@ -671,13 +713,24 @@ class UtteranceListDialog:
             elif item["flag_raw"] == FlagType.REJECTED:
                 item_tags.append("flag_rejected")
 
-            # Add to tree with flag and emotion columns
+            # ASR display: checkmark (ok), X (mismatch), or empty
+            asr_val = item["asr"]
+            if asr_val == "ok":
+                asr_display = "ok"
+                item_tags.append("asr_ok")
+            elif asr_val == "mismatch":
+                asr_display = "X"
+                item_tags.append("asr_mismatch")
+            else:
+                asr_display = ""
+
             self.tree.insert(
                 "",
                 "end",
                 text=item["label"],
                 values=(
                     item["flag"],
+                    asr_display,
                     item["emotion"],
                     item["text"],
                     str(item["takes"]),

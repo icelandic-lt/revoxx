@@ -11,7 +11,7 @@ from ...dataset import DatasetExporter
 from ...utils.settings_manager import SettingsManager
 from ...session.inspector import SessionInspector
 from .progress_dialog import ProgressDialog
-from .dialog_utils import setup_dialog_window
+from .dialog_utils import setup_dialog_window, create_tooltip
 
 
 class DatasetDialog:
@@ -362,7 +362,7 @@ class DatasetDialog:
         self.silero_checkbox.pack(anchor=tk.W, pady=(2, 0))
         if not silero_available:
             self.include_silero_var.set(False)
-            self._create_tooltip(
+            create_tooltip(
                 self.silero_checkbox,
                 "Silero VAD not available - install with: pip install revoxx[silero]",
             )
@@ -928,41 +928,6 @@ class DatasetDialog:
     def _cancel(self):
         """Cancel dialog."""
         self.dialog.destroy()
-
-    @staticmethod
-    def _create_tooltip(widget, text) -> None:
-        """Create a tooltip for a widget.
-
-        Args:
-            widget: The widget to attach the tooltip to
-            text: The tooltip text
-        """
-        tooltip = None
-
-        def on_enter(event):
-            nonlocal tooltip
-            tooltip = tk.Toplevel()
-            tooltip.wm_overrideredirect(True)
-            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
-            label = ttk.Label(
-                tooltip,
-                text=text,
-                justify=tk.LEFT,
-                background="#ffffe0",
-                relief=tk.SOLID,
-                borderwidth=1,
-                font=("TkDefaultFont", "9", "normal"),
-            )
-            label.pack()
-
-        def on_leave(event):
-            nonlocal tooltip
-            if tooltip:
-                tooltip.destroy()
-                tooltip = None
-
-        widget.bind("<Enter>", on_enter)
-        widget.bind("<Leave>", on_leave)
 
     def show(self) -> Optional[Path]:
         """Show dialog and return result.

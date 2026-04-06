@@ -62,6 +62,7 @@ class TestNavigationController(unittest.TestCase):
         self.mock_app.current_session.last_recorded_index = None
         self.mock_app.current_session.last_recorded_take = None
         self.mock_app.current_session.save = Mock()
+        self.mock_app.current_session.asr_verification = {}
 
         # Mock shared state
         self.mock_app.shared_state = Mock()

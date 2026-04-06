@@ -1,6 +1,7 @@
 """Utility functions for dialog positioning and management."""
 
 import tkinter as tk
+from tkinter import ttk
 from typing import Tuple, Callable, Optional
 
 
@@ -302,3 +303,38 @@ def setup_dialog_window(
 
     # Grab focus
     dialog.grab_set()
+
+
+def create_tooltip(widget, text: str) -> None:
+    """Create a hover tooltip for a widget.
+
+    Args:
+        widget: The widget to attach the tooltip to
+        text: The tooltip text
+    """
+    tooltip = None
+
+    def on_enter(event):
+        nonlocal tooltip
+        tooltip = tk.Toplevel()
+        tooltip.wm_overrideredirect(True)
+        tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+        label = ttk.Label(
+            tooltip,
+            text=text,
+            justify=tk.LEFT,
+            background="#ffffe0",
+            relief=tk.SOLID,
+            borderwidth=1,
+            font=("TkDefaultFont", "9", "normal"),
+        )
+        label.pack()
+
+    def on_leave(event):
+        nonlocal tooltip
+        if tooltip:
+            tooltip.destroy()
+            tooltip = None
+
+    widget.bind("<Enter>", on_enter)
+    widget.bind("<Leave>", on_leave)

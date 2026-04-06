@@ -140,6 +140,7 @@ class UIConstants:
             cls.COLOR_EDGE_INDICATOR = colors.COLOR_EDGE_INDICATOR
             cls.COLOR_FLAG_EDIT = colors.COLOR_FLAG_EDIT
             cls.COLOR_FLAG_REJECTED = colors.COLOR_FLAG_REJECTED
+            cls.COLOR_ASR_TEXT = colors.COLOR_ASR_TEXT
 
     @classmethod
     def refresh(cls):
@@ -362,6 +363,7 @@ class KeyBindings:
     TOGGLE_FULLSCREEN = "F10"
     SHOW_HELP = "F1"  # Standard help key
     SHOW_INFO = "i"
+    TOGGLE_ASR_DISPLAY = "A"  # Shift+A
     FIND_UTTERANCE = "f"  # Used with Cmd/Ctrl modifier
 
     # Flagging - Shift+key to toggle flags
