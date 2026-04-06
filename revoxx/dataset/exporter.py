@@ -148,9 +148,7 @@ class DatasetExporter:
                 speaker_statistics["emotions"].add(emotion)
 
             # Determine whether to omit emotion from filenames/paths
-            flatten_emotion = (
-                self.omit_single_emotion and len(emotion_sessions) == 1
-            )
+            flatten_emotion = self.omit_single_emotion and len(emotion_sessions) == 1
 
             # Process each emotion group
             for emotion, emotion_session_list in emotion_sessions.items():
@@ -256,9 +254,7 @@ class DatasetExporter:
             if source_file.exists():
                 file_counter = file_counts[count_key] + 1
                 if flatten_emotion:
-                    output_filename = (
-                        f"{dataset_name}_{file_counter:03d}.{self.format}"
-                    )
+                    output_filename = f"{dataset_name}_{file_counter:03d}.{self.format}"
                 else:
                     output_filename = (
                         f"{dataset_name}_{emotion}_{file_counter:03d}.{self.format}"
