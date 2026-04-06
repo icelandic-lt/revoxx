@@ -58,6 +58,8 @@ class UserSettings:
     export_omit_single_emotion: bool = False
     export_loudness_enabled: bool = False
     export_loudness_target: float = LoudnessConstants.DEFAULT_TARGET
+    export_include_omnivad: bool = False
+    export_include_silero_vad: bool = False
 
     # Text import settings
     import_input_dir: Optional[str] = None

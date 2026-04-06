@@ -2,14 +2,17 @@
 Voice Activity Detection script for audio files.
 
 This script applies VAD (voice activity detection) to a directory hierarchy of files and produces an output file
-in JSON format that collects all non-silence parts of an audio file as time-stamps in seconds and some general statistics
+in JSON format that collects all non-silence parts of an audio file as time-stamps in seconds and some general statistics.
+
+Supports two backends:
+- OmniVAD (default): CPU-only, based on FireRedVAD DFSMN model via ncnn
+- Silero VAD (optional): Requires PyTorch, install with pip install revoxx[silero]
 """
 
 import argparse
 import json
 import os
 import soundfile as sf
-from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
 from tqdm import tqdm
 
 
@@ -25,17 +28,20 @@ def get_audio_files(directory):
 def process_audio(
     file_path, model, base_dir, use_dynamic_threshold, collect_warnings=False
 ):
-    # Get audio info using soundfile instead of torchaudio
+    """Process a single audio file with Silero VAD.
+
+    Requires silero_vad to be installed (pip install revoxx[silero]).
+    """
+    from silero_vad import read_audio, get_speech_timestamps
+
     info = sf.info(file_path)
     sample_rate = info.samplerate
     overall_length = info.frames / sample_rate
 
-    # read audio file and convert to 16 kHz sample rate by default
     wav = read_audio(file_path)
 
     warnings = []
 
-    # First attempt with default threshold (0.5)
     speech_timestamps = get_speech_timestamps(
         wav,
         model,
@@ -44,7 +50,6 @@ def process_audio(
         min_silence_duration_ms=50,
     )
 
-    # If no speech detected and dynamic threshold is enabled, try again with lower threshold
     if not speech_timestamps and use_dynamic_threshold:
         warning_msg = f"No speech detected in {file_path} with default threshold. Trying with lower threshold..."
         if collect_warnings:
@@ -61,7 +66,6 @@ def process_audio(
             threshold=0.1,
         )
 
-    # Convert timestamps to seconds with high precision
     speech_segments = [
         [round(t["start"] / 16000, 3), round(t["end"] / 16000, 3)]
         for t in speech_timestamps
@@ -81,12 +85,137 @@ def process_audio(
         else:
             print(warning_msg)
 
-    # Get relative path
     rel_path = os.path.relpath(file_path, base_dir)
 
     if collect_warnings:
         return rel_path, result, warnings
     return rel_path, result
+
+
+def process_dataset(
+    dataset_path, output_filename="vad_silero.json", file_callback=None
+):
+    """Process all audio files in a dataset directory with Silero VAD.
+
+    Args:
+        dataset_path: Path to dataset directory
+        output_filename: Name of the output JSON file
+        file_callback: Optional callback(files_processed) called after each file
+
+    Returns:
+        Dictionary with files_processed count and warnings list
+    """
+    from pathlib import Path
+    from silero_vad import load_silero_vad
+
+    dataset_path = Path(dataset_path)
+    vad_output = dataset_path / output_filename
+    audio_files = get_audio_files(str(dataset_path))
+
+    result_info = {"files_processed": 0, "warnings": []}
+
+    if not audio_files:
+        return result_info
+
+    model = load_silero_vad()
+    results = {}
+
+    for file_path in audio_files:
+        try:
+            rel_path, result, file_warnings = process_audio(
+                file_path,
+                model,
+                str(dataset_path),
+                use_dynamic_threshold=True,
+                collect_warnings=True,
+            )
+            results[rel_path] = result
+            result_info["warnings"].extend(file_warnings)
+            result_info["files_processed"] += 1
+            if file_callback:
+                file_callback(result_info["files_processed"])
+        except Exception as e:
+            result_info["warnings"].append(f"VAD error for {file_path}: {e}")
+
+    import silero_vad
+
+    output = {
+        "_meta": {
+            "backend": "Silero VAD",
+            "version": getattr(silero_vad, "__version__", "unknown"),
+            "model": "Silero VAD (PyTorch)",
+        },
+        "files": results,
+    }
+
+    with open(vad_output, "w") as f:
+        json.dump(output, f, indent=2)
+
+    return result_info
+
+
+def _run_omnivad(audio_files, base_dir, output_file):
+    """Run OmniVAD on audio files."""
+    from scripts_module.omnivad_processor import process_audio as omnivad_process
+
+    from omnivad import OmniVAD
+
+    vad = OmniVAD()
+    results = {}
+
+    try:
+        for file_path in tqdm(audio_files, desc="Processing (OmniVAD)"):
+            try:
+                rel_path, result = omnivad_process(file_path, vad, base_dir)
+                results[rel_path] = result
+            except Exception as e:
+                print(f"Error processing {file_path}: {e}")
+    finally:
+        vad.close()
+
+    import omnivad as omnivad_mod
+
+    output = {
+        "_meta": {
+            "backend": "OmniVAD",
+            "version": omnivad_mod.__version__,
+            "model": "FireRedVAD DFSMN (ncnn)",
+        },
+        "files": results,
+    }
+
+    with open(output_file, "w") as f:
+        json.dump(output, f, indent=2)
+
+
+def _run_silero(audio_files, base_dir, output_file, use_dynamic_threshold):
+    """Run Silero VAD on audio files."""
+    from silero_vad import load_silero_vad
+    import silero_vad
+
+    model = load_silero_vad()
+    results = {}
+
+    for file_path in tqdm(audio_files, desc="Processing (Silero VAD)"):
+        try:
+            rel_path, result = process_audio(
+                file_path, model, base_dir, use_dynamic_threshold
+            )
+            results[rel_path] = result
+        except Exception as e:
+            print(f"Error processing {file_path}: {e}")
+
+    output = {
+        "_meta": {
+            "backend": "Silero VAD",
+            "version": getattr(silero_vad, "__version__", "unknown"),
+            "model": "Silero VAD (PyTorch)",
+        },
+        "files": results,
+    }
+
+    with open(output_file, "w") as f:
+        json.dump(output, f, indent=2)
 
 
 def main():
@@ -96,29 +225,26 @@ def main():
     parser.add_argument("input_dir", help="Input directory containing audio files")
     parser.add_argument("output_file", help="Output JSON file to store results")
     parser.add_argument(
+        "--backend",
+        choices=["omnivad", "silero"],
+        default="omnivad",
+        help="VAD backend to use (default: omnivad)",
+    )
+    parser.add_argument(
         "--use-dynamic-threshold",
         action="store_true",
-        help="Use dynamic threshold for speech detection",
+        help="Use dynamic threshold for Silero speech detection",
     )
     args = parser.parse_args()
 
-    # Load Silero VAD model
-    model = load_silero_vad()
-
     audio_files = get_audio_files(args.input_dir)
-    results = {}
 
-    for file_path in tqdm(audio_files, desc="Processing audio files"):
-        try:
-            rel_path, result = process_audio(
-                file_path, model, args.input_dir, args.use_dynamic_threshold
-            )
-            results[rel_path] = result
-        except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
-
-    with open(args.output_file, "w") as f:
-        json.dump(results, f, indent=2)
+    if args.backend == "omnivad":
+        _run_omnivad(audio_files, args.input_dir, args.output_file)
+    else:
+        _run_silero(
+            audio_files, args.input_dir, args.output_file, args.use_dynamic_threshold
+        )
 
 
 if __name__ == "__main__":
