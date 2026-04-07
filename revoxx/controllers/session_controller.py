@@ -154,6 +154,9 @@ class SessionController:
         if len(self.app.state.recording.utterances) > 1:
             self.app.state.recording.current_index = 1
 
+        # Pass ASR verification data to active_recordings for sorting
+        self.app.active_recordings.set_asr_verification(session.asr_verification)
+
         # Then apply saved sort settings from session (after data is loaded)
         self.app.active_recordings.set_sort(session.sort_column, session.sort_reverse)
 

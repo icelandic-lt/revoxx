@@ -159,6 +159,12 @@ class ApplicationMenu:
             command=self._create_dataset,
         )
 
+        # ASR Verification
+        file_menu.add_command(
+            label="ASR Verification...",
+            command=self._asr_verification,
+        )
+
         file_menu.add_separator()
 
         # Quit
@@ -217,6 +223,11 @@ class ApplicationMenu:
             command=lambda: self.app.flag_controller.jump_to_next("rejected"),
             accelerator=f"{jump_accel_mod}+X",
         )
+        edit_menu.add_command(
+            label="Jump to Next ASR Mismatch",
+            command=self.app.flag_controller.jump_to_next_asr_mismatch,
+            accelerator=f"{jump_accel_mod}+A",
+        )
 
         edit_menu.add_separator()
 
@@ -245,6 +256,21 @@ class ApplicationMenu:
             label="Clear Flag",
             command=self.app.flag_controller.clear_flag,
             accelerator="Shift+U",
+        )
+        edit_menu.add_command(
+            label="Toggle ASR Match",
+            command=self.app.flag_controller.toggle_asr_match,
+            accelerator=f"Shift+{jump_accel_mod}+A",
+        )
+
+        # Auto-verify checkbox
+        self.menu_vars["asr_auto_verify"] = tk.BooleanVar(
+            value=self.app.settings_manager.get_setting("asr_auto_verify", False)
+        )
+        edit_menu.add_checkbutton(
+            label="Auto-verify after recording (ASR)",
+            variable=self.menu_vars["asr_auto_verify"],
+            command=self._toggle_asr_auto_verify,
         )
 
         edit_menu.add_separator()
@@ -294,6 +320,15 @@ class ApplicationMenu:
             variable=self.menu_vars["info_panel"],
             command=self._toggle_info_panel,
             accelerator="I",
+        )
+
+        # ASR Transcription toggle
+        self.menu_vars["asr_display"] = tk.BooleanVar(value=False)
+        view_menu.add_checkbutton(
+            label="Show ASR Transcription",
+            variable=self.menu_vars["asr_display"],
+            command=self._toggle_asr_display,
+            accelerator="Shift+A",
         )
 
         view_menu.add_separator()
@@ -555,6 +590,46 @@ class ApplicationMenu:
         self.edit_menu.entryconfig(0, state="normal" if can_undo else "disabled")
         self.edit_menu.entryconfig(1, state="normal" if can_redo else "disabled")
 
+        # Sync auto-verify checkbox with actual effective state
+        self._sync_asr_auto_verify_state()
+
+    def _sync_asr_auto_verify_state(self) -> None:
+        """Keep the auto-verify checkbox in sync with settings and endpoint state.
+
+        If no endpoint is configured but auto_verify is set, the toggle is
+        shown as disabled (False) in the menu without modifying the settings.
+        """
+        has_endpoint = self.app.asr_auto_controller.has_endpoint()
+        settings_enabled = self.app.settings_manager.get_setting(
+            "asr_auto_verify", False
+        )
+        effective = has_endpoint and settings_enabled
+        self.menu_vars["asr_auto_verify"].set(effective)
+
+    def _toggle_asr_auto_verify(self) -> None:
+        """Toggle automatic ASR verification after recording.
+
+        If the user tries to enable auto-verify without an ASR endpoint
+        configured, the ASR settings dialog is opened automatically. After
+        closing the dialog, the toggle is synced with the actual state.
+        """
+        requested = self.menu_vars["asr_auto_verify"].get()
+        has_endpoint = self.app.asr_auto_controller.has_endpoint()
+
+        if requested and not has_endpoint:
+            # User wants to enable but no endpoint - open dialog
+            self.menu_vars["asr_auto_verify"].set(False)
+            self.app.dialog_controller.show_asr_verification_dialog()
+            # After dialog close, check if endpoint is now configured
+            if self.app.asr_auto_controller.has_endpoint():
+                self.app.settings_manager.update_setting("asr_auto_verify", True)
+                self.menu_vars["asr_auto_verify"].set(True)
+            else:
+                self.app.settings_manager.update_setting("asr_auto_verify", False)
+            return
+
+        self.app.settings_manager.update_setting("asr_auto_verify", requested)
+
     def _new_session(self) -> None:
         """Handle New Session menu item."""
         self.app._new_session()
@@ -562,6 +637,10 @@ class ApplicationMenu:
     def _open_session(self) -> None:
         """Handle Open Session menu item."""
         self.app._open_session()
+
+    def _asr_verification(self) -> None:
+        """Show ASR verification dialog."""
+        self.app.dialog_controller.show_asr_verification_dialog()
 
     def _create_dataset(self) -> None:
         """Show dataset creation dialog."""
@@ -617,6 +696,10 @@ class ApplicationMenu:
         """Toggle info panel visibility."""
         new_state = self.app.display_controller.toggle_info_panel()
         self.app.settings_manager.update_setting("show_info_panel", new_state)
+
+    def _toggle_asr_display(self) -> None:
+        """Toggle ASR transcription display."""
+        self.app._toggle_asr_display()
 
     def _toggle_monitoring(self) -> None:
         """Toggle monitoring mode."""

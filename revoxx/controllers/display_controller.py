@@ -300,11 +300,16 @@ class DisplayController:
     def update_flag_indicator(self, label: str = None) -> None:
         """Update the flag indicator on all windows.
 
+        Shows manual flag and/or ASR status.
+
         Args:
             label: Utterance label to check, or None to clear
         """
         flag = self.app.flag_controller.get_flag(label) if label else None
-        self._for_each_window(lambda w: w.update_flag_indicator(flag))
+        asr_status = self.app.flag_controller.get_asr_status(label) if label else None
+        self._for_each_window(
+            lambda w: w.update_flag_indicator(flag, asr_status=asr_status)
+        )
 
     def set_status(self, status: str, msg_type: MsgType = MsgType.TEMPORARY) -> None:
         """Set the status bar text.

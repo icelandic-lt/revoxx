@@ -30,10 +30,13 @@ FLAGGING
   Shift+U      Clear flag
   Ctrl+E       Jump to next 'Needs Edit'
   Ctrl+X       Jump to next 'Rejected'
+  Ctrl+A       Jump to next ASR mismatch
+  Shift+Ctrl+A Toggle ASR match status (accept/reject manually)
 
 DISPLAY
   M            Toggle mel spectrogram & level meter
   I            Toggle info overlay
+  Shift+A      Toggle ASR transcription display
   F10          Toggle fullscreen
 
 SECOND WINDOW (Shift + Key)

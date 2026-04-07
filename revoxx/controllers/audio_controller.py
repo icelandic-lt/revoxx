@@ -668,10 +668,35 @@ class AudioController:
             # Save the last recording position to session
             self._save_last_recording_position(highest_take)
 
+            # Clear ASR verification for this label (new recording invalidates it)
+            if (
+                self.app.current_session
+                and label in self.app.current_session.asr_verification
+            ):
+                del self.app.current_session.asr_verification[label]
+                if self.app.active_recordings:
+                    self.app.active_recordings.set_asr_verification(
+                        self.app.current_session.asr_verification
+                    )
+
             # Show the new recording
             self.app.display_controller.show_saved_recording()
 
             self.app.navigation_controller.update_take_status()
+
+            # Trigger automatic ASR verification if enabled
+            if (
+                self.app.asr_auto_controller.is_enabled()
+                and self.app.active_recordings
+                and self.app.current_session
+            ):
+                audio_path = self.app.file_manager.get_recording_path(
+                    label, highest_take
+                )
+                if audio_path.exists():
+                    self.app.asr_auto_controller.trigger(
+                        label, highest_take, audio_path
+                    )
 
     def _finalize_edit_recording(self, label: str) -> None:
         """Finalize an insert or replace recording operation.

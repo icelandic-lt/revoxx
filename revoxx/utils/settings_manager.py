@@ -61,6 +61,13 @@ class UserSettings:
     export_include_omnivad: bool = False
     export_include_silero_vad: bool = False
 
+    # ASR verification settings
+    asr_base_url: Optional[str] = None
+    asr_language: Optional[str] = None
+    asr_similarity_threshold: float = 0.95
+    asr_max_concurrent: int = 4
+    asr_auto_verify: bool = False
+
     # Text import settings
     import_input_dir: Optional[str] = None
     import_output_dir: Optional[str] = None

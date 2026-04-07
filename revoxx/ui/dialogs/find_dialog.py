@@ -21,6 +21,7 @@ class FindDialog(UtteranceListDialog):
         current_sort_column: str = "label",
         current_sort_direction: SortDirection = SortDirection.UP,
         utterance_flags: Dict[str, str] = None,
+        asr_verification: Dict[str, dict] = None,
     ):
         """Initialize the find dialog.
 
@@ -35,6 +36,7 @@ class FindDialog(UtteranceListDialog):
             current_sort_column: Current sort column from session
             current_sort_direction: Current sort direction from session
             utterance_flags: Dict mapping labels to flag types
+            asr_verification: Dict mapping labels to ASR results
         """
         self.current_index = current_index
         self.on_find = on_find
@@ -54,6 +56,7 @@ class FindDialog(UtteranceListDialog):
             default_sort_direction=current_sort_direction,
             current_index=current_index,
             utterance_flags=utterance_flags,
+            asr_verification=asr_verification,
         )
 
     def _create_button_frame(self, parent: ttk.Frame) -> None:

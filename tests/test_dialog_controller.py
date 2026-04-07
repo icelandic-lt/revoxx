@@ -68,6 +68,10 @@ class TestDialogController(unittest.TestCase):
             return_value=Path("/test/sessions")
         )
 
+        # Mock current session
+        self.mock_app.current_session = Mock()
+        self.mock_app.current_session.asr_verification = {}
+
         self.controller = DialogController(self.mock_app)
 
     @patch("revoxx.controllers.dialog_controller.OpenSessionDialog")
@@ -161,6 +165,7 @@ class TestDialogController(unittest.TestCase):
             self.mock_app.active_recordings.sort_column,
             SortDirection.UP,  # Changed from sort_reverse (False) to SortDirection.UP
             utterance_flags=self.mock_app.flag_controller.get_flags(),
+            asr_verification={},
         )
         self.assertEqual(self.controller.find_dialog, mock_dialog)
 
@@ -199,6 +204,7 @@ class TestDialogController(unittest.TestCase):
         mock_dialog.show = Mock(return_value=("default", False))
         mock_order_dialog_class.return_value = mock_dialog
         self.mock_app.current_session = Mock()
+        self.mock_app.current_session.asr_verification = {}
         self.mock_app.active_recordings.set_sort = Mock()
         self.mock_app.display_controller.update_display = Mock()
 
@@ -214,6 +220,7 @@ class TestDialogController(unittest.TestCase):
             SortDirection.UP,  # Changed from sort_reverse (False) to SortDirection.UP
             self.mock_app.state.recording.current_index,
             utterance_flags=self.mock_app.flag_controller.get_flags(),
+            asr_verification={},
         )
         # Verify that set_sort and update were called with the dialog result
         self.mock_app.active_recordings.set_sort.assert_called_once_with(

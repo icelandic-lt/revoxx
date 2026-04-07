@@ -38,6 +38,9 @@ class ThemeColors:
     COLOR_FLAG_EDIT: str
     COLOR_FLAG_REJECTED: str
 
+    # ASR transcription overlay color
+    COLOR_ASR_TEXT: str
+
     # Specific UI elements
     COLOR_CLIPPING: str
     COLOR_PLAYBACK_LINE: str
@@ -155,6 +158,8 @@ THEMES = {
             # Flag indicator colors
             COLOR_FLAG_EDIT="#FFA500",  # Orange
             COLOR_FLAG_REJECTED="#FF4444",  # Red
+            # ASR transcription overlay color
+            COLOR_ASR_TEXT="#FFB347",  # Warm amber
             # Specific UI elements
             COLOR_CLIPPING="#FF0000",  # Red
             COLOR_PLAYBACK_LINE="#FF0000",  # Red
@@ -194,6 +199,8 @@ THEMES = {
             # Flag indicator colors
             COLOR_FLAG_EDIT="#FFA500",  # Orange
             COLOR_FLAG_REJECTED="#FF4444",  # Red
+            # ASR transcription overlay color
+            COLOR_ASR_TEXT="#FFB347",  # Warm amber
             # Specific UI elements
             COLOR_CLIPPING="#FF0080",
             COLOR_PLAYBACK_LINE="#FF0080",

@@ -35,6 +35,9 @@ class ActiveRecordings:
         self.sort_column = "label"  # Default: alphabetical by label
         self.sort_reverse = False
 
+        # External data for sorting (set by caller)
+        self._asr_verification: Dict[str, dict] = {}
+
         # Sorted indices cache
         self._sorted_indices: Optional[List[int]] = None
         self._sort_valid = False
@@ -62,6 +65,16 @@ class ActiveRecordings:
         if column != self.sort_column or reverse != self.sort_reverse:
             self.sort_column = column
             self.sort_reverse = reverse
+            self._sort_valid = False
+
+    def set_asr_verification(self, asr_data: Dict[str, dict]) -> None:
+        """Update ASR verification data for sorting.
+
+        Args:
+            asr_data: Dict of label -> {match, similarity, ...}
+        """
+        self._asr_verification = asr_data
+        if self.sort_column == "asr":
             self._sort_valid = False
 
     def invalidate_cache(self) -> None:
@@ -154,6 +167,9 @@ class ActiveRecordings:
         elif self.sort_column == "text_length":
             # Sort by text length, then by label for stable ordering
             return lambda item: (item["text_length"], item["label"].lower())
+        elif self.sort_column == "asr":
+            # Sort by ASR status: mismatch first (0), unverified (1), match (2)
+            return lambda item: (item["asr_order"], item["label"].lower())
         else:
             # Default to index (no sort)
             return lambda item: item["index"]
@@ -185,6 +201,14 @@ class ActiveRecordings:
                 elif self.sort_column == "text_length":
                     clean_text = self._extract_clean_text(self._utterances[i])
                     item["text_length"] = len(clean_text)
+                elif self.sort_column == "asr":
+                    asr = self._asr_verification.get(label)
+                    if not asr:
+                        item["asr_order"] = 1  # unverified
+                    elif not asr.get("match", True):
+                        item["asr_order"] = 0  # mismatch first
+                    else:
+                        item["asr_order"] = 2  # match last
 
                 items.append(item)
 

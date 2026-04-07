@@ -66,6 +66,86 @@ class FlagController:
                 f"No flag on {label}", MsgType.TEMPORARY
             )
 
+    def get_asr_status(self, label: str) -> Optional[str]:
+        """Return the ASR verification status for a label.
+
+        Returns:
+            "match", "mismatch", "error", or None if not verified
+        """
+        if not self.app.current_session:
+            return None
+        result = self.app.current_session.asr_verification.get(label)
+        if not result:
+            return None
+        if "error" in result:
+            return "error"
+        return "match" if result.get("match") else "mismatch"
+
+    def toggle_asr_match(self) -> None:
+        """Toggle the ASR match status of the current utterance.
+
+        Used to manually resolve false negatives (accept) or mark suspicious
+        matches (reject). Only works on utterances that have been verified.
+        """
+        label = self._get_current_label()
+        if not label or not self.app.current_session:
+            return
+
+        asr = self.app.current_session.asr_verification
+        if label not in asr:
+            self.app.display_controller.set_status(
+                f"No ASR result for {label}", MsgType.TEMPORARY
+            )
+            return
+
+        current_match = asr[label].get("match", False)
+        asr[label]["match"] = not current_match
+        asr[label]["manual_override"] = True
+        self.app.current_session.save()
+        if self.app.active_recordings:
+            self.app.active_recordings.set_asr_verification(asr)
+
+        new_state = "match" if not current_match else "mismatch"
+        self._update_status_after_flag(label)
+        self.app.display_controller.set_status(
+            f"ASR flag toggled to {new_state}: {label}", MsgType.TEMPORARY
+        )
+
+    def jump_to_next_asr_mismatch(self) -> None:
+        """Jump to the next ASR mismatch utterance."""
+        if not self.app.current_session or not self.app.active_recordings:
+            return
+
+        asr = self.app.current_session.asr_verification
+        current_index = self.app.state.recording.current_index
+        sorted_indices = self.app.active_recordings.get_sorted_indices()
+        if not sorted_indices:
+            return
+
+        try:
+            current_pos = sorted_indices.index(current_index)
+        except ValueError:
+            current_pos = 0
+
+        total = len(sorted_indices)
+        labels = self.app.state.recording.labels
+
+        for offset in range(1, total):
+            pos = (current_pos + offset) % total
+            idx = sorted_indices[pos]
+            label = labels[idx]
+            result = asr.get(label)
+            if result and not result.get("match", True):
+                self.app.navigation_controller.find_utterance(idx)
+                self.app.display_controller.set_status(
+                    f"ASR mismatch: {label}", MsgType.TEMPORARY
+                )
+                return
+
+        self.app.display_controller.set_status(
+            "No ASR mismatches found", MsgType.TEMPORARY
+        )
+
     def jump_to_next(self, flag_type: str) -> None:
         """Jump to the next utterance with the given flag type.
 

@@ -20,6 +20,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
         current_sort_direction: SortDirection = SortDirection.UP,
         current_index: Optional[int] = None,
         utterance_flags: Dict[str, str] = None,
+        asr_verification: Dict[str, dict] = None,
     ):
         """Initialize the utterance order dialog.
 
@@ -33,6 +34,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
             current_sort_direction: Current sort direction from session
             current_index: Currently selected utterance index to highlight
             utterance_flags: Dict mapping labels to flag types
+            asr_verification: Dict mapping labels to ASR results
         """
         self.current_order = current_order or list(range(len(utterances)))
         self.original_order = list(self.current_order)  # Keep copy of original
@@ -53,6 +55,7 @@ class UtteranceOrderDialog(UtteranceListDialog):
             default_sort_direction=current_sort_direction,
             current_index=current_index,
             utterance_flags=utterance_flags,
+            asr_verification=asr_verification,
         )
 
     def _create_info_frame(self, parent: ttk.Frame) -> None:

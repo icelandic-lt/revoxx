@@ -11,6 +11,7 @@ from ..ui.dialogs.help_dialog import HelpDialog
 from ..ui.dialogs.open_session_dialog import OpenSessionDialog
 from ..ui.dialogs.utterance_order_dialog import UtteranceOrderDialog
 from ..ui.dialogs.utterance_list_base import SortDirection
+from ..ui.dialogs.asr_dialog import ASRVerificationDialog
 from ..utils.device_manager import get_device_manager
 
 if TYPE_CHECKING:
@@ -145,6 +146,11 @@ class DialogController:
         )
 
         utterance_flags = self.app.flag_controller.get_flags()
+        asr_verification = (
+            self.app.current_session.asr_verification
+            if self.app.current_session
+            else {}
+        )
 
         self.find_dialog = FindDialog(
             self.app.window.window,
@@ -157,6 +163,7 @@ class DialogController:
             self.app.active_recordings.sort_column,
             sort_direction,
             utterance_flags=utterance_flags,
+            asr_verification=asr_verification,
         )
         self.find_dialog.show()
 
@@ -193,6 +200,11 @@ class DialogController:
         )
 
         utterance_flags = self.app.flag_controller.get_flags()
+        asr_verification = (
+            self.app.current_session.asr_verification
+            if self.app.current_session
+            else {}
+        )
 
         # Create and show dialog
         dialog = UtteranceOrderDialog(
@@ -205,6 +217,7 @@ class DialogController:
             sort_direction,
             self.app.state.recording.current_index,
             utterance_flags=utterance_flags,
+            asr_verification=asr_verification,
         )
 
         result = dialog.show()
@@ -237,6 +250,18 @@ class DialogController:
         if self.order_dialog:
             self.order_dialog.dialog.destroy()
             self.order_dialog = None
+
+    def show_asr_verification_dialog(self) -> None:
+        """Show the ASR verification dialog."""
+        if not self.app.current_session:
+            messagebox.showwarning(
+                "No Session",
+                "Please open a session first.",
+                parent=self.app.window.window,
+            )
+            return
+        dialog = ASRVerificationDialog(self.app.window.window, self.app)
+        dialog.show()
 
     def show_settings_dialog(self) -> None:
         """Show the settings dialog."""
