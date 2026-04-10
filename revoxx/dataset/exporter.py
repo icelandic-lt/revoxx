@@ -91,6 +91,7 @@ class DatasetExporter:
         self,
         session_paths: List[Path],
         dataset_name: str = None,
+        name_mapping: Optional[Dict[str, str]] = None,
         progress_callback=None,
         skip_rejected: bool = False,
     ) -> Tuple[List[Path], Dict]:
@@ -101,6 +102,7 @@ class DatasetExporter:
         Args:
             session_paths: List of paths to .revoxx session directories
             dataset_name: Optional override for dataset name (if None, uses speaker names)
+            name_mapping: Optional dict mapping normalized speaker names to export names
             progress_callback: Optional callback for progress updates
             skip_rejected: If True, skip utterances flagged as 'rejected'
 
@@ -130,6 +132,8 @@ class DatasetExporter:
             # Use override name if provided and only one speaker group
             if dataset_name and len(speaker_groups) == 1:
                 current_dataset_name = dataset_name
+            elif name_mapping and speaker_name_normalized in name_mapping:
+                current_dataset_name = name_mapping[speaker_name_normalized]
             else:
                 current_dataset_name = speaker_name_normalized
 
@@ -194,7 +198,7 @@ class DatasetExporter:
             total_statistics["sessions_processed"] += len(sessions)
             total_statistics["speakers"].append(
                 {
-                    "name": speaker_name_normalized,
+                    "name": current_dataset_name,
                     "emotions": list(speaker_statistics["emotions"]),
                     "file_counts": dict(file_counts),
                     "output_path": str(dataset_dir),
@@ -432,7 +436,7 @@ class DatasetExporter:
                 "1. filename        : Audio file name (e.g., speaker_001.flac)\n"
                 "2. speaker         : Speaker name/identifier\n"
                 "3. intensity       : Emotional intensity level (0-5)\n"
-                "4. text           : Transcription of the utterance\n"
+                "4. text            : Transcription of the utterance\n"
                 "\n"
                 "Example:\n"
                 "speaker_001.flac<TAB>speaker<TAB>0<TAB>Hvað er klukkan?"
@@ -441,7 +445,7 @@ class DatasetExporter:
             "Each line in index.tsv contains 3 tab-separated columns:\n"
             "1. filename        : Audio file name (e.g., speaker_001.flac)\n"
             "2. speaker         : Speaker name/identifier\n"
-            "3. text           : Transcription of the utterance\n"
+            "3. text            : Transcription of the utterance\n"
             "\n"
             "Example:\n"
             "speaker_001.flac<TAB>speaker<TAB>Hvað er klukkan?"
@@ -490,6 +494,21 @@ class DatasetExporter:
             # If conversion fails, try to copy as-is
             shutil.copy2(source_path, dest_path)
 
+    def _build_file_structure(self, flatten_emotion: bool) -> str:
+        """Build file structure section for README."""
+        lines = []
+        if flatten_emotion:
+            lines.append("- ./               : Directory containing audio files")
+        else:
+            lines.append("- emotion_name/    : Directory containing audio files for each emotion")
+        lines.append("- index.tsv        : Tab-separated index file with metadata")
+        lines.append("- README.txt       : This documentation file")
+        if self.include_omnivad:
+            lines.append("- vad.json         : Voice activity detection for each file. All units in [seconds]")
+        if self.include_silero_vad:
+            lines.append("- vad_silero.json  : Silero VAD analysis for each file. All units in [seconds]")
+        return "\n".join(lines)
+
     def _write_readme(
         self,
         dataset_dir: Path,
@@ -503,7 +522,6 @@ class DatasetExporter:
             audio_properties: Dict with sample_rate and bit_depth
             flatten_emotion: Whether emotion was omitted from structure
         """
-        # Load main template
         template_dir = Path(__file__).parent.parent / "resources" / "templates"
         main_template_path = template_dir / "dataset_readme.txt"
 
@@ -521,7 +539,18 @@ class DatasetExporter:
             with open(index_template_path, "r", encoding="utf-8") as f:
                 index_format = f.read()
 
-        # Prepare audio properties strings
+        file_structure = self._build_file_structure(flatten_emotion)
+
+        if self.loudness_target is not None:
+            loudness_line = f"- audio normalization {self.loudness_target:g} LUFS target, lossless\n"
+        else:
+            loudness_line = ""
+
+        if flatten_emotion:
+            filename_convention = f"speaker_NNN.{self.format}"
+        else:
+            filename_convention = f"speaker_emotion_NNN.{self.format}"
+
         sample_rate_str = (
             str(audio_properties["sample_rate"])
             if audio_properties["sample_rate"]
@@ -533,16 +562,16 @@ class DatasetExporter:
             else "Not specified"
         )
 
-        # Fill in template variables
         readme_content = readme_content.format(
+            file_structure=file_structure,
             index_format=index_format,
             audio_format=self.format.upper(),
-            file_extension=self.format,
             sample_rate=sample_rate_str,
             bit_depth=bit_depth_str,
+            loudness_line=loudness_line,
+            filename_convention=filename_convention,
         )
 
-        # Write README file
         readme_path = dataset_dir / "README.txt"
         with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)

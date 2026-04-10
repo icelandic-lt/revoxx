@@ -60,6 +60,7 @@ class UserSettings:
     export_loudness_target: float = LoudnessConstants.DEFAULT_TARGET
     export_include_omnivad: bool = False
     export_include_silero_vad: bool = False
+    export_name_mapping: Optional[Dict[str, str]] = None
 
     # ASR verification settings
     asr_base_url: Optional[str] = None
