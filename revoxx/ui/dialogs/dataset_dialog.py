@@ -61,6 +61,9 @@ class DatasetDialog:
         self.settings_manager = settings_manager
         self.process_manager = process_manager
         self.result = None
+        self.name_mapping = getattr(
+            self.settings_manager.settings, "export_name_mapping", None
+        ) or {}
 
         # Use provided base_dir
         self.base_dir = Path(base_dir)
@@ -381,6 +384,11 @@ class DatasetDialog:
         ttk.Button(button_frame, text="Cancel", command=self._cancel).pack(
             side=tk.RIGHT, padx=(0, self.PADDING_SMALL)
         )
+
+        ttk.Button(
+            button_frame, text="Name Mapping...",
+            command=self._show_name_mapping_dialog,
+        ).pack(side=tk.RIGHT, padx=(0, self.PADDING_SMALL))
 
         # Status label
         self.status_var = tk.StringVar(value="Ready")
@@ -710,6 +718,106 @@ class DatasetDialog:
         """Clear manual entry when a preset is selected."""
         self.loudness_entry_var.set("")
 
+    def _show_name_mapping_dialog(self):
+        """Show dialog for mapping speaker names to anonymized export names."""
+        speaker_names = sorted(set(
+            session["speaker"] for session in self.sessions_data
+            if session["speaker"]
+        ))
+
+        if not speaker_names:
+            messagebox.showinfo(
+                "No Speakers",
+                "No sessions with speaker names found.",
+                parent=self.dialog,
+            )
+            return
+
+        mapping_dialog = tk.Toplevel(self.dialog)
+
+        main_frame = ttk.Frame(mapping_dialog, padding=self.PADDING_FRAME)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(
+            main_frame,
+            text="Map speaker names for export anonymization.\n"
+            "Leave empty to keep the original name.",
+        ).pack(anchor=tk.W, pady=(0, self.PADDING_STANDARD))
+
+        grid_frame = ttk.Frame(main_frame)
+        grid_frame.pack(fill=tk.X)
+
+        ttk.Label(grid_frame, text="Original", font=("", 10, "bold")).grid(
+            row=0, column=0, sticky=tk.W,
+            padx=(0, self.PADDING_STANDARD), pady=2,
+        )
+        ttk.Label(grid_frame, text="Export As", font=("", 10, "bold")).grid(
+            row=0, column=1, sticky=tk.W, pady=2,
+        )
+
+        entry_vars = {}
+        for i, name in enumerate(speaker_names, start=1):
+            normalized = name.lower().replace(" ", "_")
+            ttk.Label(grid_frame, text=name).grid(
+                row=i, column=0, sticky=tk.W,
+                padx=(0, self.PADDING_STANDARD), pady=2,
+            )
+            var = tk.StringVar(value=self.name_mapping.get(normalized, ""))
+            ttk.Entry(grid_frame, textvariable=var, width=25).grid(
+                row=i, column=1, sticky=tk.EW, pady=2,
+            )
+            entry_vars[normalized] = var
+
+        grid_frame.columnconfigure(1, weight=1)
+
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(self.PADDING_STANDARD, 0))
+
+        all_normalized = list(entry_vars.keys())
+
+        def on_ok():
+            mapping = {}
+            for norm_name, var in entry_vars.items():
+                value = var.get().strip()
+                if value:
+                    mapping[norm_name] = value.lower().replace(" ", "_")
+
+            # Check for duplicate export names
+            export_names = [
+                mapping.get(n, n) for n in all_normalized
+            ]
+            if len(set(export_names)) != len(export_names):
+                messagebox.showerror(
+                    "Duplicate Names",
+                    "Each speaker must have a unique export name.",
+                    parent=mapping_dialog,
+                )
+                return
+
+            self.name_mapping = mapping
+            self.settings_manager.update_setting(
+                "export_name_mapping", mapping or None,
+            )
+            mapping_dialog.destroy()
+
+        ttk.Button(button_frame, text="OK", command=on_ok).pack(
+            side=tk.RIGHT, padx=(self.PADDING_SMALL, 0),
+        )
+        ttk.Button(
+            button_frame, text="Cancel", command=mapping_dialog.destroy,
+        ).pack(side=tk.RIGHT)
+
+        setup_dialog_window(
+            mapping_dialog,
+            self.dialog,
+            title="Name Mapping",
+            width=400,
+            height=min(180 + len(speaker_names) * 35, 500),
+            center_on_parent=True,
+        )
+
+        mapping_dialog.wait_window()
+
     def _get_loudness_target(self) -> Optional[float]:
         """Get the loudness target from UI controls.
 
@@ -803,6 +911,7 @@ class DatasetDialog:
             dataset_paths, statistics = exporter.export_sessions(
                 session_paths,
                 dataset_name=dataset_name,
+                name_mapping=self.name_mapping or None,
                 progress_callback=progress_callback,
                 skip_rejected=self.skip_rejected_var.get(),
             )

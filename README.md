@@ -92,6 +92,7 @@ the Icelandic emotional speech dataset, and created this tool to minimize hassle
   - Spot misread utterances via configurable character-level similarity threshold
   - **Toggle** between script text and ASR transcription in the display with a single keystroke
   - **Manual override** for false negatives, direct navigation to mismatches
+  - For Icelandic ASR we recommend [icelandic-asr-api](https://github.com/icelandic-lt/icelandic-asr-api) -- it also supports other languages via whisper-large-v3-turbo with automatic language detection
 
 ## Installation
 
