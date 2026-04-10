@@ -500,13 +500,19 @@ class DatasetExporter:
         if flatten_emotion:
             lines.append("- ./               : Directory containing audio files")
         else:
-            lines.append("- emotion_name/    : Directory containing audio files for each emotion")
+            lines.append(
+                "- emotion_name/    : Directory containing audio files for each emotion"
+            )
         lines.append("- index.tsv        : Tab-separated index file with metadata")
         lines.append("- README.txt       : This documentation file")
         if self.include_omnivad:
-            lines.append("- vad.json         : Voice activity detection for each file. All units in [seconds]")
+            lines.append(
+                "- vad.json         : Voice activity detection for each file. All units in [seconds]"
+            )
         if self.include_silero_vad:
-            lines.append("- vad_silero.json  : Silero VAD analysis for each file. All units in [seconds]")
+            lines.append(
+                "- vad_silero.json  : Silero VAD analysis for each file. All units in [seconds]"
+            )
         return "\n".join(lines)
 
     def _write_readme(

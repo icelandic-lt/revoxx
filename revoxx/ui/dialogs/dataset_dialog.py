@@ -61,9 +61,9 @@ class DatasetDialog:
         self.settings_manager = settings_manager
         self.process_manager = process_manager
         self.result = None
-        self.name_mapping = getattr(
-            self.settings_manager.settings, "export_name_mapping", None
-        ) or {}
+        self.name_mapping = (
+            getattr(self.settings_manager.settings, "export_name_mapping", None) or {}
+        )
 
         # Use provided base_dir
         self.base_dir = Path(base_dir)
@@ -386,7 +386,8 @@ class DatasetDialog:
         )
 
         ttk.Button(
-            button_frame, text="Name Mapping...",
+            button_frame,
+            text="Name Mapping...",
             command=self._show_name_mapping_dialog,
         ).pack(side=tk.RIGHT, padx=(0, self.PADDING_SMALL))
 
@@ -720,10 +721,13 @@ class DatasetDialog:
 
     def _show_name_mapping_dialog(self):
         """Show dialog for mapping speaker names to anonymized export names."""
-        speaker_names = sorted(set(
-            session["speaker"] for session in self.sessions_data
-            if session["speaker"]
-        ))
+        speaker_names = sorted(
+            set(
+                session["speaker"]
+                for session in self.sessions_data
+                if session["speaker"]
+            )
+        )
 
         if not speaker_names:
             messagebox.showinfo(
@@ -748,23 +752,35 @@ class DatasetDialog:
         grid_frame.pack(fill=tk.X)
 
         ttk.Label(grid_frame, text="Original", font=("", 10, "bold")).grid(
-            row=0, column=0, sticky=tk.W,
-            padx=(0, self.PADDING_STANDARD), pady=2,
+            row=0,
+            column=0,
+            sticky=tk.W,
+            padx=(0, self.PADDING_STANDARD),
+            pady=2,
         )
         ttk.Label(grid_frame, text="Export As", font=("", 10, "bold")).grid(
-            row=0, column=1, sticky=tk.W, pady=2,
+            row=0,
+            column=1,
+            sticky=tk.W,
+            pady=2,
         )
 
         entry_vars = {}
         for i, name in enumerate(speaker_names, start=1):
             normalized = name.lower().replace(" ", "_")
             ttk.Label(grid_frame, text=name).grid(
-                row=i, column=0, sticky=tk.W,
-                padx=(0, self.PADDING_STANDARD), pady=2,
+                row=i,
+                column=0,
+                sticky=tk.W,
+                padx=(0, self.PADDING_STANDARD),
+                pady=2,
             )
             var = tk.StringVar(value=self.name_mapping.get(normalized, ""))
             ttk.Entry(grid_frame, textvariable=var, width=25).grid(
-                row=i, column=1, sticky=tk.EW, pady=2,
+                row=i,
+                column=1,
+                sticky=tk.EW,
+                pady=2,
             )
             entry_vars[normalized] = var
 
@@ -783,9 +799,7 @@ class DatasetDialog:
                     mapping[norm_name] = value.lower().replace(" ", "_")
 
             # Check for duplicate export names
-            export_names = [
-                mapping.get(n, n) for n in all_normalized
-            ]
+            export_names = [mapping.get(n, n) for n in all_normalized]
             if len(set(export_names)) != len(export_names):
                 messagebox.showerror(
                     "Duplicate Names",
@@ -796,15 +810,19 @@ class DatasetDialog:
 
             self.name_mapping = mapping
             self.settings_manager.update_setting(
-                "export_name_mapping", mapping or None,
+                "export_name_mapping",
+                mapping or None,
             )
             mapping_dialog.destroy()
 
         ttk.Button(button_frame, text="OK", command=on_ok).pack(
-            side=tk.RIGHT, padx=(self.PADDING_SMALL, 0),
+            side=tk.RIGHT,
+            padx=(self.PADDING_SMALL, 0),
         )
         ttk.Button(
-            button_frame, text="Cancel", command=mapping_dialog.destroy,
+            button_frame,
+            text="Cancel",
+            command=mapping_dialog.destroy,
         ).pack(side=tk.RIGHT)
 
         setup_dialog_window(
